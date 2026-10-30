@@ -20,6 +20,7 @@ pub const PAGER_EXTENT: f32 = GAP + CLOSE_SIZE + SHADOW_SIGMA * 3.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExpandedPage {
+    Home,
     Music,
     Widgets,
     Calendar,
@@ -30,12 +31,12 @@ pub struct PageAvailability {
 }
 
 impl ExpandedPage {
-    pub const ALL: [Self; 3] = [Self::Music, Self::Widgets, Self::Calendar];
+    pub const ALL: [Self; 4] = [Self::Home, Self::Music, Self::Widgets, Self::Calendar];
 
     pub fn is_available(self, availability: &PageAvailability) -> bool {
         match self {
             Self::Music => availability.music,
-            Self::Widgets | Self::Calendar => true,
+            Self::Home | Self::Widgets | Self::Calendar => true,
         }
     }
 }

@@ -127,6 +127,15 @@ pub(super) fn draw_expanded_content(params: ExpandedContentParams<'_>) -> bool {
                         text_color,
                     );
                 }
+                ExpandedPage::Home => crate::ui::dashboard::draw_page(
+                    painter,
+                    offset_x,
+                    offset_y,
+                    current_w,
+                    current_h,
+                    alpha,
+                    global_scale,
+                ),
                 ExpandedPage::Calendar => draw_calendar_page(
                     painter,
                     offset_x,

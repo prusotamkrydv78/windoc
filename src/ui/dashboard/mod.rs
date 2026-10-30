@@ -3,22 +3,154 @@
 //! Content comes from deterministic sample data until modules provide snapshots. The
 //! header always labels it as sample data.
 
-// Wired into the island in a follow-up change; until then nothing calls it.
+// `semantics` and grid scrolling (`overflows`, `content_height`) wait for the UI Automation
+// provider and scroll support.
 #![allow(dead_code)]
 
 pub mod layout;
 pub mod sample;
 
+use std::cell::RefCell;
+
 use winisland_core::i18n::tr;
-use winisland_render::tokens::{SemanticColors, radius, space, typography};
-use winisland_render::{Painter, Radius, Rect};
+use winisland_render::tokens::{ColorScheme, SemanticColors, SizeClass, radius, space, typography};
+use winisland_render::{Painter, Point, Radius, Rect, Vec2};
 
 use crate::ui::components::card::{CardLayout, draw_card};
 use crate::ui::components::dock::draw_dock;
 use crate::ui::components::semantics::{InteractionState, Role, SemanticNode};
 use crate::ui::components::text::{Align, draw_text};
 use layout::DashboardLayout;
-use sample::SampleCard;
+use sample::{HOME_CARDS, SampleCard};
+
+/// What the pointer is over on the dashboard page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DashboardHit {
+    Card(usize),
+    Destination(Destination),
+}
+
+struct PageState {
+    active: Destination,
+    hover: Option<DashboardHit>,
+}
+
+thread_local! {
+    static PAGE: RefCell<PageState> = const {
+        RefCell::new(PageState {
+            active: Destination::Home,
+            hover: None,
+        })
+    };
+}
+
+/// Lays the page out in logical pixels. `scale` converts logical to device pixels.
+fn page_layout(width: f32, height: f32, scale: f32) -> DashboardLayout {
+    let scale = scale.max(f32::EPSILON);
+    let (width, height) = (width / scale, height / scale);
+    // The island has no monitor work area here, so the class follows the expanded width.
+    let size_class = if width >= SizeClass::Standard.width_range().0 {
+        SizeClass::Standard
+    } else {
+        SizeClass::Compact
+    };
+    let spans = HOME_CARDS.map(|card| card.column_span);
+    DashboardLayout::new(Rect::from_xywh(0.0, 0.0, width, height), size_class, &spans)
+}
+
+fn cards_for(active: Destination) -> &'static [SampleCard] {
+    if active == Destination::Home {
+        &HOME_CARDS
+    } else {
+        &[]
+    }
+}
+
+/// Hit test in device pixels for a page drawn at (`ox`, `oy`).
+pub fn hit_test(
+    ox: f32,
+    oy: f32,
+    width: f32,
+    height: f32,
+    scale: f32,
+    point: Point,
+) -> Option<DashboardHit> {
+    let layout = page_layout(width, height, scale);
+    let scale = scale.max(f32::EPSILON);
+    let local = Point::new((point.x - ox) / scale, (point.y - oy) / scale);
+    if let Some(destination) = layout.hit_destination(local) {
+        return Some(DashboardHit::Destination(destination));
+    }
+    let active = PAGE.with(|page| page.borrow().active);
+    layout
+        .hit_card(local)
+        .filter(|index| *index < cards_for(active).len())
+        .map(DashboardHit::Card)
+}
+
+/// Returns `true` when the hover target changed and the page needs a redraw.
+pub fn set_hover(hit: Option<DashboardHit>) -> bool {
+    PAGE.with(|page| {
+        let mut page = page.borrow_mut();
+        let changed = page.hover != hit;
+        page.hover = hit;
+        changed
+    })
+}
+
+/// Applies a click. Cards have no detail view until their modules exist.
+pub fn apply(hit: DashboardHit) {
+    if let DashboardHit::Destination(destination) = hit {
+        PAGE.with(|page| page.borrow_mut().active = destination);
+    }
+}
+
+/// Draws the page at (`ox`, `oy`) with size in device pixels.
+pub fn draw_page(
+    painter: Painter<'_>,
+    ox: f32,
+    oy: f32,
+    width: f32,
+    height: f32,
+    alpha: u8,
+    scale: f32,
+) {
+    if alpha == 0 {
+        return;
+    }
+    let layout = page_layout(width, height, scale);
+    let (active, hover) = PAGE.with(|page| {
+        let page = page.borrow();
+        (page.active, page.hover)
+    });
+    let interaction = DashboardInteraction {
+        hovered_card: match hover {
+            Some(DashboardHit::Card(index)) => Some(index),
+            _ => None,
+        },
+        hovered_dock: match hover {
+            Some(DashboardHit::Destination(destination)) => layout
+                .destinations
+                .iter()
+                .position(|candidate| *candidate == destination),
+            _ => None,
+        },
+        ..DashboardInteraction::default()
+    };
+    let colors = SemanticColors::for_scheme(ColorScheme::Dark);
+    painter.save_alpha(alpha);
+    painter.translate(Vec2::new(ox, oy));
+    painter.scale(Vec2::new(scale, scale));
+    draw_dashboard(DashboardParams {
+        painter,
+        layout: &layout,
+        colors: &colors,
+        active,
+        cards: cards_for(active),
+        interaction,
+    });
+    painter.restore();
+}
 
 /// Primary destinations, matching the first-run modules in the design guide.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -100,6 +232,16 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         };
         draw_card(painter, &card_layout, &tr(card.title_key), colors, state);
         draw_card_value(painter, &card_layout, card, colors);
+    }
+    if cards.is_empty() {
+        draw_text(
+            painter,
+            &tr("dashboard_not_ready"),
+            typography::BODY,
+            layout.grid,
+            Align::Center,
+            colors.text_secondary,
+        );
     }
     painter.restore_to(save);
 

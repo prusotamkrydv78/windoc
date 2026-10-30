@@ -188,7 +188,7 @@ impl Default for App {
             expanded_press_started_inside: false,
             expanded_header_press: None,
             components_hidden: false,
-            current_page: ExpandedPage::Widgets,
+            current_page: ExpandedPage::Home,
             music_page_available: false,
             wheel_accumulator: 0.0,
             last_wheel_page_at: None,

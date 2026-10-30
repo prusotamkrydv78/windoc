@@ -212,7 +212,25 @@ impl App {
                 })
                 .flatten();
         let calendar_changed = crate::ui::expanded::calendar_view::set_hover(calendar_hover);
-        if (self.close_hover.value, self.bar_hover.value) != before || calendar_changed {
+        let dashboard_hover =
+            (interaction_allowed && self.expanded && self.page_focused(ExpandedPage::Home))
+                .then(|| {
+                    crate::ui::dashboard::hit_test(
+                        layout.offset_x as f32 + self.page_translation(ExpandedPage::Home),
+                        layout.island_y as f32,
+                        self.springs.w.value,
+                        (self.config.expanded_height * self.config.expanded_scale)
+                            .min(self.springs.h.value),
+                        self.config.expanded_scale,
+                        Point::new(rel_x as f32, rel_y as f32),
+                    )
+                })
+                .flatten();
+        let dashboard_changed = crate::ui::dashboard::set_hover(dashboard_hover);
+        if (self.close_hover.value, self.bar_hover.value) != before
+            || calendar_changed
+            || dashboard_changed
+        {
             window.request_redraw();
         }
     }

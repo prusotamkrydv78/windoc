@@ -353,6 +353,23 @@ impl App {
                 }
             }
 
+            if self.page_focused(ExpandedPage::Home)
+                && let Some(hit) = crate::ui::dashboard::hit_test(
+                    offset_x as f32 + self.page_translation(ExpandedPage::Home),
+                    island_y as f32,
+                    w as f32,
+                    h as f32,
+                    self.config.expanded_scale,
+                    winisland_render::Point::new(rel_x as f32, rel_y as f32),
+                )
+            {
+                crate::ui::dashboard::apply(hit);
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                return;
+            }
+
             if self.page_focused(ExpandedPage::Calendar)
                 && let Some(action) = crate::ui::expanded::calendar_view::hit_test(
                     offset_x as f32 + self.page_translation(ExpandedPage::Calendar),
