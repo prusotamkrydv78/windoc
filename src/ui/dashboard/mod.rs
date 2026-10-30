@@ -21,7 +21,11 @@ use crate::ui::components::dock::draw_dock;
 use crate::ui::components::semantics::{InteractionState, Role, SemanticNode};
 use crate::ui::components::text::{Align, draw_text};
 use layout::DashboardLayout;
-use sample::{HOME_CARDS, SampleCard};
+use sample::{CardKind, HOME_CARDS, SampleCard};
+use std::time::{Duration, Instant};
+use winisland_core::focus::{
+    FocusEvent, FocusTimer, FocusView, Phase, PomodoroConfig, TimerKind, TimerState,
+};
 
 /// What the pointer is over on the dashboard page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,15 +37,108 @@ pub enum DashboardHit {
 struct PageState {
     active: Destination,
     hover: Option<DashboardHit>,
+    /// The first live module, restored from disk on first use.
+    focus: FocusTimer,
+    /// A phase that ended while the app was closed, reported by the next [`poll`].
+    restored_event: Option<FocusEvent>,
 }
 
 thread_local! {
-    static PAGE: RefCell<PageState> = const {
-        RefCell::new(PageState {
+    static PAGE: RefCell<PageState> = RefCell::new({
+        let (focus, restored_event) =
+            crate::core::focus_store::load(TimerKind::Pomodoro(PomodoroConfig::default()));
+        PageState {
             active: Destination::Home,
             hover: None,
-        })
+            focus,
+            restored_event,
+        }
+    });
+}
+
+/// Advances the Focus timer. Called every frame, so phases finish and notify even while
+/// the dashboard is hidden. Returns the event once.
+pub fn poll(now: Instant) -> Option<FocusEvent> {
+    let event = PAGE.with(|page| {
+        let mut page = page.borrow_mut();
+        let restored = page.restored_event.take();
+        let ticked = page.focus.tick(now);
+        if ticked.is_some() {
+            crate::core::focus_store::save(&page.focus);
+        }
+        ticked.or(restored)
+    })?;
+    notify_phase_finished(event);
+    Some(event)
+}
+
+fn notify_phase_finished(event: FocusEvent) {
+    let FocusEvent::PhaseFinished { next, .. } = event;
+    let message_key = match next {
+        Some(Phase::ShortBreak) => "focus_notify_short_break",
+        Some(Phase::LongBreak) => "focus_notify_long_break",
+        Some(Phase::Work) => "focus_notify_work",
+        Some(Phase::Countdown | Phase::Stopwatch) | None => "focus_notify_done",
     };
+    crate::platform::notify().show_toast(&tr("focus_notify_title"), &tr(message_key));
+}
+
+/// Clock text for a duration. Remaining time rounds up so 0:00 appears only at the end.
+fn format_clock(duration: Duration, round_up: bool) -> String {
+    let millis = duration.as_millis();
+    let seconds = if round_up {
+        millis.div_ceil(1000)
+    } else {
+        millis / 1000
+    };
+    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
+fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
+    match (card.kind, focus) {
+        (CardKind::Focus, Some(view)) => {
+            let value = match view.remaining {
+                Some(remaining) => format_clock(remaining, true),
+                None => format_clock(view.elapsed, false),
+            };
+            let detail = match view.state {
+                TimerState::Running => tr(view.label_key),
+                TimerState::Paused => tr("focus_paused"),
+                TimerState::Idle | TimerState::Finished => tr("focus_click_to_start"),
+            };
+            (value, detail)
+        }
+        _ => (card.value.to_string(), tr(card.detail_key)),
+    }
+}
+
+/// Starts, pauses or resumes the Focus timer.
+fn toggle_focus(timer: &mut FocusTimer, now: Instant) {
+    match timer.state() {
+        TimerState::Idle => {
+            timer.start(now);
+        }
+        TimerState::Running => {
+            timer.pause(now);
+        }
+        TimerState::Paused => {
+            timer.resume(now);
+        }
+        TimerState::Finished => {
+            timer.reset();
+            timer.start(now);
+        }
+    }
+}
+
+/// `true` while a live value changes every second and the page must keep redrawing.
+pub fn is_animating() -> bool {
+    PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
 }
 
 /// Lays the page out in logical pixels. `scale` converts logical to device pixels.
@@ -98,11 +195,24 @@ pub fn set_hover(hit: Option<DashboardHit>) -> bool {
     })
 }
 
-/// Applies a click. Cards have no detail view until their modules exist.
+/// Applies a click. The Focus card toggles the timer; other cards have no action until
+/// their modules exist.
 pub fn apply(hit: DashboardHit) {
-    if let DashboardHit::Destination(destination) = hit {
-        PAGE.with(|page| page.borrow_mut().active = destination);
-    }
+    PAGE.with(|page| {
+        let mut page = page.borrow_mut();
+        match hit {
+            DashboardHit::Destination(destination) => page.active = destination,
+            DashboardHit::Card(index) => {
+                let is_focus = cards_for(page.active)
+                    .get(index)
+                    .is_some_and(|card| card.kind == CardKind::Focus);
+                if is_focus {
+                    toggle_focus(&mut page.focus, Instant::now());
+                    crate::core::focus_store::save(&page.focus);
+                }
+            }
+        }
+    });
 }
 
 /// Draws the page at (`ox`, `oy`) with size in device pixels.
@@ -119,9 +229,11 @@ pub fn draw_page(
         return;
     }
     let layout = page_layout(width, height, scale);
-    let (active, hover) = PAGE.with(|page| {
+    let now = Instant::now();
+    // Ticking happens in `poll` from the frame loop; drawing only reads.
+    let (active, hover, focus) = PAGE.with(|page| {
         let page = page.borrow();
-        (page.active, page.hover)
+        (page.active, page.hover, page.focus.view(now))
     });
     let interaction = DashboardInteraction {
         hovered_card: match hover {
@@ -147,6 +259,7 @@ pub fn draw_page(
         colors: &colors,
         active,
         cards: cards_for(active),
+        focus: Some(focus),
         interaction,
     });
     painter.restore();
@@ -202,6 +315,8 @@ pub struct DashboardParams<'a> {
     pub colors: &'a SemanticColors,
     pub active: Destination,
     pub cards: &'a [SampleCard],
+    /// Live Focus timer state; `None` shows the sample value.
+    pub focus: Option<FocusView>,
     pub interaction: DashboardInteraction,
 }
 
@@ -212,6 +327,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         colors,
         active,
         cards,
+        focus,
         interaction,
     } = params;
     painter.fill_round_rect(
@@ -231,7 +347,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             ..InteractionState::default()
         };
         draw_card(painter, &card_layout, &tr(card.title_key), colors, state);
-        draw_card_value(painter, &card_layout, card, colors);
+        let (value, detail) = card_text(card, focus.as_ref());
+        draw_card_value(painter, &card_layout, &value, &detail, colors);
     }
     if cards.is_empty() {
         draw_text(
@@ -300,7 +417,8 @@ fn draw_header(painter: Painter<'_>, header: Rect, active: Destination, colors: 
 fn draw_card_value(
     painter: Painter<'_>,
     card_layout: &CardLayout,
-    card: &SampleCard,
+    value: &str,
+    detail: &str,
     colors: &SemanticColors,
 ) {
     let content = card_layout.content;
@@ -313,7 +431,7 @@ fn draw_card_value(
     );
     draw_text(
         painter,
-        card.value,
+        value,
         typography::NUMERIC,
         value_rect,
         Align::Start,
@@ -331,7 +449,7 @@ fn draw_card_value(
     }
     draw_text(
         painter,
-        &tr(card.detail_key),
+        detail,
         typography::CAPTION,
         detail_rect,
         Align::Start,

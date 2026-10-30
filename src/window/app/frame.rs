@@ -52,6 +52,9 @@ impl App {
         if now < self.next_frame_deadline {
             return;
         }
+        if crate::ui::dashboard::poll(now).is_some() {
+            window.request_redraw();
+        }
         if self
             .geom
             .position_restore_after
@@ -954,7 +957,11 @@ impl App {
             || (self.expanded
                 && self.page_visible(ExpandedPage::Calendar)
                 && crate::ui::expanded::calendar_view::is_animating());
-        let resource_usage_active = self.resource_usage_animating();
+        // Live values that change about once a second share the slower refresh tier.
+        let resource_usage_active = self.resource_usage_animating()
+            || (self.expanded
+                && self.page_visible(ExpandedPage::Home)
+                && crate::ui::dashboard::is_animating());
         let compact_components_visible = self.expanded || !self.components_hidden;
         let playback_active = !self.is_hidden()
             && compact_components_visible
