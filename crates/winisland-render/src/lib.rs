@@ -13,6 +13,7 @@ mod painter;
 mod path;
 mod surface;
 pub mod text;
+pub mod tokens;
 mod types;
 
 pub use error::{RenderError, RenderResult};
