@@ -4,8 +4,10 @@
 
 mod audio;
 mod backdrop;
+mod clipboard;
 mod com;
 mod display;
+pub mod dpapi;
 mod file;
 mod foreground;
 mod input;
@@ -17,6 +19,7 @@ mod shell;
 pub mod window;
 
 pub use audio::WindowsAudio;
+pub use clipboard::{ClipboardChange, ClipboardContent, ClipboardFormat, ClipboardMonitor};
 pub use display::WindowsDisplay;
 pub use file::replace_file;
 pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};
