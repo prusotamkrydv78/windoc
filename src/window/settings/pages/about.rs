@@ -4,6 +4,7 @@ use winisland_render::Image;
 
 use crate::utils::settings_ui::ClickResult;
 use crate::utils::settings_ui::items::SettingsItem;
+use winisland_core::config::{APP_HOMEPAGE, APP_VERSION, WINDOW_TITLE};
 use winisland_core::i18n::tr;
 
 use super::super::SettingsApp;
@@ -11,8 +12,6 @@ use super::{PageInput, SettingsPage};
 
 const ABOUT_ICON_SIZE: f32 = 126.0;
 const ABOUT_ICON_HEIGHT: f32 = 138.0;
-const BUDDYDESK_REPO: &str = "https://github.com/lzsobig/BuddyDesk-pet-claude";
-const BUDDYDESK_INTRO: &str = "https://lzsobig.github.io/BuddyDesk-pet-claude/";
 
 thread_local! {
     static ABOUT_ICON: OnceCell<Image> = const { OnceCell::new() };
@@ -21,7 +20,7 @@ thread_local! {
 pub(super) fn app_icon() -> Image {
     ABOUT_ICON.with(|icon| {
         icon.get_or_init(|| {
-            Image::from_encoded(include_bytes!("../../../../resources/buddydesk-logo.png"))
+            Image::from_encoded(include_bytes!("../../../../resources/icon.png"))
                 .expect("Failed to load about page icon")
         })
         .clone()
@@ -30,8 +29,7 @@ pub(super) fn app_icon() -> Image {
 
 #[derive(Clone, Copy)]
 enum AboutAction {
-    Repository,
-    Introduction,
+    Upstream,
 }
 
 impl SettingsApp {
@@ -40,16 +38,14 @@ impl SettingsApp {
         let mut page = SettingsPage::new();
         page.spacer(20.0);
         page.center_image(app_icon(), ABOUT_ICON_SIZE, ABOUT_ICON_HEIGHT);
-        page.center_text("BuddyDesk".to_string(), 28.0, theme.text_pri);
-        page.center_text(tr("about_pet_tagline"), 14.0, theme.text_sec);
-        page.center_text("v0.3.0".to_string(), 13.0, theme.text_sec);
+        page.center_text(WINDOW_TITLE.to_string(), 28.0, theme.text_pri);
+        page.center_text(format!("v{APP_VERSION}"), 13.0, theme.text_sec);
         page.spacer(12.0);
         page.center_link(
-            tr("about_pet_intro"),
+            tr("about_upstream_repo"),
             theme.accent,
-            AboutAction::Introduction,
+            AboutAction::Upstream,
         );
-        page.center_link(tr("about_pet_repo"), theme.accent, AboutAction::Repository);
         page.spacer(22.0);
         page.center_text(tr("about_native_credit"), 11.0, theme.text_sec);
         page
@@ -63,14 +59,13 @@ impl SettingsApp {
         let page = self.build_about_page();
         let result = input.hit_test(&page);
         let url = match (page.action(&result), result) {
-            (Some(AboutAction::Introduction), ClickResult::CenterLink(_)) => Some(BUDDYDESK_INTRO),
-            (Some(AboutAction::Repository), ClickResult::CenterLink(_)) => Some(BUDDYDESK_REPO),
+            (Some(AboutAction::Upstream), ClickResult::CenterLink(_)) => Some(APP_HOMEPAGE),
             _ => None,
         };
         if let Some(url) = url
             && let Err(error) = crate::platform::shell().open_url(url)
         {
-            log::warn!("Could not open BuddyDesk page: {error}");
+            log::warn!("Could not open upstream project page: {error}");
         }
     }
 }

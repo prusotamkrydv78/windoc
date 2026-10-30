@@ -110,7 +110,7 @@ pub struct Companion {
 
 impl Default for Companion {
     fn default() -> Self {
-        let directory = dirs::home_dir().map(|home| home.join(".buddydesk").join("winisland"));
+        let directory = crate::core::agent::buddydesk_dir();
         let pet_preferences = directory
             .as_ref()
             .and_then(|directory| read_json::<PetPreferences>(&directory.join("pet.json")).ok())

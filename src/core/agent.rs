@@ -10,6 +10,12 @@ const PROTOCOL_VERSION: u32 = 1;
 const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024;
 const HEARTBEAT_TIMEOUT_MS: u64 = 6_000;
 const REVEAL_WINDOW_MS: u64 = 5_000;
+
+/// Root of the file-based BuddyDesk integration. Always `None`: this product does not
+/// exchange files with BuddyDesk, so every reader and writer below stays inert.
+pub(crate) fn buddydesk_dir() -> Option<PathBuf> {
+    None
+}
 const MAX_SEEN_REVEAL_IDS: usize = 128;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const INPUT_SURFACE_ACTIVE_INTERVAL: Duration = Duration::from_millis(100);
@@ -52,11 +58,7 @@ pub struct InputSurfacePublisher {
 impl InputSurfacePublisher {
     pub fn new() -> Self {
         Self {
-            path: dirs::home_dir().map(|home| {
-                home.join(".buddydesk")
-                    .join("winisland")
-                    .join("input-surface.json")
-            }),
+            path: buddydesk_dir().map(|directory| directory.join("input-surface.json")),
             ..Self::default()
         }
     }
@@ -251,8 +253,7 @@ impl AgentSnapshot {
 impl AgentBridge {
     pub fn new() -> Self {
         Self {
-            path: dirs::home_dir()
-                .map(|home| home.join(".buddydesk").join("winisland").join("agent.json")),
+            path: buddydesk_dir().map(|directory| directory.join("agent.json")),
             ..Self::default()
         }
     }
@@ -376,8 +377,8 @@ impl AgentBridge {
 }
 
 pub(crate) fn send_settings_command(action: &str, args: serde_json::Value) -> Result<(), String> {
-    let home = dirs::home_dir().ok_or("Agent directory unavailable")?;
-    write_agent_command(&home.join(".buddydesk").join("winisland"), action, args)
+    let directory = buddydesk_dir().ok_or("Agent directory unavailable")?;
+    write_agent_command(&directory, action, args)
 }
 
 fn write_agent_command(

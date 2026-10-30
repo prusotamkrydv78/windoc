@@ -26,10 +26,7 @@ struct Request {
 }
 
 pub(crate) fn read_settings_request(seen: &mut Option<String>) -> Option<String> {
-    let path = dirs::home_dir()?
-        .join(".buddydesk")
-        .join("winisland")
-        .join("native-settings-request.json");
+    let path = crate::core::agent::buddydesk_dir()?.join("native-settings-request.json");
     if path.metadata().ok()?.len() > 4096 {
         return None;
     }
@@ -129,8 +126,8 @@ impl SurfacePublisher {
             is_light,
         };
         let result = (|| -> Result<(), String> {
-            let home = dirs::home_dir().ok_or("User directory unavailable")?;
-            let directory = home.join(".buddydesk").join("winisland");
+            let directory =
+                crate::core::agent::buddydesk_dir().ok_or("User directory unavailable")?;
             fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
             let temp = directory.join(format!("settings-surface-{}.tmp", std::process::id()));
             fs::write(

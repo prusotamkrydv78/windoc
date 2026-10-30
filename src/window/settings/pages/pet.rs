@@ -70,9 +70,7 @@ impl Default for PetSnapshot {
 
 impl PetSnapshot {
     pub(crate) fn read() -> (Self, Option<SystemTime>) {
-        let Some(directory) =
-            dirs::home_dir().map(|home| home.join(".buddydesk").join("winisland"))
-        else {
+        let Some(directory) = crate::core::agent::buddydesk_dir() else {
             return (Self::default(), None);
         };
         let path = directory.join("pet.json");
