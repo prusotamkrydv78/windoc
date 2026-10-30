@@ -129,16 +129,16 @@ impl LyricLine {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LyricsMode {
-    #[default]
     Online,
+    #[default]
     Lrc,
 }
 
 impl From<&str> for LyricsMode {
     fn from(value: &str) -> Self {
         match value {
-            "lrc" => Self::Lrc,
-            _ => Self::Online,
+            "online" => Self::Online,
+            _ => Self::Lrc,
         }
     }
 }

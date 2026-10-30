@@ -70,7 +70,7 @@ pub struct AppConfig {
     pub show_lyrics: bool,
     #[setting(toggle)]
     pub show_secondary_lyrics: bool,
-    #[educe(Default = "online")]
+    #[educe(Default = "lrc")]
     #[setting(choice("online" => "lyrics_mode_online", "lrc" => "lyrics_mode_lrc"))]
     pub lyrics_mode: String,
     pub lyrics_local_dir: Option<String>,
@@ -86,7 +86,6 @@ pub struct AppConfig {
     #[educe(Default = 5.0)]
     #[setting(number(min = MIN_HIDDEN_WIDTH, max = MAX_HIDDEN_WIDTH, step = 1.0))]
     pub hidden_width: f32,
-    #[educe(Default = true)]
     #[setting(toggle, label = "check_updates")]
     pub check_for_updates: bool,
     #[educe(Default = 4.0)]

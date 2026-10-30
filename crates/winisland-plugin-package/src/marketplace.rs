@@ -28,6 +28,9 @@ const CATALOG_PUBLIC_KEY: [u8; 32] = [
     0x34, 0xad, 0x10, 0x72, 0x0d, 0x4e, 0x37, 0xb9, 0x96, 0x49, 0xcf, 0x54, 0xf6, 0x31, 0xee, 0x82,
     0xe4, 0x04, 0xd1, 0x6d, 0xca, 0x9a, 0x1a, 0xf8, 0xc4, 0xe4, 0x24, 0x28, 0x0b, 0x97, 0x95, 0x5f,
 ];
+// The catalog and key above belong to upstream WinIsland; keep the marketplace off until this fork has its own.
+const MARKETPLACE_ENABLED: bool = false;
+const MARKETPLACE_DISABLED: &str = "The plugin marketplace is not available in this build";
 const MAX_CATALOG_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES: usize = 1024;
 const MAX_ICON_BYTES: usize = 4 * 1024 * 1024;
@@ -117,6 +120,9 @@ struct CatalogRevocation {
 }
 
 pub async fn load_catalog(expected_abi: u32) -> Result<MarketplaceCatalog, String> {
+    if !MARKETPLACE_ENABLED {
+        return Err(MARKETPLACE_DISABLED.into());
+    }
     let catalog_bytes = download_bytes(CATALOG_URL, MAX_CATALOG_BYTES).await?;
     let signature_bytes = download_bytes(SIGNATURE_URL, MAX_SIGNATURE_BYTES).await?;
     verify_catalog_signature(&catalog_bytes, &signature_bytes)?;
@@ -129,6 +135,9 @@ pub async fn download_plugin(
     plugin: &MarketplacePlugin,
     expected_abi: u32,
 ) -> Result<PathBuf, String> {
+    if !MARKETPLACE_ENABLED {
+        return Err(MARKETPLACE_DISABLED.into());
+    }
     validate_github_release_url(&plugin.download_url)?;
     validate_sha256(&plugin.sha256)?;
     if plugin.size == 0 || plugin.size > MAX_PACKAGE_BYTES {

@@ -52,7 +52,7 @@ pub(super) fn smtc_poll_loop(channels: WorkerChannels, cancel: CancellationToken
     log::info!("SMTC: session manager created");
     let mut enabled = *enabled_rx.borrow_and_update();
 
-    let mut current_lyrics_mode = LyricsMode::Online;
+    let mut current_lyrics_mode = LyricsMode::Lrc;
     let mut current_lyrics_source = "163".to_string();
     let mut current_lyrics_local_dir: Option<String> = None;
     let mut current_allowed_apps: Vec<String> = Vec::new();

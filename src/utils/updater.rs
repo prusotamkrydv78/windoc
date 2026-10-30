@@ -63,6 +63,8 @@ const UPDATE_URL_NIGHTLY_INSTALLER: &str = "https://github.com/WinIslandProject/
 const UPDATE_URL_STABLE_RELEASE: &str =
     "https://api.github.com/repos/WinIslandProject/WinIsland/releases/latest";
 const MAX_INSTALLER_BYTES: u64 = 256 * 1024 * 1024;
+// The URLs above belong to upstream WinIsland; keep updates off until this fork has its own release feed.
+const UPDATE_ENDPOINTS_ENABLED: bool = false;
 
 #[derive(Clone, Copy)]
 enum InstallerChannel {
@@ -213,6 +215,11 @@ pub fn check_updates_manually() {
 }
 
 async fn do_check(app_dir: &Path, manual: bool) {
+    if !UPDATE_ENDPOINTS_ENABLED {
+        log::info!("Update check skipped because no update endpoint is configured");
+        notify_check_failed(manual).await;
+        return;
+    }
     let Some(_guard) = UpdateCheckGuard::acquire() else {
         log::info!("Update check skipped because another check is already running");
         return;
