@@ -151,6 +151,7 @@ pub struct AppConfig {
     pub brightness_overlay_enabled: bool,
     #[educe(Default(expression = default_widget_layout()))]
     pub widget_layout: Vec<WidgetSlot>,
+    #[serde(deserialize_with = "widgets::deserialize_widget_sizes")]
     pub widget_sizes: Vec<WidgetSize>,
     pub plugin_widget_layout: Vec<PluginWidgetSlot>,
     pub compact_widget_layout: Vec<CompactWidgetSlot>,

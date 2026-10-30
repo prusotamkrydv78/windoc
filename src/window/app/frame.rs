@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use winisland_platform::WindowPosition;
 
-use crate::core::agent::InputSurfaceRect;
 use crate::platform::WindowRef;
 use crate::ui::compact::CompactOverlayState;
 use crate::ui::expanded::music_view::{
@@ -42,17 +41,6 @@ impl App {
             None => return,
         };
         let now = Instant::now();
-        let previous_settings_request = self.last_buddy_settings_request.clone();
-        if let Some(page) = crate::window::settings::bridge::read_settings_request(
-            &mut self.last_buddy_settings_request,
-        ) {
-            self.open_settings();
-            if let Some(settings) = self.settings.as_mut() {
-                settings.select_buddy_page(&page);
-            } else {
-                self.last_buddy_settings_request = previous_settings_request;
-            }
-        }
         if let Some(error) = self
             .renderer
             .as_mut()
@@ -74,59 +62,12 @@ impl App {
             self.geom.win_y = self.geom.configured_y;
             window.set_outer_position(WindowPosition::new(self.geom.win_x, self.geom.win_y));
         }
-        if self.topmost_check.due(now) && self.agent.input_session().is_empty() {
+        if self.topmost_check.due(now) {
             Self::enforce_overlay_window(&window);
         }
         self.handle_tray_events(&window);
         self.handle_hide_hotkey(&window, now);
         self.reload_config_if_changed(&window);
-        let companion_was_enabled = self.companion.island_enabled();
-        if self.companion.poll(now) {
-            if companion_was_enabled != self.companion.island_enabled() {
-                if !self.expanded_pages().contains(&self.current_page) {
-                    self.reset_page();
-                }
-                self.snap_to_current_page();
-            }
-            window.request_redraw();
-        }
-        let agent_poll = self.agent.poll(now);
-        let input_active = !self.agent.input_session().is_empty();
-        if input_active {
-            self.expanded = true;
-            if !self.visible {
-                self.visible = true;
-                window.set_visible(true);
-            }
-            if !self.input_was_active || self.is_hidden() {
-                self.reveal_island();
-            }
-            self.hide.fullscreen = false;
-            self.is_dragging = false;
-            self.drag_axis = None;
-            self.is_right_dragging = false;
-            self.right_press_cursor = None;
-            self.expanded_press_started_inside = false;
-            self.expanded_header_press = None;
-            self.compact_overlay.finish_volume_drag();
-            self.compact_overlay.finish_brightness_drag();
-            self.seek.active = false;
-        } else if self.input_was_active {
-            self.expanded = false;
-            self.input_rendered_session = None;
-        }
-        self.input_was_active = input_active;
-        if let Some(snapshot) = self.agent.snapshot() {
-            self.companion
-                .set_agent_status(snapshot.state(self.agent.connected()), &snapshot.label);
-        }
-        if !input_active && (agent_poll.new_reminder_id.is_some() || agent_poll.reveal_requested) {
-            self.expanded = true;
-            self.reveal_island();
-        }
-        if agent_poll.changed {
-            window.request_redraw();
-        }
         if self.is_hidden() && !self.can_hide() {
             self.reveal_island();
         }
@@ -146,7 +87,6 @@ impl App {
         self.last_update_time = now;
 
         if !self.visible {
-            self.publish_input_surface(&window, now);
             self.compact_overlay.finish_volume_drag();
             self.compact_overlay.finish_brightness_drag();
             self.audio.set_gate_override(false);
@@ -221,7 +161,7 @@ impl App {
             log::info!("Island revealed by fullscreen edge double-click");
         }
 
-        if input_active || interaction_suppressed {
+        if interaction_suppressed {
             window.set_cursor_hittest(false);
         } else {
             window.set_cursor_hittest(
@@ -239,7 +179,7 @@ impl App {
             media_is_playing,
         );
 
-        if !input_active && self.compact_overlay.is_volume_dragging() {
+        if self.compact_overlay.is_volume_dragging() {
             if self.input_pressed() && !interaction_suppressed {
                 self.update_volume_drag_position(rel_x, &layout);
             } else {
@@ -247,7 +187,7 @@ impl App {
             }
             window.request_redraw();
         }
-        if !input_active && self.compact_overlay.is_brightness_dragging() {
+        if self.compact_overlay.is_brightness_dragging() {
             if self.input_pressed() && !interaction_suppressed {
                 self.update_brightness_drag_position(rel_x, &layout);
             } else {
@@ -256,18 +196,15 @@ impl App {
             window.request_redraw();
         }
 
-        if !input_active {
-            self.update_seeking_input(&window, rel_x);
-            self.update_progress_hover(rel_x, rel_y, offset_x, island_y, music_active);
-            self.update_pager_hover(&window, rel_x, rel_y, &layout, !interaction_suppressed, dt);
-            self.update_expand_collapse_click(&window, is_hovering_visible);
-        }
+        self.update_seeking_input(&window, rel_x);
+        self.update_progress_hover(rel_x, rel_y, offset_x, island_y, music_active);
+        self.update_pager_hover(&window, rel_x, rel_y, &layout, !interaction_suppressed, dt);
+        self.update_expand_collapse_click(&window, is_hovering_visible);
         self.update_hide_drag(&window, px, py, dt);
 
         let is_paused = music_active && !media_is_playing;
         self.update_lyrics(&window, music_active, is_paused, dt);
         self.update_spring_targets(&window, music_active, is_paused, dt);
-        self.publish_input_surface(&window, now);
         self.update_compact_widget_refresh(&window, now);
 
         self.schedule_next_frame(
@@ -529,7 +466,7 @@ impl App {
         let media_is_playing = music_active && self.current_media_info().is_playing;
         let music_became_available = music_active && !self.music_page_available;
         self.set_music_page_available(music_active);
-        if music_became_available && self.expanded && self.current_page != ExpandedPage::Companion {
+        if music_became_available && self.expanded {
             self.current_page = ExpandedPage::Music;
         }
         let media = self.current_media_info();
@@ -565,11 +502,6 @@ impl App {
         music_active: bool,
         media_is_playing: bool,
     ) -> bool {
-        if !self.agent.input_session().is_empty() {
-            self.hide.auto = false;
-            self.idle_timer = Instant::now();
-            return false;
-        }
         let is_paused_idle = music_active && !media_is_playing;
         let overlay_present = !self.expanded && !self.is_hidden();
         let fullscreen_hidden = self.fullscreen_hide_active();
@@ -898,14 +830,8 @@ impl App {
         {
             let scale = self.config.compact_scale.max(f32::EPSILON);
             let has_mini_content = self.ctx_mgr.current_mini().is_some();
-            let companion_visible = self
-                .companion
-                .occupies_compact_center(has_mini_content, self.components_hidden);
-            let center_content_width = if companion_visible {
-                Some(self.config.base_width.max(100.0))
-            } else {
-                (!self.components_hidden && has_mini_content).then_some(lyric_target_w / scale)
-            };
+            let center_content_width =
+                (!self.components_hidden && has_mini_content).then_some(lyric_target_w / scale);
             crate::ui::widget::compact::target_width(
                 if self.components_hidden {
                     &[]
@@ -920,12 +846,7 @@ impl App {
         };
         let compact_content_h = self.compact_content_height();
         let default_target_h = if self.expanded {
-            (self.expanded_content_height()
-                + crate::ui::expanded::today_section::height(
-                    self.agent.snapshot(),
-                    self.agent.connected(),
-                ))
-                * self.config.expanded_scale
+            self.expanded_content_height() * self.config.expanded_scale
         } else {
             compact_content_h
         };
@@ -938,10 +859,7 @@ impl App {
         } else {
             compact_content_h / 2.0
         };
-        let (target_w, target_h, target_r) = if !self.agent.input_session().is_empty() {
-            let (width, height) = self.input_target_size();
-            (width, height, 22.0 * window.scale_factor() as f32)
-        } else if let Some(size) = self.compact_overlay.target_size(
+        let (target_w, target_h, target_r) = if let Some(size) = self.compact_overlay.target_size(
             self.config.base_width,
             self.config.base_height,
             self.config.compact_scale,
@@ -995,48 +913,6 @@ impl App {
         }
     }
 
-    pub(super) fn publish_input_surface(&mut self, window: &WindowRef, now: Instant) {
-        let input_session = self.agent.input_session();
-        let active = !input_session.is_empty();
-        let layout = self.compute_island_layout();
-        let dpi = window.scale_factor();
-        let (target_w, target_h) = self.input_target_size();
-        let (x, y, width, height) = if active {
-            (
-                layout.current_island_x,
-                layout.current_island_y,
-                self.springs.w.value,
-                self.springs.h.value,
-            )
-        } else {
-            (
-                layout.current_island_x + (self.springs.w.value - target_w) as f64 / 2.0,
-                layout.current_island_y + (self.springs.h.value - target_h) as f64 / 2.0,
-                target_w,
-                target_h,
-            )
-        };
-        let ready = active
-            && self.visible
-            && self.renderer.is_some()
-            && self.input_rendered_session.as_deref() == Some(input_session)
-            && self.springs.hide.value.abs() < 0.01
-            && (self.springs.w.value - target_w).abs() <= 2.0
-            && (self.springs.h.value - target_h).abs() <= 2.0;
-        self.input_surface.publish(
-            now,
-            input_session,
-            ready,
-            InputSurfaceRect {
-                x: self.geom.win_x + x.round() as i32,
-                y: self.geom.win_y + y.round() as i32,
-                width: width.round().max(1.0) as u32,
-                height: height.round().max(1.0) as u32,
-            },
-            dpi,
-        );
-    }
-
     fn update_compact_widget_refresh(&mut self, window: &WindowRef, now: Instant) {
         if self.expanded
             || self.components_hidden
@@ -1064,19 +940,6 @@ impl App {
     }
 
     fn schedule_next_frame(&mut self, window: &WindowRef, now: Instant, pacing: FramePacing) {
-        let companion_active = !self.is_hidden()
-            && !self.compact_overlay.is_visible()
-            && (if self.expanded {
-                self.page_visible(ExpandedPage::Companion)
-            } else {
-                !self.components_hidden && self.companion.compact_status().is_some()
-            })
-            && matches!(
-                self.companion.mood(pacing.media_is_playing),
-                crate::core::companion::PetMood::Happy
-                    | crate::core::companion::PetMood::Walk
-                    | crate::core::companion::PetMood::Thinking
-            );
         let should_periodic_redraw = self.periodic_effect_redraw_due();
         let transition_active = self.springs.any_animating()
             || self
@@ -1126,12 +989,6 @@ impl App {
             self.aligned_frame_interval(Duration::from_secs_f64(
                 1.0 / f64::from(self.config.expanded_idle_fps),
             ))
-        } else if companion_active
-            && !playback_active
-            && !dynamic_effect_active
-            && !interactive_active
-        {
-            self.aligned_frame_interval(Duration::from_millis(33))
         } else if playback_active || dynamic_effect_active {
             self.aligned_frame_interval(PLAYBACK_FRAME_INTERVAL)
         } else if interactive_active || resource_usage_active {
@@ -1148,7 +1005,6 @@ impl App {
             || dynamic_effect_active
             || interactive_active
             || should_periodic_redraw
-            || companion_active
         {
             window.request_redraw();
         }

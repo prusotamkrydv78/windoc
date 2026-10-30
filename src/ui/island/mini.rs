@@ -54,7 +54,6 @@ pub(crate) fn lyric_pair_height(font_size: f32, global_scale: f32) -> f32 {
 }
 
 pub(super) struct MiniContentParams<'a> {
-    pub(super) companion: Option<&'a crate::core::companion::Companion>,
     pub(super) painter: Painter<'a>,
     pub(super) content: Option<MiniContent<'a>>,
     pub(super) mini_alpha: f32,
@@ -87,20 +86,6 @@ pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
         return;
     }
     let Some(content) = params.content else {
-        if let Some(companion) = params.companion {
-            crate::ui::expanded::companion_view::draw_companion_mini(
-                params.painter,
-                Rect::from_xywh(
-                    params.offset_x,
-                    params.stable_offset_y,
-                    params.current_w,
-                    params.base_h,
-                ),
-                params.global_scale,
-                scaled_alpha(u8::MAX, params.mini_alpha),
-                companion,
-            );
-        }
         return;
     };
     let alpha = scaled_alpha(u8::MAX, params.mini_alpha);

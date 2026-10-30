@@ -28,7 +28,9 @@ Changes already made before the baseline build, under the safety exception in Ph
 
 - The inherited updater and plugin marketplace are disabled in code because they point at upstream WinIsland infrastructure and trust its signing key.
 - Online lyrics default to off.
-- All file-based BuddyDesk IPC is inert. The BuddyDesk modules are physically removed once the baseline compiles.
+- All BuddyDesk code has been removed: the agent bridge, companion page, Today widget, pet and BuddyDesk settings pages, `~/.buddydesk` IPC, artwork and translation keys. Saved configs that still list the removed `today` widget load without error; that entry is dropped.
+
+Development mode: this machine cannot host the build toolchain, so development continues without a compiler. Only `cargo fmt --check` runs locally. The first full build, clippy run and launch test happen on a separate machine. Keep changes mechanical and well-scoped until then. Expect a batch of compile fixes on the first build.
 
 # Product boundaries
 

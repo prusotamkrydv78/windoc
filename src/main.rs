@@ -79,9 +79,6 @@ fn main() {
 
     pollkit::set_wake_hook(platform::wake);
     let mut app = App::default();
-    if args.iter().any(|arg| arg == "--companion") {
-        app.show_companion();
-    }
     platform::window().run(&mut app).unwrap();
     if let Some(probe) = capability_probe {
         let _ = probe.join();

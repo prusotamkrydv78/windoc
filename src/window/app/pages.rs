@@ -14,7 +14,6 @@ impl App {
     pub(super) fn expanded_pages(&self) -> Vec<ExpandedPage> {
         available_pages(&PageAvailability {
             music: self.music_page_available,
-            companion: self.companion.island_enabled(),
         })
     }
 
@@ -213,27 +212,7 @@ impl App {
                 })
                 .flatten();
         let calendar_changed = crate::ui::expanded::calendar_view::set_hover(calendar_hover);
-        let companion_hover =
-            (interaction_allowed && self.expanded && self.page_focused(ExpandedPage::Companion))
-                .then(|| {
-                    crate::ui::expanded::companion_view::hit_test(
-                        Rect::from_xywh(
-                            layout.offset_x as f32 + self.page_translation(ExpandedPage::Companion),
-                            layout.island_y as f32,
-                            self.springs.w.value,
-                            (self.config.expanded_height * self.config.expanded_scale)
-                                .min(self.springs.h.value),
-                        ),
-                        self.config.expanded_scale,
-                        Point::new(rel_x as f32, rel_y as f32),
-                    )
-                })
-                .flatten();
-        let companion_changed = self.companion.set_hover(companion_hover);
-        if (self.close_hover.value, self.bar_hover.value) != before
-            || calendar_changed
-            || companion_changed
-        {
+        if (self.close_hover.value, self.bar_hover.value) != before || calendar_changed {
             window.request_redraw();
         }
     }

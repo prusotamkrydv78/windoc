@@ -67,10 +67,6 @@ pub struct LyricsParams<'a> {
 }
 
 pub struct StyleParams<'a> {
-    pub companion: &'a crate::core::companion::Companion,
-    pub agent_snapshot: Option<&'a crate::core::agent::AgentSnapshot>,
-    pub agent_connected: bool,
-    pub companion_hidden: bool,
     pub island_style: &'a str,
     pub host_backdrop: bool,
     pub use_blur: bool,
@@ -109,7 +105,6 @@ thread_local! {
 }
 
 pub struct DrawIslandParams<'a> {
-    pub input_active: bool,
     pub layout: LayoutParams,
     pub media: MediaParams<'a>,
     pub lyrics: LyricsParams<'a>,
@@ -154,10 +149,6 @@ pub fn draw_island(
     };
     draw_expanded_shadow(painter, &params, &island_path);
     draw_background_layer(painter, drawing_context, &params, rect, &island_path);
-    if params.input_active {
-        draw_island_border(painter, &params);
-        return false;
-    }
     painter.save();
     painter.clip_path(&island_path);
 
@@ -323,15 +314,7 @@ fn draw_background_layer(
         drawing_context,
         rect,
         island_path,
-        island_style: if params.input_active {
-            if params.style.host_backdrop {
-                "glass"
-            } else {
-                "agent_input"
-            }
-        } else {
-            params.style.island_style
-        },
+        island_style: params.style.island_style,
         host_backdrop: params.style.host_backdrop,
         media: params.media.media,
     });
@@ -378,26 +361,7 @@ fn draw_expanded_layer(
         plugin_widgets: style.plugin_widgets,
         plugin_frames: style.plugin_frames,
         plugin_host: style.plugin_host,
-        companion: style.companion,
     });
-    crate::ui::expanded::today_section::draw(
-        painter,
-        crate::ui::expanded::today_section::rect(
-            Rect::from_xywh(
-                layout.island_x,
-                layout.island_y,
-                layout.current_w,
-                layout.current_h,
-            ),
-            original_h,
-            layout.expanded_scale,
-            crate::ui::expanded::today_section::height(style.agent_snapshot, style.agent_connected),
-        ),
-        layout.expanded_scale,
-        (alpha.clamp(0.0, 1.0) * 255.0) as u8,
-        style.agent_snapshot,
-        style.agent_connected,
-    );
     widget_animating
 }
 
@@ -411,16 +375,12 @@ fn draw_compact_layer(
     let layout = &params.layout;
     let lyrics = &params.lyrics;
     let style = &params.style;
-    let companion_status = !style.companion_hidden && style.companion.compact_status().is_some();
-    let show_companion = style
-        .companion
-        .occupies_compact_center(params.mini_content.is_some(), style.companion_hidden);
-    let has_mini_content = params.mini_content.is_some() || show_companion;
+    let has_mini_content = params.mini_content.is_some();
     let center_occupied = crate::ui::widget::compact::has_center_widget(
         style.compact_widget_layout,
         has_mini_content,
     );
-    let visible_mini_content = if center_occupied || companion_status {
+    let visible_mini_content = if center_occupied {
         None
     } else {
         params.mini_content
@@ -433,7 +393,6 @@ fn draw_compact_layer(
     let left_extension = left_extension * layout.compact_scale;
     let right_extension = right_extension * layout.compact_scale;
     draw_mini_content(MiniContentParams {
-        companion: (show_companion && !center_occupied).then_some(style.companion),
         painter,
         content: visible_mini_content,
         mini_alpha: alpha,
@@ -509,7 +468,7 @@ fn draw_pager(
 
 fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
     let layout = &params.layout;
-    let solid_style = !params.input_active && params.style.island_style == SOLID_STYLE;
+    let solid_style = params.style.island_style == SOLID_STYLE;
     let alpha = if solid_style {
         SOLID_BORDER_ALPHA
     } else {

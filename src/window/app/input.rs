@@ -5,7 +5,6 @@ use crate::ui::expanded::music_view::{
     get_progress_bar_rect, trigger_cover_flip, trigger_next_click, trigger_pause_click,
     trigger_prev_click,
 };
-use crate::ui::expanded::today_section::{self, TodayHit};
 use crate::ui::widget::expanded::{widget_corner_radius, widget_grid_layout};
 use crate::utils::mouse::{
     double_click_interval, is_point_in_continuous_rounded_rect, is_point_in_rect,
@@ -30,9 +29,6 @@ impl App {
         py: i32,
         source: InputSource,
     ) {
-        if !self.agent.input_session().is_empty() {
-            return;
-        }
         let fullscreen_suppressed = self.fullscreen_hide_active() && !self.hide.overlay_reveal;
         if fullscreen_suppressed || (source == InputSource::Mouse && self.is_cursor_suppressed) {
             return;
@@ -51,37 +47,6 @@ impl App {
     }
 
     pub(super) fn handle_right_input(&mut self, state: InputState, px: i32, py: i32) {
-        if !self.agent.input_session().is_empty() {
-            return;
-        }
-        if self.expanded && self.page_focused(ExpandedPage::Companion) && !self.is_cursor_suppressed
-        {
-            let layout = self.compute_island_layout();
-            let action = crate::ui::expanded::companion_view::hit_test(
-                winisland_render::Rect::from_xywh(
-                    layout.offset_x as f32 + self.page_translation(ExpandedPage::Companion),
-                    layout.island_y as f32,
-                    self.springs.w.value,
-                    (self.expanded_content_height() * self.config.expanded_scale)
-                        .min(self.springs.h.value),
-                ),
-                self.config.expanded_scale,
-                winisland_render::Point::new(
-                    (px - self.geom.win_x) as f32,
-                    (py - self.geom.win_y) as f32,
-                ),
-            );
-            if action == Some(crate::core::companion::CompanionAction::Pet) {
-                if state == InputState::Released {
-                    self.companion
-                        .act(crate::core::companion::CompanionAction::Sleep);
-                    if let Some(window) = &self.window {
-                        window.request_redraw();
-                    }
-                }
-                return;
-            }
-        }
         if !self.config.right_click_drag
             || self.expanded
             || self.is_cursor_suppressed
@@ -212,66 +177,10 @@ impl App {
             if self.handle_pager_press(rel_x, rel_y, layout) {
                 return;
             }
-            let today_area = today_section::rect(
-                winisland_render::Rect::from_xywh(
-                    layout.current_island_x as f32,
-                    layout.current_island_y as f32,
-                    self.springs.w.value,
-                    self.springs.h.value,
-                ),
-                (self.expanded_content_height() * self.config.expanded_scale)
-                    .min(self.springs.h.value),
-                self.config.expanded_scale,
-                today_section::height(self.agent.snapshot(), self.agent.connected()),
-            );
-            let point = winisland_render::Point::new(rel_x as f32, rel_y as f32);
-            if today_area.contains(point) {
-                if let Some(hit) = today_section::hit_test(
-                    today_area,
-                    self.config.expanded_scale,
-                    self.agent.snapshot(),
-                    self.agent.connected(),
-                    point,
-                ) {
-                    let command = match hit {
-                        TodayHit::Complete(index) => self.agent.snapshot().and_then(|snapshot| snapshot.tasks.get(index)).map(|task| (if task.status == crate::core::agent::TaskStatus::Done { "task_reopen" } else { "task_complete" }, serde_json::json!({"task_id": task.id}))),
-                        TodayHit::Detail(index) => self.agent.snapshot().and_then(|snapshot| snapshot.tasks.get(index)).map(|task| ("task_detail", serde_json::json!({"task_id": task.id}))),
-                        TodayHit::More => Some(("open_tasks", serde_json::json!({}))),
-                        TodayHit::ReminderComplete => self.agent.snapshot().map(|snapshot| ("reminder_complete", serde_json::json!({"reminder_id": snapshot.reminder_id}))),
-                        TodayHit::ReminderSnooze => self.agent.snapshot().map(|snapshot| ("reminder_snooze", serde_json::json!({"reminder_id": snapshot.reminder_id, "minutes": 10}))),
-                        TodayHit::ReminderDismiss => self.agent.snapshot().map(|snapshot| ("reminder_dismiss", serde_json::json!({"reminder_id": snapshot.reminder_id}))),
-                    };
-                    if let Some((action, args)) = command
-                        && let Err(error) = self.agent.send_command(action, args)
-                    {
-                        log::warn!("Cannot send today action: {error}");
-                    }
-                }
-                return;
-            }
             let w = self.springs.w.value as f64;
             let h = (self.expanded_content_height() * self.config.expanded_scale)
                 .min(self.springs.h.value) as f64;
             let scale = self.config.expanded_scale as f64;
-
-            if self.page_focused(ExpandedPage::Companion)
-                && let Some(action) = crate::ui::expanded::companion_view::hit_test(
-                    winisland_render::Rect::from_xywh(
-                        offset_x as f32 + self.page_translation(ExpandedPage::Companion),
-                        island_y as f32,
-                        w as f32,
-                        h as f32,
-                    ),
-                    self.config.expanded_scale,
-                    winisland_render::Point::new(rel_x as f32, rel_y as f32),
-                )
-            {
-                self.companion.act(action);
-                if let Some(window) = &self.window {
-                    window.request_redraw();
-                }
-                return;
-            }
 
             if self.page_focused(ExpandedPage::Music) {
                 let media = self.current_media_info().clone();
@@ -595,15 +504,5 @@ impl App {
             self.snap_to_current_page();
         }
         self.expanded = true;
-    }
-
-    pub fn show_companion(&mut self) {
-        self.expanded = true;
-        if self.companion.island_enabled() {
-            self.current_page = ExpandedPage::Companion;
-        } else {
-            self.reset_page();
-        }
-        self.snap_to_current_page();
     }
 }

@@ -21,7 +21,6 @@ use winisland_plugin_host::host::PluginHost;
 use winisland_plugin_package::marketplace::{MarketplaceCatalog, MarketplacePlugin};
 use winisland_render::{Renderer, RendererTargetId};
 
-pub mod bridge;
 pub mod input;
 pub mod items;
 pub mod pages;
@@ -38,15 +37,11 @@ pub(crate) const SIDEBAR_W: f32 = 184.0;
 pub(crate) const SIDEBAR_ROW_H: f32 = 34.0;
 pub(crate) const SIDEBAR_ROW_GAP: f32 = 2.0;
 pub(crate) const SIDEBAR_START_Y: f32 = 64.0;
-pub(crate) const BUILTIN_SIDEBAR_PAGE_COUNT: usize = 9;
+pub(crate) const BUILTIN_SIDEBAR_PAGE_COUNT: usize = 5;
 pub(crate) const GENERAL_PAGE_INDEX: usize = 0;
 pub(crate) const WIDGETS_PAGE_INDEX: usize = 2;
 pub(crate) const PLUGINS_PAGE_INDEX: usize = 3;
-pub(crate) const CONNECTION_PAGE_INDEX: usize = 4;
-pub(crate) const VOICE_PAGE_INDEX: usize = 5;
-pub(crate) const PREFERENCES_PAGE_INDEX: usize = 6;
-pub(crate) const PET_PAGE_INDEX: usize = 7;
-pub(crate) const PLUGIN_SETTINGS_START_INDEX: usize = 8;
+pub(crate) const PLUGIN_SETTINGS_START_INDEX: usize = 4;
 pub(crate) const PAGE_NAV_X: f32 = SIDEBAR_W + 18.0;
 pub(crate) const PAGE_NAV_Y: f32 = 18.0;
 pub(crate) const PAGE_NAV_WIDTH: f32 = 34.0;
@@ -187,16 +182,10 @@ pub(crate) enum MarketplaceViewState {
 }
 
 pub struct SettingsApp {
-    pub(crate) settings_surface: bridge::SurfacePublisher,
     pub(crate) window: Option<WindowRef>,
     pub(crate) renderer_target: Option<RendererTargetId>,
     pub(crate) config: AppConfig,
     pub(crate) active_page: usize,
-    pub(crate) pet_snapshot: pages::pet::PetSnapshot,
-    pub(crate) pet_last_modified: Option<std::time::SystemTime>,
-    pub(crate) pet_next_refresh: Instant,
-    pub(crate) pet_pending_until: Option<Instant>,
-    pub(crate) pet_feedback: Option<String>,
     pub(crate) page_history: Vec<usize>,
     pub(crate) page_history_index: usize,
     pub(crate) switch_anim: SwitchAnimator,
@@ -329,10 +318,6 @@ impl SettingsApp {
             1 => winisland_core::i18n::tr("tab_music"),
             2 => winisland_core::i18n::tr("tab_widgets"),
             3 => winisland_core::i18n::tr("tab_plugins"),
-            CONNECTION_PAGE_INDEX => winisland_core::i18n::tr("tab_buddy_connection"),
-            VOICE_PAGE_INDEX => winisland_core::i18n::tr("tab_buddy_voice"),
-            PREFERENCES_PAGE_INDEX => winisland_core::i18n::tr("tab_buddy_preferences"),
-            PET_PAGE_INDEX => winisland_core::i18n::tr("tab_pet"),
             page if page == self.about_page_index() => winisland_core::i18n::tr("tab_about"),
             _ => self
                 .active_plugin_settings_page()
@@ -356,19 +341,12 @@ impl SettingsApp {
             config.resource_widget_rows,
         );
         let switch_anim = SwitchAnimator::new(&[]);
-        let (pet_snapshot, pet_last_modified) = pages::pet::PetSnapshot::read();
         let detected_apps = config.smtc_known_apps.clone();
         Self {
-            settings_surface: bridge::SurfacePublisher::default(),
             window: None,
             renderer_target: None,
             config,
             active_page: GENERAL_PAGE_INDEX,
-            pet_snapshot,
-            pet_last_modified,
-            pet_next_refresh: Instant::now(),
-            pet_pending_until: None,
-            pet_feedback: None,
             page_history: vec![0],
             page_history_index: 0,
             switch_anim,
@@ -1212,19 +1190,12 @@ impl SettingsApp {
     }
 
     pub(crate) fn update(&mut self) -> Option<Instant> {
-        let buddy_page = self.buddy_page();
-        let surface_window = self.window.filter(|_| self.renderer_target.is_some());
-        self.settings_surface
-            .publish(surface_window, buddy_page, self.is_light, Instant::now());
         let window = self.window.as_ref()?;
         if window.is_minimized() == Some(true) {
             return None;
         }
 
         self.frame_count += 1;
-        if self.active_page == PET_PAGE_INDEX {
-            self.refresh_pet_snapshot(Instant::now());
-        }
         self.poll_detected_apps();
         self.poll_plugin_inventory();
         if self.frame_count.is_multiple_of(120) {
@@ -1247,17 +1218,7 @@ impl SettingsApp {
             is_widget_dragging,
             is_number_input_active,
         ) {
-            return if buddy_page.is_some() {
-                Some(if self.active_page == PET_PAGE_INDEX {
-                    self.settings_surface
-                        .next_publish
-                        .min(self.pet_next_refresh)
-                } else {
-                    self.settings_surface.next_publish
-                })
-            } else {
-                None
-            };
+            return None;
         }
 
         let now = Instant::now();
@@ -1376,9 +1337,6 @@ impl SettingsApp {
 
     pub(crate) fn close(&mut self) -> Option<RendererTargetId> {
         self.cancel_widget_resize();
-        self.settings_surface.next_publish = Instant::now();
-        self.settings_surface
-            .publish(None, None, self.is_light, Instant::now());
         self.commit_number_input();
         self.popup = None;
         self.widget_dragging = None;

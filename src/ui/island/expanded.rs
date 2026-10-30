@@ -10,7 +10,6 @@ use winisland_plugin_host::host::PluginHost;
 use winisland_render::{BlurSpec, LayerSpec, Painter, Rect, Rgba, Vec2};
 
 pub(super) struct ExpandedContentParams<'a> {
-    pub(super) companion: &'a crate::core::companion::Companion,
     pub(super) painter: Painter<'a>,
     pub(super) blur_filter: Option<BlurSpec>,
     pub(super) expanded_alpha: f32,
@@ -43,7 +42,6 @@ pub(super) struct ExpandedContentParams<'a> {
 
 pub(super) fn draw_expanded_content(params: ExpandedContentParams<'_>) -> bool {
     let ExpandedContentParams {
-        companion,
         painter,
         blur_filter,
         expanded_alpha: expanded_alpha_f,
@@ -86,25 +84,11 @@ pub(super) fn draw_expanded_content(params: ExpandedContentParams<'_>) -> bool {
             }
             painter.save();
             painter.translate(Vec2::new(distance * current_w, 0.0));
-            let page_blur = blur_filter.filter(|_| *page != ExpandedPage::Companion);
+            let page_blur = blur_filter;
             if let Some(filter) = page_blur {
                 painter.begin_layer(LayerSpec::Blur(filter));
             }
             match page {
-                ExpandedPage::Companion => {
-                    widget_animating |= crate::ui::expanded::companion_view::draw_companion_page(
-                        crate::ui::expanded::companion_view::CompanionPageParams {
-                            painter,
-                            rect: winisland_render::Rect::from_xywh(
-                                offset_x, offset_y, current_w, current_h,
-                            ),
-                            scale: global_scale,
-                            alpha,
-                            companion,
-                            playing: media.is_playing,
-                        },
-                    );
-                }
                 ExpandedPage::Music => draw_music_page(DrawMusicPageParams {
                     painter,
                     ox: offset_x,

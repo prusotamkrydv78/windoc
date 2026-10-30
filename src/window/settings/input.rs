@@ -6,8 +6,8 @@ use winisland_render::{Point, Rect};
 use super::pages::PageInput;
 use super::{
     NumberInput, NumberInputHandler, PAGE_NAV_GAP, PAGE_NAV_HEIGHT, PAGE_NAV_WIDTH, PAGE_NAV_X,
-    PAGE_NAV_Y, PET_PAGE_INDEX, PLUGINS_PAGE_INDEX, POPUP_OPACITY_KEY, PageNavigation,
-    SETTINGS_HEADER_H, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
+    PAGE_NAV_Y, PLUGINS_PAGE_INDEX, POPUP_OPACITY_KEY, PageNavigation, SETTINGS_HEADER_H,
+    SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
 };
 
 impl SettingsApp {
@@ -37,7 +37,7 @@ impl SettingsApp {
             self.anim.set_with_speed(POPUP_OPACITY_KEY, 0.0, 0.3);
             if let Some((on_select, value)) = selection {
                 on_select(self, &value);
-                if !plugin_setting && self.active_page != PET_PAGE_INDEX {
+                if !plugin_setting {
                     self.persist_settings_change();
                 }
             } else {
@@ -87,10 +87,6 @@ impl SettingsApp {
                 }
             }
             3 => self.handle_plugin_click(),
-            super::CONNECTION_PAGE_INDEX
-            | super::VOICE_PAGE_INDEX
-            | super::PREFERENCES_PAGE_INDEX => {}
-            PET_PAGE_INDEX => self.handle_pet_click(input),
             page if page == self.about_page_index() => self.handle_about_click(input),
             _ => self.handle_plugin_settings_click(input),
         }

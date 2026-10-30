@@ -10,7 +10,6 @@ pub enum WidgetKind {
     Settings,
     Network,
     Storage,
-    Today,
 }
 
 impl WidgetKind {
@@ -30,17 +29,15 @@ impl WidgetKind {
             Self::Settings => 3,
             Self::Network => 4,
             Self::Storage => 5,
-            Self::Today => 6,
         }
     }
 }
 
-static WIDGET_SPANS: [AtomicU8; 7] = [
+static WIDGET_SPANS: [AtomicU8; 6] = [
     AtomicU8::new(0x22),
     AtomicU8::new(0x22),
     AtomicU8::new(0x22),
     AtomicU8::new(0x11),
-    AtomicU8::new(0x21),
     AtomicU8::new(0x21),
     AtomicU8::new(0x21),
 ];
@@ -288,16 +285,45 @@ where
     D: serde::Deserializer<'de>,
 {
     let raw = Option::<String>::deserialize(deserializer)?;
-    Ok(raw.and_then(|s| match s.as_str() {
+    Ok(raw.and_then(|s| parse_widget_kind(&s)))
+}
+
+fn parse_widget_kind(value: &str) -> Option<WidgetKind> {
+    match value {
         "clock" => Some(WidgetKind::Clock),
         "calendar" => Some(WidgetKind::Calendar),
         "resource_usage" => Some(WidgetKind::ResourceUsage),
         "settings" => Some(WidgetKind::Settings),
         "network" => Some(WidgetKind::Network),
         "storage" => Some(WidgetKind::Storage),
-        "today" => Some(WidgetKind::Today),
         _ => None,
-    }))
+    }
+}
+
+/// Drops entries for widget kinds that no longer exist (such as the removed `today`)
+/// instead of failing the whole config.
+pub(super) fn deserialize_widget_sizes<'de, D>(deserializer: D) -> Result<Vec<WidgetSize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct RawWidgetSize {
+        widget: String,
+        columns: usize,
+        rows: usize,
+    }
+
+    let raw = Vec::<RawWidgetSize>::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|entry| {
+            parse_widget_kind(&entry.widget).map(|widget| WidgetSize {
+                widget,
+                columns: entry.columns,
+                rows: entry.rows,
+            })
+        })
+        .collect())
 }
 
 fn deserialize_compact_widget_kind<'de, D>(
@@ -317,13 +343,12 @@ where
 pub const WIDGET_GRID_COLS: usize = 6;
 pub const WIDGET_GRID_ROWS: usize = 4;
 pub const WIDGET_GRID_SLOTS: usize = WIDGET_GRID_COLS * WIDGET_GRID_ROWS;
-pub const AVAILABLE_WIDGETS: [WidgetKind; 6] = [
+pub const AVAILABLE_WIDGETS: [WidgetKind; 5] = [
     WidgetKind::Clock,
     WidgetKind::Calendar,
     WidgetKind::ResourceUsage,
     WidgetKind::Network,
     WidgetKind::Storage,
-    WidgetKind::Today,
 ];
 pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 2] =
     [CompactWidgetKind::Time, CompactWidgetKind::ResourceUsage];

@@ -443,7 +443,7 @@ fn draw_library_tile(
                 WidgetKind::Calendar => (60.0, 60.0),
                 WidgetKind::ResourceUsage => (98.0, 46.0),
                 WidgetKind::Settings => (54.0, 54.0),
-                WidgetKind::Network | WidgetKind::Storage | WidgetKind::Today => (98.0, 46.0),
+                WidgetKind::Network | WidgetKind::Storage => (98.0, 46.0),
             };
             draw_mini_card(
                 painter,

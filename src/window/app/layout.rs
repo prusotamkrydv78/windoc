@@ -11,11 +11,7 @@ use super::{App, DEFAULT_ANIMATION_REFRESH_RATE_MILLIHERTZ, IslandLayout};
 
 impl App {
     pub(super) fn expanded_content_height(&self) -> f32 {
-        if self.current_page == crate::ui::expanded::pager::ExpandedPage::Companion {
-            self.config.expanded_height.min(200.0)
-        } else {
-            self.config.expanded_height
-        }
+        self.config.expanded_height
     }
 
     pub(super) fn required_window_size(&self) -> WindowSize {
@@ -38,24 +34,12 @@ impl App {
         };
         let width = compact_width
             .max(compact_overlay.width)
-            .max(self.config.expanded_width * expanded_scale)
-            .max(self.input_target_size().0);
-        let height = compact_lyric_height
-            .max(compact_overlay.height)
-            .max(
-                (self.config.expanded_height
-                    + crate::ui::expanded::today_section::MAX_HEIGHT
-                    + crate::ui::expanded::pager::PAGER_EXTENT)
-                    * expanded_scale,
-            )
-            .max(self.input_target_size().1);
+            .max(self.config.expanded_width * expanded_scale);
+        let height = compact_lyric_height.max(compact_overlay.height).max(
+            (self.config.expanded_height + crate::ui::expanded::pager::PAGER_EXTENT)
+                * expanded_scale,
+        );
         WindowSize::new((width + PADDING) as u32, (height + PADDING) as u32)
-    }
-
-    pub(super) fn input_target_size(&self) -> (f32, f32) {
-        let dpi = self.window.map_or(1.0, |window| window.scale_factor()) as f32;
-        let (width, height) = self.agent.input_size();
-        (width * dpi, height * dpi)
     }
 
     pub(super) fn get_target_monitor(window: &WindowRef, monitor_index: i32) -> Option<MonitorRef> {
@@ -159,12 +143,7 @@ impl App {
         let expanded_scale = self.config.expanded_scale as f64;
         let base_half_h = self.config.base_height as f64 * compact_scale / 2.0;
         let expanded_half_w = self.config.expanded_width as f64 * expanded_scale / 2.0;
-        let expanded_h = (self.expanded_content_height()
-            + crate::ui::expanded::today_section::height(
-                self.agent.snapshot(),
-                self.agent.connected(),
-            )) as f64
-            * expanded_scale;
+        let expanded_h = self.expanded_content_height() as f64 * expanded_scale;
         let horizontal = if center_x - expanded_half_w <= mon_pos.x as f64 {
             -1
         } else if center_x + expanded_half_w >= (mon_pos.x as f64 + f64::from(mon_size.width)) {
@@ -269,9 +248,6 @@ impl App {
     }
 
     pub(super) fn can_hide(&self) -> bool {
-        if !self.agent.input_session().is_empty() {
-            return false;
-        }
         let edge_size = self.springs.h.value as f64;
         edge_size - self.hidden_visible_height() > f64::EPSILON
     }

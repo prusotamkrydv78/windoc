@@ -17,20 +17,17 @@ use super::{
     WINDOW_CONTROL_CENTERS, WINDOW_CONTROL_RADIUS,
 };
 
-const SIDEBAR_ICON_BYTES: [&[u8]; 9] = [
+const ABOUT_ICON_INDEX: usize = 4;
+const SIDEBAR_ICON_BYTES: [&[u8]; 5] = [
     include_bytes!("../../../resources/in_app/settings/settings.png"),
     include_bytes!("../../../resources/in_app/settings/music.png"),
     include_bytes!("../../../resources/in_app/settings/widget.png"),
     include_bytes!("../../../resources/in_app/settings/plugin.png"),
-    include_bytes!("../../../resources/in_app/settings/plugin.png"),
-    include_bytes!("../../../resources/in_app/settings/music.png"),
-    include_bytes!("../../../resources/in_app/settings/settings.png"),
-    include_bytes!("../../../resources/buddydesk-cat.png"),
     include_bytes!("../../../resources/in_app/settings/about.png"),
 ];
 
 thread_local! {
-    static SIDEBAR_ICONS: RefCell<Option<[Image; 9]>> = const { RefCell::new(None) };
+    static SIDEBAR_ICONS: RefCell<Option<[Image; 5]>> = const { RefCell::new(None) };
     static PLUGIN_SETTINGS_ICONS: RefCell<HashMap<u64, Image>> = RefCell::new(HashMap::new());
 }
 
@@ -272,10 +269,6 @@ impl SettingsApp {
             tr("tab_music"),
             tr("tab_widgets"),
             tr("tab_plugins"),
-            tr("tab_buddy_connection"),
-            tr("tab_buddy_voice"),
-            tr("tab_buddy_preferences"),
-            tr("tab_pet"),
         ];
         for (index, label) in pages.iter().enumerate() {
             let row_y = SIDEBAR_START_Y + index as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
@@ -346,7 +339,7 @@ impl SettingsApp {
         let row_y = self.sidebar_about_y();
         let text_color = draw_sidebar_row_background(self, painter, theme, index, row_y);
         let icon_rect = Rect::from_xywh(SIDEBAR_PAD + 7.0, row_y + 6.0, 22.0, 22.0);
-        draw_sidebar_icon(drawing_context, painter, 8, icon_rect);
+        draw_sidebar_icon(drawing_context, painter, ABOUT_ICON_INDEX, icon_rect);
         SettingsPainter::new(painter).text(
             &tr("tab_about"),
             (SIDEBAR_PAD + 36.0, row_y + 22.0),

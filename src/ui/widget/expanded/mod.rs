@@ -147,7 +147,6 @@ pub fn widget_animates(kind: WidgetKind) -> bool {
             | WidgetKind::ResourceUsage
             | WidgetKind::Network
             | WidgetKind::Storage
-            | WidgetKind::Today
     )
 }
 
@@ -174,7 +173,7 @@ pub fn draw_widget(
         WidgetKind::Settings => {
             settings::draw_settings_widget(painter, x, y, w, h, scale, alpha, text_color)
         }
-        WidgetKind::Network | WidgetKind::Storage | WidgetKind::Today => summary::draw_summary(
+        WidgetKind::Network | WidgetKind::Storage => summary::draw_summary(
             painter,
             kind,
             Rect::from_xywh(x, y, w, h),
@@ -198,10 +197,7 @@ pub fn draw_widget_preview(
     alpha: u8,
     text_color: Rgba,
 ) {
-    if matches!(
-        kind,
-        WidgetKind::Network | WidgetKind::Storage | WidgetKind::Today
-    ) {
+    if matches!(kind, WidgetKind::Network | WidgetKind::Storage) {
         summary::draw_summary(
             painter,
             kind,
