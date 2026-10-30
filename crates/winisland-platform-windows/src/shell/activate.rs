@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use windows::Win32::Foundation::{HANDLE, HWND, LPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::Com::{CLSCTX_LOCAL_SERVER, CoCreateInstance};
-use windows::Win32::System::Threading::{PROCESS_NAME_WIN32, QueryFullProcessImageNameW};
 use windows::Win32::UI::Shell::{
     ACTIVATEOPTIONS, ApplicationActivationManager, IApplicationActivationManager,
 };
@@ -10,7 +9,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GW_OWNER, GetWindow, GetWindowThreadProcessId, IsWindowVisible, SW_RESTORE,
     SetForegroundWindow, ShowWindow,
 };
-use windows::core::{BOOL, HSTRING, PCWSTR, PWSTR};
+use windows::core::{BOOL, HSTRING, PCWSTR};
 use winisland_platform::PlatformError;
 
 use crate::com::ComGuard;
@@ -105,7 +104,7 @@ unsafe extern "system" fn find_media_window(hwnd: HWND, lparam: LPARAM) -> BOOL 
     };
     let matches = process::app_user_model_id(*process)
         .is_some_and(|id| id.eq_ignore_ascii_case(&search.source_app_id))
-        || process_executable_name(*process)
+        || process::executable_name(*process)
             .is_some_and(|name| name.eq_ignore_ascii_case(&search.executable_name));
     if matches {
         search.window = Some(hwnd);
@@ -113,23 +112,4 @@ unsafe extern "system" fn find_media_window(hwnd: HWND, lparam: LPARAM) -> BOOL 
     } else {
         true.into()
     }
-}
-
-fn process_executable_name(process: HANDLE) -> Option<String> {
-    let mut buffer = vec![0u16; 32_768];
-    let mut length = buffer.len() as u32;
-    // SAFETY: The buffer is writable for length UTF-16 code units.
-    unsafe {
-        QueryFullProcessImageNameW(
-            process,
-            PROCESS_NAME_WIN32,
-            PWSTR(buffer.as_mut_ptr()),
-            &mut length,
-        )
-    }
-    .ok()?;
-    let path = String::from_utf16_lossy(&buffer[..length as usize]);
-    Path::new(&path)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
 }

@@ -1,7 +1,31 @@
+use std::path::Path;
+
 use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, HANDLE};
 use windows::Win32::Storage::Packaging::Appx::GetApplicationUserModelId;
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+use windows::Win32::System::Threading::{
+    OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+};
 use windows::core::{Owned, PWSTR};
+
+/// File name of the process image, such as `Code.exe`.
+pub(crate) fn executable_name(process: HANDLE) -> Option<String> {
+    let mut buffer = vec![0u16; 32_768];
+    let mut length = buffer.len() as u32;
+    // SAFETY: The buffer is writable for length UTF-16 code units.
+    unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        )
+    }
+    .ok()?;
+    let path = String::from_utf16_lossy(&buffer[..length as usize]);
+    Path::new(&path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+}
 
 pub(crate) fn open(process_id: u32) -> Option<Owned<HANDLE>> {
     // SAFETY: The requested access only queries identity, and the new handle is owned by the guard.
