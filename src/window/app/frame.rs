@@ -55,6 +55,14 @@ impl App {
         if crate::ui::dashboard::poll(now).is_some() {
             window.request_redraw();
         }
+        self.screen_time
+            .apply_settings(crate::core::screen_time::settings_for(&self.config), now);
+        self.screen_time.poll(now);
+        crate::ui::dashboard::set_screen_time_total(self.config.screen_time_enabled.then(|| {
+            self.screen_time
+                .today(now)
+                .map_or(Duration::ZERO, |day| day.total)
+        }));
         if self
             .geom
             .position_restore_after

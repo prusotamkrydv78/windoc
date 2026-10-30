@@ -7,10 +7,13 @@
 use std::cell::RefCell;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_SYSTEM_FOREGROUND, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
     GetWindowThreadProcessId, MSG, PM_NOREMOVE, PeekMessageW, PostThreadMessageW,
@@ -187,4 +190,22 @@ fn window_title(hwnd: HWND) -> Option<String> {
     let title = String::from_utf16_lossy(&buffer[..copied.min(buffer.len())]);
     let title = title.trim();
     (!title.is_empty()).then(|| title.to_string())
+}
+
+/// Time since the last keyboard or mouse input in this session.
+pub fn input_idle_duration() -> Option<Duration> {
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    // SAFETY: `info` is a valid, correctly sized LASTINPUTINFO.
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return None;
+    }
+    // SAFETY: Reading the tick count has no preconditions.
+    let now = unsafe { GetTickCount() };
+    // Both values wrap every ~49.7 days; wrapping subtraction keeps the difference right.
+    Some(Duration::from_millis(u64::from(
+        now.wrapping_sub(info.dwTime),
+    )))
 }

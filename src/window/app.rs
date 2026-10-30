@@ -68,6 +68,7 @@ pub struct App {
     tray_installed: bool,
     smtc: SmtcListener,
     audio: AudioProcessor,
+    screen_time: crate::core::screen_time::ScreenTimeService,
     compact_overlay: CompactOverlay,
     config: AppConfig,
     expanded: bool,
@@ -208,6 +209,9 @@ impl Default for App {
                 plugin_host.as_ref().map(|host| host.lyrics_bridge()),
             ),
             audio: AudioProcessor::new(),
+            screen_time: crate::core::screen_time::ScreenTimeService::load(
+                crate::core::screen_time::settings_for(&config),
+            ),
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,
                 config.brightness_overlay_enabled,

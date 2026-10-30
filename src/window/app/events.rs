@@ -554,6 +554,7 @@ impl AppHandler for App {
     }
 
     fn on_exit(&mut self) {
+        self.screen_time.shutdown(Instant::now());
         self.close_settings();
         if let Some(window_ref) = self.window.take() {
             window().release_host_backdrop(window_ref.id());

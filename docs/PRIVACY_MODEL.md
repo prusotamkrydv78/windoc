@@ -12,7 +12,8 @@ This document describes what the **current code** stores, observes and sends. It
 | `~/.winisland/.crash_flag`, `.crash_plugin` | Crash markers used to disable a crashing plugin | Startup and after a crash |
 | `%APPDATA%\WinIsland\plugins\` | Installed native plugins, their manifests and per-plugin key-value stores (`<plugin>/store/`) | Plugin install; plugins writing their store |
 | `%LOCALAPPDATA%\WinIsland\PluginMarketplace\` | Marketplace catalog and icon cache | Only if the marketplace is enabled (it is disabled in this build) |
-| Focus timer state | Not stored | **Planned:** `~/.winisland/focus.json` snapshot of timer kind, phase and elapsed time |
+| `~/.winisland/focus.json` | Focus timer kind, phase, elapsed time and save time | Each timer state change |
+| `~/.winisland/screen_time.json` | Per-day active time by app executable (titles only if enabled), category rules | Every 5 minutes while tracking, on settings change and on exit |
 
 No clipboard, notes, screen-time, location or credential data is collected by the current code.
 
@@ -24,6 +25,7 @@ No clipboard, notes, screen-time, location or credential data is collected by th
 | Audio loopback (WASAPI) | Audio samples from the playing app, converted to a spectrum in memory | Off by default (`audio_visualizer_enabled`). When enabled, active only while music plays; analysis pauses while the island is hidden | Never; samples are not stored |
 | Windows notifications (`UserNotificationListener`) | Notification content shown in the island | Off (`notification_display` is false by default) and requires Windows permission | Never |
 | Foreground and fullscreen state | Whether a fullscreen app is active | On, for auto-hide | Never |
+| Screen time (`EVENT_SYSTEM_FOREGROUND` hook, input idle time) | Foreground app executable and active duration per day; window titles only if `screen_time_titles` is on | Off by default (`screen_time_enabled`); stored in `screen_time.json` for 7 days | Never |
 | System metrics | CPU, memory, disk and network rates for widgets | Only while those widgets are shown | Never |
 
 ## Network access

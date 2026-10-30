@@ -69,6 +69,12 @@ pub struct AppConfig {
     /// starts only after the user opts in.
     #[setting(toggle, label = "audio_visualizer")]
     pub audio_visualizer_enabled: bool,
+    /// Records which apps are in the foreground, stored only on this PC. Off by default.
+    #[setting(toggle, label = "screen_time_enabled")]
+    pub screen_time_enabled: bool,
+    /// Also stores window titles for screen time. Off by default.
+    #[setting(toggle, label = "screen_time_titles")]
+    pub screen_time_titles: bool,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

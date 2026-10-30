@@ -10,7 +10,7 @@
 pub mod layout;
 pub mod sample;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use winisland_core::i18n::tr;
 use winisland_render::tokens::{ColorScheme, SemanticColors, SizeClass, radius, space, typography};
@@ -99,7 +99,29 @@ fn format_clock(duration: Duration, round_up: bool) -> String {
     }
 }
 
+thread_local! {
+    /// Today's active time, or `None` while screen time tracking is off.
+    static SCREEN_TIME_TOTAL: Cell<Option<Duration>> = const { Cell::new(None) };
+}
+
+/// Publishes today's screen time for the Home card. `None` means tracking is off.
+pub fn set_screen_time_total(total: Option<Duration>) {
+    SCREEN_TIME_TOTAL.with(|cell| cell.set(total));
+}
+
 fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
+    if card.kind == CardKind::ScreenTime {
+        return match SCREEN_TIME_TOTAL.with(Cell::get) {
+            Some(total) => {
+                let minutes = total.as_secs() / 60;
+                (
+                    format!("{}:{:02}", minutes / 60, minutes % 60),
+                    tr(card.detail_key),
+                )
+            }
+            None => (tr("card_off"), tr("screen_time_turn_on")),
+        };
+    }
     match (card.kind, focus) {
         (CardKind::Focus, Some(view)) => {
             let value = match view.remaining {

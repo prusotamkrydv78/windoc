@@ -19,7 +19,7 @@ pub mod window;
 pub use audio::WindowsAudio;
 pub use display::WindowsDisplay;
 pub use file::replace_file;
-pub use foreground::{ForegroundChange, ForegroundTracker};
+pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};
 pub use input::WindowsInput;
 pub use media::WindowsMedia;
 pub use metrics::WindowsMetrics;

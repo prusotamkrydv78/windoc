@@ -87,6 +87,14 @@ impl SettingsApp {
             BehaviorAction::Language,
         );
         page.group_end();
+        page.section(tr("section_screen_time"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::ScreenTimeEnabled, true);
+        if self.config.screen_time_enabled {
+            page.setting(&self.config, AppConfigField::ScreenTimeTitles, true);
+        }
+        page.row_label(tr("screen_time_hint"));
+        page.group_end();
         page.section(tr("section_updates"));
         page.group_start();
         page.setting(&self.config, AppConfigField::CheckForUpdates, true);
