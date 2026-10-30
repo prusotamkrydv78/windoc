@@ -21,7 +21,7 @@ No clipboard, notes, screen-time, location or credential data is collected by th
 | Source | Data | Default | Leaves the device |
 |---|---|---|---|
 | Windows media sessions (SMTC) | Track title, artist, album art, playback state and source app ID | On (`smtc_enabled`), limited to allowed apps | Only if online lyrics are enabled (title, artist, duration) |
-| Audio loopback (WASAPI) | Audio samples from the playing app, converted to a spectrum in memory | Active only while music plays and the island is visible | Never; samples are not stored |
+| Audio loopback (WASAPI) | Audio samples from the playing app, converted to a spectrum in memory | Off by default (`audio_visualizer_enabled`). When enabled, active only while music plays; analysis pauses while the island is hidden | Never; samples are not stored |
 | Windows notifications (`UserNotificationListener`) | Notification content shown in the island | Off (`notification_display` is false by default) and requires Windows permission | Never |
 | Foreground and fullscreen state | Whether a fullscreen app is active | On, for auto-hide | Never |
 | System metrics | CPU, memory, disk and network rates for widgets | Only while those widgets are shown | Never |
@@ -39,7 +39,6 @@ No telemetry, analytics or crash reports are sent.
 
 ## Known gaps
 
-- **Audio visualisation is not opt-in.** The design guide requires an explicit opt-in. Today capture starts automatically while music plays and the island is visible. Add a setting and default it to off.
 - **Plugins are unrestricted.** A native plugin can read files and use the network. Capability prompts and a network policy are planned (workflow §23).
 - **Logs** may contain media titles and app IDs. Add redaction before stable release.
 - **Paths are split** between `~/.winisland` and `%APPDATA%\WinIsland`. Both move to `%LOCALAPPDATA%/<Product>` at rebrand, with a one-time migration (workflow Phase 3).

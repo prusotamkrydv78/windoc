@@ -65,6 +65,10 @@ pub struct AppConfig {
     pub music_notice_acknowledged: bool,
     pub smtc_apps: Vec<String>,
     pub smtc_known_apps: Vec<String>,
+    /// Captures system audio for the spectrum visualizer. Off by default: capture
+    /// starts only after the user opts in.
+    #[setting(toggle, label = "audio_visualizer")]
+    pub audio_visualizer_enabled: bool,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

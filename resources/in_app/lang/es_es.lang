@@ -228,3 +228,5 @@ focus_notify_short_break=Sesión terminada. Toca un descanso corto.
 focus_notify_long_break=Sesión terminada. Toca un descanso largo.
 focus_notify_work=Descanso terminado. Listo para la siguiente sesión.
 focus_notify_done=Temporizador terminado.
+audio_visualizer=Visualizador de audio
+audio_visualizer_hint=Analiza el audio del sistema en este PC para animar el espectro. No se graba ni se envía nada.

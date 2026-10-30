@@ -39,6 +39,12 @@ impl SettingsApp {
         if !media_available {
             page.row_label(tr("platform_unavailable"));
         }
+        page.setting(
+            &self.config,
+            AppConfigField::AudioVisualizerEnabled,
+            crate::platform::capabilities().audio_loopback,
+        );
+        page.row_label(tr("audio_visualizer_hint"));
         page.group_end();
 
         if self.config.smtc_enabled && media_available {

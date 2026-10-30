@@ -228,3 +228,5 @@ focus_notify_short_break=Session finished. Time for a short break.
 focus_notify_long_break=Session finished. Time for a long break.
 focus_notify_work=Break over. Ready for the next session.
 focus_notify_done=Timer finished.
+audio_visualizer=Audio visualizer
+audio_visualizer_hint=Analyses system audio on this PC to animate the spectrum. Nothing is recorded or sent.

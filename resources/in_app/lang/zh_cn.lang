@@ -228,3 +228,5 @@ focus_notify_short_break=本次专注结束，短暂休息一下。
 focus_notify_long_break=本次专注结束，好好休息一下。
 focus_notify_work=休息结束，准备开始下一次专注。
 focus_notify_done=计时结束。
+audio_visualizer=音频可视化
+audio_visualizer_hint=在本机分析系统音频以显示频谱动画，不会录制或上传任何内容。

@@ -186,6 +186,8 @@ pub struct AudioProcessor {
     process_capture_active: Arc<AtomicBool>,
     worker_generation: Arc<AtomicU32>,
     workers: Mutex<Option<CancellationToken>>,
+    /// User opt-in for audio capture. No capture thread runs while this is false.
+    enabled: AtomicBool,
 }
 
 impl AudioProcessor {
@@ -206,12 +208,29 @@ impl AudioProcessor {
             process_capture_active,
             worker_generation,
             workers: Mutex::new(None),
+            enabled: AtomicBool::new(false),
         };
         log::info!("AudioProcessor created in idle state");
         processor
     }
 
+    /// Applies the user's opt-in. Turning it off stops capture immediately; turning it on
+    /// starts capture only if media is already playing.
+    pub fn set_enabled(&self, enabled: bool) {
+        if self.enabled.swap(enabled, Ordering::AcqRel) == enabled {
+            return;
+        }
+        if !enabled {
+            self.stop_workers();
+        } else if !self.target_app_id.read().is_empty() {
+            self.start_workers();
+        }
+    }
+
     pub fn get_spectrum(&self) -> [f32; SPECTRUM_BAND_COUNT] {
+        if !self.enabled.load(Ordering::Acquire) {
+            return [0.0; SPECTRUM_BAND_COUNT];
+        }
         if !crate::platform::capabilities().audio_loopback {
             self.stop_workers();
             return [0.0; SPECTRUM_BAND_COUNT];
@@ -245,7 +264,8 @@ impl AudioProcessor {
     }
 
     fn start_workers(&self) {
-        if !crate::platform::capabilities().audio_loopback {
+        if !self.enabled.load(Ordering::Acquire) || !crate::platform::capabilities().audio_loopback
+        {
             return;
         }
         let cancel = {
