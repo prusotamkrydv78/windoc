@@ -22,11 +22,13 @@
 //! platform results this crate operates on.
 
 pub mod anim;
+pub mod clipboard;
 pub mod config;
 pub mod context;
 pub mod focus;
 pub mod i18n;
 pub mod lyrics;
+pub mod notes;
 pub mod persistence;
 pub mod physics;
 pub mod plugin_settings;
