@@ -70,6 +70,7 @@ impl App {
                         progress: None,
                         actions: Vec::new(),
                         tall: false,
+                        priority: crate::ui::compact::Priority::High,
                     });
             }
             window.request_redraw();
@@ -102,6 +103,7 @@ impl App {
                     progress: Some(level),
                     actions: Vec::new(),
                     tall: false,
+                    priority: crate::ui::compact::Priority::High,
                 });
         }
         self.poll_battery_activity(now);
@@ -966,6 +968,10 @@ impl App {
         if hovering {
             crate::ui::island::set_idle_dimmed(false);
         }
+        // An activity with buttons stays collapsed under the pointer so they can be clicked.
+        let holding_activity = self
+            .compact_overlay
+            .set_activity_hovered(hovering && !self.expanded);
         if !self.config.hover_to_open || self.is_hidden() {
             self.hover_open_since = None;
             self.hover_leave_since = None;
@@ -974,7 +980,9 @@ impl App {
         if !self.expanded {
             self.hover_opened = false;
             self.hover_leave_since = None;
-            if hovering && !pressing && !at_top_edge && self.hover_speed > SETTLED_SPEED {
+            if holding_activity {
+                self.hover_open_since = None;
+            } else if hovering && !pressing && !at_top_edge && self.hover_speed > SETTLED_SPEED {
                 // Passing through: restart the dwell.
                 self.hover_open_since = None;
             } else if hovering && !pressing {
@@ -1371,6 +1379,7 @@ impl App {
                     progress: None,
                     actions: Vec::new(),
                     tall: false,
+                    priority: crate::ui::compact::Priority::High,
                 });
         }
         crate::ui::dashboard::set_battery(system.battery);
@@ -1417,6 +1426,11 @@ impl App {
                     .into_iter()
                     .collect(),
                 tall: false,
+                priority: if !plugged && level <= LOW_BATTERY {
+                    crate::ui::compact::Priority::High
+                } else {
+                    crate::ui::compact::Priority::Normal
+                },
             });
         }
     }
@@ -1455,6 +1469,7 @@ impl App {
             progress: None,
             actions: Vec::new(),
             tall: false,
+            priority: crate::ui::compact::Priority::Normal,
         });
     }
 }
@@ -1483,6 +1498,7 @@ impl App {
             progress: None,
             actions: Vec::new(),
             tall: false,
+            priority: crate::ui::compact::Priority::Normal,
         });
     }
 }
@@ -1522,6 +1538,7 @@ impl App {
             progress: None,
             actions: Vec::new(),
             tall: false,
+            priority: crate::ui::compact::Priority::Low,
         });
     }
 }
@@ -1715,6 +1732,7 @@ impl App {
                             progress: None,
                             actions: Vec::new(),
                             tall: false,
+                            priority: crate::ui::compact::Priority::Normal,
                         });
                 }
             }
@@ -1742,6 +1760,7 @@ impl App {
             progress: None,
             actions: call_actions(name, self.call_muted),
             tall: false,
+            priority: crate::ui::compact::Priority::High,
         };
         self.compact_overlay.push_activity(activity);
     }
@@ -1835,6 +1854,12 @@ impl App {
                     event,
                     ShellEvent::Unlocked | ShellEvent::Resumed | ShellEvent::DriveAdded(_)
                 ),
+                // The welcome back goes first; nothing else should hold it up.
+                priority: if matches!(event, ShellEvent::Unlocked) {
+                    crate::ui::compact::Priority::Critical
+                } else {
+                    crate::ui::compact::Priority::Normal
+                },
             });
         }
     }

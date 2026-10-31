@@ -14,6 +14,8 @@ use crate::ui::components::icon::{Icon, draw_icon};
 const DISPLAY_DURATION: Duration = Duration::from_millis(2600);
 /// Tall cards carry more to read and act on, so they stay longer.
 const TALL_DISPLAY_DURATION: Duration = Duration::from_millis(4500);
+/// Time left on an activity with buttons once the pointer leaves it.
+const HOLD_AFTER_LEAVE: Duration = Duration::from_millis(1200);
 const ENTER_DURATION: Duration = Duration::from_millis(220);
 const FADE_DURATION: Duration = Duration::from_millis(260);
 const TEXT_SIZE: f32 = 13.0;
@@ -40,6 +42,17 @@ pub struct Activity {
     pub actions: Vec<(String, String)>,
     /// Two-line card with a large icon, for richer events.
     pub tall: bool,
+    /// A higher priority interrupts the visible activity; equal or lower ones wait.
+    pub priority: Priority,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    Low,
+    #[default]
+    Normal,
+    High,
+    Critical,
 }
 
 #[derive(Default)]
@@ -47,8 +60,11 @@ pub(super) struct ActivityIndicator {
     current: Option<Activity>,
     shown_at: Option<Instant>,
     updated_at: Option<Instant>,
-    /// Activities waiting for the current one to finish, oldest first, one per kind.
+    /// Activities waiting for the current one to finish, highest priority first and oldest
+    /// first within a priority, one per kind.
     queue: std::collections::VecDeque<Activity>,
+    /// The pointer is on the notch; an activity with buttons stays until it leaves.
+    hovered: bool,
     /// Button rectangles and targets from the last draw.
     buttons: RefCell<Vec<(Rect, String)>>,
 }
@@ -67,18 +83,29 @@ fn button_width(label: &str, scale: f32) -> f32 {
 
 impl ActivityIndicator {
     /// Shows `activity`. An activity with the same icon updates in place instead of
-    /// replaying its entrance, so repeated events do not flicker; a different one waits.
+    /// replaying its entrance, so repeated events do not flicker. A different one waits
+    /// unless its priority is higher, in which case it interrupts and an interrupted
+    /// activity with buttons comes back afterwards.
     pub(super) fn push(&mut self, activity: Activity) {
         let now = Instant::now();
-        let same_kind = self.is_visible()
+        let visible = self.is_visible();
+        let same_kind = visible
             && self
                 .current
                 .as_ref()
                 .is_some_and(|current| current.icon == activity.icon);
-        if self.is_visible() && !same_kind {
+        if visible && !same_kind {
+            let current_priority = self.current.as_ref().map_or(Priority::Low, |c| c.priority);
+            if activity.priority <= current_priority {
+                self.enqueue(activity, false);
+                return;
+            }
+            if let Some(current) = self.current.take()
+                && !current.actions.is_empty()
+            {
+                self.enqueue(current, true);
+            }
             self.queue.retain(|queued| queued.icon != activity.icon);
-            self.queue.push_back(activity);
-            return;
         }
         if !same_kind {
             self.shown_at = Some(now);
@@ -87,13 +114,55 @@ impl ActivityIndicator {
         self.current = Some(activity);
     }
 
-    /// Starts the next queued activity once the current one has finished. Call every frame.
+    /// Queues `activity` behind everything of higher priority: after its equals, or ahead
+    /// of them when `first` is set (an interrupted activity resumes before newer ones).
+    fn enqueue(&mut self, activity: Activity, first: bool) {
+        self.queue.retain(|queued| queued.icon != activity.icon);
+        let at = self
+            .queue
+            .iter()
+            .position(|queued| {
+                if first {
+                    queued.priority <= activity.priority
+                } else {
+                    queued.priority < activity.priority
+                }
+            })
+            .unwrap_or(self.queue.len());
+        self.queue.insert(at, activity);
+    }
+
+    /// Starts the next queued activity once the current one has finished, and holds an
+    /// activity with buttons while the pointer is on it. Call every frame.
     pub(super) fn advance(&mut self) {
+        if self.is_held() {
+            let duration = display_duration(self.current.as_ref());
+            let now = Instant::now();
+            if let Some(hold) = now.checked_sub(duration.saturating_sub(HOLD_AFTER_LEAVE)) {
+                self.updated_at = self.updated_at.max(Some(hold));
+            }
+        }
         if !self.is_visible()
             && let Some(next) = self.queue.pop_front()
         {
             self.push(next);
         }
+    }
+
+    /// Records whether the pointer is on the notch. Returns true while that holds a visible
+    /// activity with buttons, so the caller can keep the notch collapsed for a click.
+    pub(super) fn set_hovered(&mut self, hovered: bool) -> bool {
+        self.hovered = hovered;
+        self.is_held()
+    }
+
+    fn is_held(&self) -> bool {
+        self.hovered
+            && self.is_visible()
+            && self
+                .current
+                .as_ref()
+                .is_some_and(|current| !current.actions.is_empty())
     }
 
     /// The action target when `point` is on one of the visible activity's buttons.
@@ -357,5 +426,89 @@ impl ActivityIndicator {
             }
         }
         painter.restore();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn activity(icon: Icon, priority: Priority, buttons: bool) -> Activity {
+        Activity {
+            icon,
+            accent: Rgba::from_rgb(255, 255, 255),
+            primary: String::new(),
+            secondary: String::new(),
+            progress: None,
+            actions: if buttons {
+                vec![("Open".into(), "winisland:test".into())]
+            } else {
+                Vec::new()
+            },
+            tall: false,
+            priority,
+        }
+    }
+
+    fn queued(indicator: &ActivityIndicator) -> Vec<Icon> {
+        indicator.queue.iter().map(|queued| queued.icon).collect()
+    }
+
+    #[test]
+    fn equal_priority_waits_in_order() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Music, Priority::Normal, false));
+        indicator.push(activity(Icon::Calendar, Priority::Normal, false));
+        indicator.push(activity(Icon::Clipboard, Priority::Normal, false));
+        assert_eq!(indicator.current.as_ref().unwrap().icon, Icon::Music);
+        assert_eq!(queued(&indicator), [Icon::Calendar, Icon::Clipboard]);
+    }
+
+    #[test]
+    fn higher_priority_jumps_the_queue() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Music, Priority::High, false));
+        indicator.push(activity(Icon::Calendar, Priority::Low, false));
+        indicator.push(activity(Icon::Clipboard, Priority::Normal, false));
+        assert_eq!(queued(&indicator), [Icon::Clipboard, Icon::Calendar]);
+    }
+
+    #[test]
+    fn interrupted_activity_with_buttons_resumes_first() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Calendar, Priority::Normal, true));
+        indicator.push(activity(Icon::Clipboard, Priority::Normal, false));
+        indicator.push(activity(Icon::Music, Priority::Critical, false));
+        assert_eq!(indicator.current.as_ref().unwrap().icon, Icon::Music);
+        assert_eq!(queued(&indicator), [Icon::Calendar, Icon::Clipboard]);
+    }
+
+    #[test]
+    fn interrupted_activity_without_buttons_is_dropped() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Clipboard, Priority::Normal, false));
+        indicator.push(activity(Icon::Music, Priority::High, false));
+        assert!(queued(&indicator).is_empty());
+    }
+
+    #[test]
+    fn same_kind_updates_in_place() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Music, Priority::Normal, false));
+        let shown = indicator.shown_at;
+        indicator.push(activity(Icon::Music, Priority::Low, false));
+        assert_eq!(indicator.shown_at, shown);
+        assert!(queued(&indicator).is_empty());
+    }
+
+    #[test]
+    fn hover_holds_only_activities_with_buttons() {
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Music, Priority::Normal, false));
+        assert!(!indicator.set_hovered(true));
+        let mut indicator = ActivityIndicator::default();
+        indicator.push(activity(Icon::Calendar, Priority::Normal, true));
+        assert!(indicator.set_hovered(true));
+        assert!(!indicator.set_hovered(false));
     }
 }

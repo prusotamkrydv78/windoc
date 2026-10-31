@@ -5,8 +5,8 @@ mod volume;
 
 use winisland_render::{Painter, Rect};
 
-pub use self::activity::Activity;
 use self::activity::ActivityIndicator;
+pub use self::activity::{Activity, Priority};
 use self::brightness::BrightnessMonitor;
 use self::notification::{NotificationIndicator, NotificationMonitor};
 use self::volume::{VolumeIndicator, VolumeMonitor};
@@ -226,6 +226,12 @@ impl CompactOverlay {
     /// suppressed; volume and brightness still show because the user caused them.
     pub fn set_quiet(&mut self, quiet: bool) {
         self.quiet = quiet;
+    }
+
+    /// Tells the activity layer whether the pointer is on the collapsed notch. Returns true
+    /// while that holds an activity with buttons, which should keep the notch from opening.
+    pub fn set_activity_hovered(&mut self, hovered: bool) -> bool {
+        self.activity_indicator.set_hovered(hovered)
     }
 
     /// The action target under `point` on the visible activity's button, if any.
