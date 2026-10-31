@@ -211,14 +211,14 @@ pub fn do_not_disturb() -> bool {
 /// privacy consent store (an app is in use while its `LastUsedTimeStop` is 0).
 pub fn capture_in_use() -> (bool, bool) {
     const STORE: &str =
-        "Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
+        r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
     fn in_use(capability: &str) -> bool {
-        let Ok(root) = windows_registry::CURRENT_USER.open(format!("{STORE}\{capability}"))
-        else {
+        let Ok(root) = windows_registry::CURRENT_USER.open(format!(r"{STORE}\{capability}")) else {
             return false;
         };
         let active = |key: &windows_registry::Key| {
-            key.get_u64("LastUsedTimeStart").is_ok_and(|start| start > 0)
+            key.get_u64("LastUsedTimeStart")
+                .is_ok_and(|start| start > 0)
                 && key.get_u64("LastUsedTimeStop").is_ok_and(|stop| stop == 0)
         };
         let Ok(names) = root.keys() else {
