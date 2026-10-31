@@ -433,3 +433,7 @@ top_bar_hint_safe_mode=Inicia con --safe-mode para mantener siempre la barra de 
 section_activities=Actividades de la muesca
 section_activities_system=Superposiciones del sistema
 section_activities_reminders=Recordatorios
+bar_menu_task_manager=Administrador de tareas
+bar_menu_taskbar_settings=Configuración de la barra de tareas
+bar_menu_show_desktop=Mostrar escritorio
+bar_menu_app_settings=Ajustes de WinIsland

@@ -433,3 +433,7 @@ top_bar_hint_safe_mode=Start with --safe-mode to always keep the normal taskbar.
 section_activities=Notch activities
 section_activities_system=System overlays
 section_activities_reminders=Reminders
+bar_menu_task_manager=Task Manager
+bar_menu_taskbar_settings=Taskbar settings
+bar_menu_show_desktop=Show desktop
+bar_menu_app_settings=WinIsland settings

@@ -29,6 +29,8 @@ pub enum BarHit {
     Clock,
     /// Wi-Fi, volume and battery: opens Quick Settings.
     Status,
+    /// The thin strip at the far right edge: minimise or restore all windows.
+    ShowDesktop,
     /// Hidden tray icons: opens the Windows tray overflow.
     Tray,
     Notifications,
@@ -289,7 +291,13 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
         }
 
         // ---- Right: notifications, clock, then the Wi-Fi / volume / battery group ----
-        let mut right = width - SIDE_PADDING * scale;
+        // Show-desktop sliver at the very edge, as on the classic taskbar.
+        let desktop = Rect::from_xywh(width - 6.0 * scale, 0.0, 6.0 * scale, height);
+        if hovered == Some(BarHit::ShowDesktop) {
+            painter.fill_rect(desktop, Rgba::WHITE.with_alpha(40));
+        }
+        targets.push((desktop, BarHit::ShowDesktop));
+        let mut right = width - SIDE_PADDING * scale - 4.0 * scale;
         let bell = Rect::from_xywh(right - 28.0 * scale, item_top, 28.0 * scale, item_h);
         hover_fill(painter, bell, BarHit::Notifications, false);
         draw_glyph(painter, BELL, bell, scale);

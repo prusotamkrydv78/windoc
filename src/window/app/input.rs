@@ -64,6 +64,7 @@ impl App {
             use winisland_platform_windows::shell_bar;
             match hit {
                 crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
+                crate::ui::top_bar::BarHit::ShowDesktop => shell_bar::toggle_desktop(),
                 crate::ui::top_bar::BarHit::Search => {
                     if self.is_hidden() {
                         self.reveal_island();
@@ -115,6 +116,9 @@ impl App {
     }
 
     pub(super) fn handle_right_input(&mut self, state: InputState, px: i32, py: i32) {
+        if state == InputState::Pressed && self.show_top_bar_menu(px, py) {
+            return;
+        }
         if !self.config.right_click_drag
             || self.expanded
             || self.is_cursor_suppressed
@@ -668,6 +672,57 @@ impl App {
             }
         }
         redraw(self);
+        true
+    }
+}
+
+impl App {
+    /// Right-clicking the top bar opens its context menu (Task Manager, Taskbar settings,
+    /// Show desktop, WinIsland settings), like the classic taskbar. Returns `true` when the
+    /// click was on the bar.
+    fn show_top_bar_menu(&mut self, px: i32, py: i32) -> bool {
+        use winisland_platform_windows::shell_bar::{self, BarMenuCommand};
+        if !crate::ui::top_bar::is_active() {
+            return false;
+        }
+        let Some(window) = self.window else {
+            return false;
+        };
+        let scale = crate::platform::window().scale_factor(window.id()) as f32;
+        let rel_y = (py - self.geom.win_y) as f32;
+        if rel_y < 0.0 || rel_y >= crate::core::top_bar::BAR_HEIGHT * scale {
+            return false;
+        }
+        let Some(surface) = crate::platform::window().native_surface(window.id()) else {
+            return false;
+        };
+        let tr = winisland_core::i18n::tr;
+        let labels = [
+            tr("bar_menu_task_manager"),
+            tr("bar_menu_taskbar_settings"),
+            tr("bar_menu_show_desktop"),
+            tr("bar_menu_app_settings"),
+        ];
+        let chosen = shell_bar::show_bar_menu(
+            surface.handle() as isize,
+            px,
+            py,
+            [&labels[0], &labels[1], &labels[2], &labels[3]],
+        );
+        match chosen {
+            Some(BarMenuCommand::TaskManager) => {
+                const CTRL: u16 = 0x11;
+                const SHIFT: u16 = 0x10;
+                const ESCAPE: u16 = 0x1B;
+                shell_bar::press_shortcut(&[CTRL, SHIFT, ESCAPE]);
+            }
+            Some(BarMenuCommand::TaskbarSettings) => {
+                let _ = crate::platform::shell().open_url("ms-settings:taskbar");
+            }
+            Some(BarMenuCommand::ShowDesktop) => shell_bar::toggle_desktop(),
+            Some(BarMenuCommand::AppSettings) => self.open_settings(),
+            None => {}
+        }
         true
     }
 }

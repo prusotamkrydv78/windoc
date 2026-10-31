@@ -293,6 +293,20 @@ pub fn hide_taskbar(monitor: ScreenRect) -> isize {
 /// Hides any taskbar window that came back, for example after Explorer restarted. Cheap
 /// enough to call every couple of seconds while the top bar is active.
 pub fn keep_taskbar_hidden(monitor: ScreenRect) {
+    // Explorer restarts and some shell updates reset the taskbar to always-visible, which
+    // would make it claim its strip of the screen again; re-apply auto-hide when that happens.
+    if PREVIOUS_STATE.load(Ordering::SeqCst) >= 0
+        && let Some(&primary) = taskbar_windows().first()
+    {
+        let mut data = app_bar_data(primary);
+        // SAFETY: querying and setting the taskbar's AppBar state with a valid APPBARDATA.
+        unsafe {
+            if SHAppBarMessage(ABM_GETSTATE, &mut data) as u32 & ABS_AUTOHIDE == 0 {
+                data.lParam = LPARAM(ABS_AUTOHIDE as isize);
+                SHAppBarMessage(ABM_SETSTATE, &mut data);
+            }
+        }
+    }
     for hwnd in taskbar_windows_on(monitor) {
         // SAFETY: visibility query and hide on Explorer's taskbar windows.
         unsafe {
@@ -816,4 +830,62 @@ impl Drop for ShellEventListener {
             let _ = DestroyWindow(self.hwnd);
         }
     }
+}
+
+/// Commands in the top bar's right-click menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarMenuCommand {
+    TaskManager,
+    TaskbarSettings,
+    ShowDesktop,
+    AppSettings,
+}
+
+/// Shows the top bar's context menu at screen position (`x`, `y`) for window `owner` and
+/// returns the chosen command, like the classic taskbar's right-click menu.
+pub fn show_bar_menu(owner: isize, x: i32, y: i32, labels: [&str; 4]) -> Option<BarMenuCommand> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, DestroyMenu, MF_SEPARATOR, MF_STRING, SetForegroundWindow,
+        TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    };
+    const COMMANDS: [BarMenuCommand; 4] = [
+        BarMenuCommand::TaskManager,
+        BarMenuCommand::TaskbarSettings,
+        BarMenuCommand::ShowDesktop,
+        BarMenuCommand::AppSettings,
+    ];
+    let owner = HWND(owner as *mut _);
+    // SAFETY: a menu created, shown and destroyed here, owned by our window.
+    unsafe {
+        let menu = CreatePopupMenu().ok()?;
+        for (index, label) in labels.iter().enumerate() {
+            if index == 2 || index == 3 {
+                let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+            }
+            let wide: Vec<u16> = label.encode_utf16().chain(std::iter::once(0)).collect();
+            let _ = AppendMenuW(menu, MF_STRING, index + 1, PCWSTR(wide.as_ptr()));
+        }
+        // The menu only closes on an outside click if its owner is the foreground window.
+        let _ = SetForegroundWindow(owner);
+        let chosen = TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+            x,
+            y,
+            None,
+            owner,
+            None,
+        );
+        let _ = DestroyMenu(menu);
+        let index = chosen.0 as usize;
+        (1..=COMMANDS.len())
+            .contains(&index)
+            .then(|| COMMANDS[index - 1])
+    }
+}
+
+/// Minimises or restores all windows (Win+D), like the taskbar's show-desktop corner.
+pub fn toggle_desktop() {
+    const VK_D: u16 = 0x44;
+    press_shortcut(&[VK_WIN, VK_D]);
 }

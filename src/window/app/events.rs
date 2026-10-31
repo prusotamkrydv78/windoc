@@ -410,11 +410,13 @@ impl App {
                         let top_bar_scale = self.window.map_or(1.0, |window| {
                             crate::platform::window().scale_factor(window.id()) as f32
                         });
-                        let top_bar_height = if crate::ui::top_bar::is_active() {
-                            crate::core::top_bar::BAR_HEIGHT * top_bar_scale
-                        } else {
-                            0.0
-                        };
+                        // Like the classic taskbar, the bar steps aside for full-screen apps.
+                        let top_bar_height =
+                            if crate::ui::top_bar::is_active() && !self.is_fullscreen_suppressed {
+                                crate::core::top_bar::BAR_HEIGHT * top_bar_scale
+                            } else {
+                                0.0
+                            };
                         // The edge light runs while something is happening (an activity or the open
                         // panel), when frames are already being drawn; at rest the bar stays still.
                         let top_bar_edge_live = self.expanded || self.compact_overlay.is_visible();

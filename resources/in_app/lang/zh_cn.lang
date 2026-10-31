@@ -433,3 +433,7 @@ top_bar_hint_safe_mode=使用 --safe-mode 启动可始终保留普通任务栏�
 section_activities=刘海活动
 section_activities_system=系统浮层
 section_activities_reminders=提醒
+bar_menu_task_manager=任务管理器
+bar_menu_taskbar_settings=任务栏设置
+bar_menu_show_desktop=显示桌面
+bar_menu_app_settings=WinIsland 设置

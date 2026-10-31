@@ -337,6 +337,7 @@ impl App {
             rect.contains(winisland_render::Point::new(rel_x as f32, rel_y as f32))
         });
         let over_top_bar = crate::ui::top_bar::is_active()
+            && !self.is_fullscreen_suppressed
             && rel_x >= 0
             && (rel_x as u32) < self.geom.os_w
             && rel_y >= 0

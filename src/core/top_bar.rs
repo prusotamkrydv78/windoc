@@ -12,7 +12,7 @@ use winisland_platform_windows::shell_bar::{self, AppBarReservation, ScreenRect}
 
 /// Height of the bar in logical pixels; multiplied by the monitor scale.
 pub const BAR_HEIGHT: f32 = 32.0;
-const WATCHDOG_INTERVAL: Duration = Duration::from_secs(2);
+const WATCHDOG_INTERVAL: Duration = Duration::from_secs(1);
 const MARKER: &str = "taskbar_hidden.flag";
 
 fn marker_path() -> PathBuf {
