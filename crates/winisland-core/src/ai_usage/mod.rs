@@ -110,14 +110,16 @@ pub fn codex_model(line: &str) -> Option<String> {
     Some(value.get("payload")?.get("model")?.as_str()?.to_string())
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DayReport {
     pub tokens: u64,
+    /// Estimated cost in US dollars at API list prices.
+    pub cost_usd: f64,
     pub responses: u64,
     pub sessions: usize,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct UsageReport {
     /// Per UTC date, oldest first.
     pub days: BTreeMap<String, DayReport>,
@@ -138,6 +140,7 @@ impl UsageReport {
             let day = days.entry(event.date.clone()).or_default();
             day.tokens += tokens;
             day.responses += 1;
+            day.cost_usd += estimate_cost_usd(event);
             sessions
                 .entry(event.date.clone())
                 .or_default()
@@ -171,4 +174,62 @@ pub fn format_tokens(tokens: u64) -> String {
     } else {
         tokens.to_string()
     }
+}
+
+/// Approximate API list prices in US dollars per million tokens: input, output, cache.
+/// These are estimates for orientation only; subscriptions are billed differently.
+fn prices_per_million(model: &str) -> (f64, f64, f64) {
+    let model = model.to_lowercase();
+    if model.contains("opus") {
+        (15.0, 75.0, 1.5)
+    } else if model.contains("sonnet") {
+        (3.0, 15.0, 0.3)
+    } else if model.contains("haiku") {
+        (0.8, 4.0, 0.08)
+    } else {
+        // Codex and other models: a mid-range estimate.
+        (1.25, 10.0, 0.125)
+    }
+}
+
+/// Estimated cost of one response at API list prices.
+pub fn estimate_cost_usd(event: &UsageEvent) -> f64 {
+    let (input, output, cache) = prices_per_million(&event.model);
+    (event.input_tokens as f64 * input
+        + event.output_tokens as f64 * output
+        + event.cache_tokens as f64 * cache)
+        / 1_000_000.0
+}
+
+impl UsageReport {
+    /// Consecutive days with activity, counting back from the most recent active day.
+    pub fn streak_days(&self) -> usize {
+        let mut streak = 0;
+        let mut previous: Option<crate::screen_time::LocalDate> = None;
+        for date in self.days.keys().rev() {
+            let Some(current) = parse_date(date) else {
+                break;
+            };
+            if let Some(previous) = previous
+                && previous.day_number() - current.day_number() != 1
+            {
+                break;
+            }
+            streak += 1;
+            previous = Some(current);
+        }
+        streak
+    }
+
+    pub fn total_cost_usd(&self) -> f64 {
+        self.days.values().map(|day| day.cost_usd).sum()
+    }
+}
+
+fn parse_date(date: &str) -> Option<crate::screen_time::LocalDate> {
+    let mut parts = date.split('-');
+    let year = parts.next()?.parse().ok()?;
+    let month = parts.next()?.parse().ok()?;
+    let day = parts.next()?.parse().ok()?;
+    Some(crate::screen_time::LocalDate::new(year, month, day))
 }

@@ -331,3 +331,7 @@ links_add=Añadir enlace
 links_placeholder=Nombre https://ejemplo.com
 links_empty_hint=Aún no hay enlaces. Añádelos en Ajustes, General. En la paleta, g, yt, gh y so buscan en Google, YouTube, GitHub y Stack Overflow.
 palette_search=Buscar en {}
+ai_usage_cost=Unos ${} esta semana
+ai_usage_cost_detail=Estimación a precios de lista de la API; las suscripciones se cobran de otra forma
+ai_usage_streak=Racha de {} días
+ai_usage_streak_detail=Días seguidos con actividad de Claude Code o Codex

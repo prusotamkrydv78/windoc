@@ -331,3 +331,7 @@ links_add=添加链接
 links_placeholder=名称 https://example.com
 links_empty_hint=还没有链接，可在设置的常规中添加。在命令面板中，g、yt、gh、so 分别搜索 Google、YouTube、GitHub 和 Stack Overflow。
 palette_search=在 {} 中搜索
+ai_usage_cost=本周约 ${}
+ai_usage_cost_detail=按 API 标价估算，订阅计费方式不同
+ai_usage_streak=连续 {} 天
+ai_usage_streak_detail=连续有 Claude Code 或 Codex 活动的天数

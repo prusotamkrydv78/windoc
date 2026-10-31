@@ -331,3 +331,7 @@ links_add=Add a link
 links_placeholder=Name https://example.com
 links_empty_hint=No links yet. Add them in Settings, General. In the palette, g, yt, gh and so search Google, YouTube, GitHub and Stack Overflow.
 palette_search=Search {}
+ai_usage_cost=About ${} this week
+ai_usage_cost_detail=Estimate at API list prices; subscriptions are billed differently
+ai_usage_streak={}-day streak
+ai_usage_streak_detail=Consecutive days with Claude Code or Codex activity

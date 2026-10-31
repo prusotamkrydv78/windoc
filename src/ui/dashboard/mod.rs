@@ -1298,6 +1298,17 @@ pub fn sync_ai_usage(
             tr_args("ai_usage_live", &[&active_sessions.to_string()]),
             tr("ai_usage_live_detail"),
         ));
+        view.rows.push((
+            tr_args(
+                "ai_usage_cost",
+                &[&format!("{:.2}", report.total_cost_usd())],
+            ),
+            tr("ai_usage_cost_detail"),
+        ));
+        view.rows.push((
+            tr_args("ai_usage_streak", &[&report.streak_days().to_string()]),
+            tr("ai_usage_streak_detail"),
+        ));
         for (model, tokens) in report.models.iter().take(3) {
             view.rows.push((model.clone(), format_tokens(*tokens)));
         }
