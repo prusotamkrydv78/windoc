@@ -903,9 +903,24 @@ impl App {
     /// Opens the island after a short rest on it and closes a hover-opened island once the
     /// cursor has left for a moment. Clicks and typing keep their usual behaviour.
     fn update_hover_open(&mut self, window: &WindowRef, hovering: bool, pressing: bool) {
-        const OPEN_DELAY: Duration = Duration::from_millis(450);
-        const CLOSE_DELAY: Duration = Duration::from_millis(600);
+        // Open quickly once the pointer settles on the island, instantly when it is pushed
+        // against the top screen edge, and never while it is just passing through.
+        const OPEN_DELAY: Duration = Duration::from_millis(150);
+        const CLOSE_DELAY: Duration = Duration::from_millis(450);
+        const SETTLED_SPEED: f32 = 0.3; // px per ms
         let now = Instant::now();
+        let cursor = crate::utils::mouse::get_global_cursor_pos();
+        let speed = match self.hover_last_cursor {
+            Some((last, at)) => {
+                let ms = now.duration_since(at).as_secs_f32() * 1000.0;
+                let distance = ((cursor.0 - last.0) as f32).hypot((cursor.1 - last.1) as f32);
+                if ms > 0.0 { distance / ms } else { 0.0 }
+            }
+            None => 0.0,
+        };
+        self.hover_speed = self.hover_speed * 0.6 + speed * 0.4;
+        self.hover_last_cursor = Some((cursor, now));
+        let at_top_edge = cursor.1 <= self.geom.monitor_pos.1 + 1;
         if !self.config.hover_to_open || self.is_hidden() {
             self.hover_open_since = None;
             self.hover_leave_since = None;
@@ -914,9 +929,12 @@ impl App {
         if !self.expanded {
             self.hover_opened = false;
             self.hover_leave_since = None;
-            if hovering && !pressing {
+            if hovering && !pressing && !at_top_edge && self.hover_speed > SETTLED_SPEED {
+                // Passing through: restart the dwell.
+                self.hover_open_since = None;
+            } else if hovering && !pressing {
                 let since = *self.hover_open_since.get_or_insert(now);
-                if now.duration_since(since) >= OPEN_DELAY {
+                if at_top_edge || now.duration_since(since) >= OPEN_DELAY {
                     self.hover_open_since = None;
                     self.expand();
                     self.hover_opened = true;

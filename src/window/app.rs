@@ -78,6 +78,8 @@ pub struct App {
     /// the current expansion came from hovering.
     hover_open_since: Option<Instant>,
     hover_leave_since: Option<Instant>,
+    hover_last_cursor: Option<((i32, i32), Instant)>,
+    hover_speed: f32,
     hover_opened: bool,
     drop_session: Option<crate::core::drop_server::DropSession>,
     calendar: crate::core::calendar_service::CalendarService,
@@ -240,6 +242,8 @@ impl Default for App {
             palette_focused: false,
             hover_open_since: None,
             hover_leave_since: None,
+            hover_last_cursor: None,
+            hover_speed: 0.0,
             hover_opened: false,
             drop_session: None,
             calendar: crate::core::calendar_service::CalendarService::new(),

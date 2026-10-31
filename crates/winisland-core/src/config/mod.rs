@@ -49,7 +49,7 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle)]
     pub notch_shape: bool,
-    #[educe(Default = 90)]
+    #[educe(Default = 0)]
     #[setting(choice(
         30 => "30 FPS",
         60 => "60 FPS",
