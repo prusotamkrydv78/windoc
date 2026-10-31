@@ -17,6 +17,7 @@ mod metrics;
 mod notify;
 mod process;
 mod shell;
+pub mod shell_bar;
 mod timezone;
 pub mod window;
 

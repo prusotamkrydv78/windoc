@@ -49,6 +49,11 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle)]
     pub notch_shape: bool,
+    /// Replace the Windows taskbar with a top bar: reserves a strip at the top of the screen and
+    /// hides the classic taskbar while on. Off by default.
+    #[educe(Default = false)]
+    #[setting(toggle)]
+    pub top_bar: bool,
     /// Short notch activities: charging, copied, focus, meetings and file drops.
     #[educe(Default = true)]
     #[setting(toggle)]

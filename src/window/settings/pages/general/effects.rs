@@ -20,6 +20,7 @@ impl SettingsApp {
         page.group_start();
         page.setting(&self.config, AppConfigField::SettingsTheme, true);
         page.setting(&self.config, AppConfigField::NotchShape, true);
+        page.setting(&self.config, AppConfigField::TopBar, true);
         page.setting(&self.config, AppConfigField::LiveActivities, true);
         page.setting(&self.config, AppConfigField::MotionBlur, true);
         page.setting(&self.config, AppConfigField::AnimationFps, true);

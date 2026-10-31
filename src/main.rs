@@ -41,6 +41,13 @@ fn main() {
         crate::core::safe_mode::enable();
         log::warn!("Safe mode: plugins and optional modules are disabled for this session");
     }
+    // If a previous run hid the Windows taskbar and crashed, bring it back first.
+    core::top_bar::recover_after_crash();
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        core::top_bar::emergency_restore();
+        previous_hook(info);
+    }));
     log::info!("Args: {args:?}");
     log::info!(
         "Config: style={:?}, compact_scale={}, expanded_scale={}, lang={}",

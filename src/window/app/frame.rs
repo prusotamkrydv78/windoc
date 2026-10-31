@@ -1309,6 +1309,7 @@ impl App {
             return;
         }
         self.battery_checked_at = Some(now);
+        self.sync_top_bar(now);
         self.compact_overlay
             .set_quiet(crate::platform::do_not_disturb());
         self.compact_overlay
@@ -1478,5 +1479,37 @@ impl App {
             secondary: tr(secondary),
             progress: None,
         });
+    }
+}
+
+impl App {
+    /// Starts or stops the top bar session to match the setting. Never runs in safe mode, so
+    /// `--safe-mode` is always a way back to the normal taskbar.
+    fn sync_top_bar(&mut self, now: Instant) {
+        use winisland_platform_windows::shell_bar::ScreenRect;
+        let wanted = self.config.top_bar && !crate::core::safe_mode::active();
+        let Some(window_ref) = &self.window else {
+            return;
+        };
+        let scale = crate::platform::window().scale_factor(window_ref.id()) as f32;
+        let (x, y) = self.geom.monitor_pos;
+        let (width, height) = self.geom.monitor_size;
+        let monitor = ScreenRect {
+            left: x,
+            top: y,
+            right: x + width as i32,
+            bottom: y + height as i32,
+        };
+        match (&mut self.top_bar, wanted) {
+            (Some(session), true) => session.poll(monitor, scale, now),
+            (None, true) if width > 0 && height > 0 => {
+                self.top_bar = crate::core::top_bar::TopBarSession::start(monitor, scale);
+                if self.top_bar.is_none() {
+                    log::warn!("Top bar: Windows refused the AppBar registration");
+                }
+            }
+            (Some(_), false) => self.top_bar = None,
+            _ => {}
+        }
     }
 }

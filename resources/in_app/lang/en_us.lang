@@ -99,6 +99,7 @@ position_y_offset=Y Offset (px)
 monitor=Display
 font_size=Font Size (px)
 notch_shape=Notch Shape
+top_bar=Replace the taskbar with a top bar
 live_activities=Live Activities
 motion_blur=Motion Blur
 animation_fps=Expansion Frame Rate Limit
