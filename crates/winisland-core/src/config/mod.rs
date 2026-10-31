@@ -128,6 +128,8 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle, label = "hover_to_open")]
     pub hover_to_open: bool,
+    /// Set once the first-run tips have been shown in the notch.
+    pub onboarding_done: bool,
     /// More-page modules the user has hidden, by label key.
     pub hidden_modules: Vec<String>,
     /// Subscribed ICS or webcal feed links.

@@ -1310,6 +1310,7 @@ impl App {
             .set_quiet(crate::platform::do_not_disturb());
         let (microphone, camera) = crate::platform::capture_in_use();
         crate::ui::island::set_capture_in_use(microphone, camera);
+        self.poll_onboarding();
         const IDLE_DIM_AFTER: Duration = Duration::from_secs(10 * 60);
         crate::ui::island::set_idle_dimmed(
             !self.expanded
@@ -1432,6 +1433,43 @@ impl App {
             accent: blue,
             primary,
             secondary,
+            progress: None,
+        });
+    }
+}
+
+impl App {
+    /// First-run tips shown in the notch itself, one every four seconds: hover to open,
+    /// scroll for volume, drop files. Runs once, then records `onboarding_done`.
+    fn poll_onboarding(&mut self) {
+        use crate::ui::compact::Activity;
+        use crate::ui::components::icon::Icon;
+        use winisland_core::i18n::tr;
+        use winisland_render::Rgba;
+        const TIPS: [(Icon, &str, &str); 3] = [
+            (Icon::Home, "onboarding_hover", "onboarding_hover_detail"),
+            (Icon::Music, "onboarding_scroll", "onboarding_scroll_detail"),
+            (Icon::Shelf, "onboarding_drop", "onboarding_drop_detail"),
+        ];
+        if self.config.onboarding_done || self.expanded || self.is_hidden() {
+            return;
+        }
+        // Polled every two seconds; a tip on every other poll.
+        let tick = self.onboarding_tick;
+        self.onboarding_tick = tick.saturating_add(1);
+        if tick % 2 != 0 {
+            return;
+        }
+        let Some((icon, primary, secondary)) = TIPS.get(usize::from(tick / 2)) else {
+            self.config.onboarding_done = true;
+            crate::core::persistence::save_config(&self.config);
+            return;
+        };
+        self.compact_overlay.push_activity(Activity {
+            icon: *icon,
+            accent: Rgba::from_argb(255, 10, 132, 255),
+            primary: tr(primary),
+            secondary: tr(secondary),
             progress: None,
         });
     }
