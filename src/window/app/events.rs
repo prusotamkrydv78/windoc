@@ -104,9 +104,13 @@ impl App {
                     key,
                     state: InputState::Pressed,
                     ..
-                } if crate::ui::dashboard::palette::is_open() => {
-                    if let Some(command) = crate::ui::dashboard::palette::handle_key(&key) {
-                        self.run_palette_command(command);
+                } if crate::ui::dashboard::wants_keyboard() => {
+                    if crate::ui::dashboard::palette::is_open() {
+                        if let Some(command) = crate::ui::dashboard::palette::handle_key(&key) {
+                            self.run_palette_command(command);
+                        }
+                    } else {
+                        crate::ui::dashboard::editor::handle_key(&key);
                     }
                     win.request_redraw();
                 }

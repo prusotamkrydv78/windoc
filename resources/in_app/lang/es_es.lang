@@ -309,3 +309,6 @@ ai_usage_live_detail=Registros escritos en los últimos 2 minutos
 ai_usage_day_detail={} tokens · {} sesiones
 ai_usage_off_hint=El uso de IA está desactivado. Actívalo en Ajustes, General.
 ai_usage_empty_hint=No hay actividad de Claude Code ni Codex en la última semana.
+notes_new=+ Nueva nota
+notes_new_detail=Escribe en la isla; Esc guarda
+notes_editor_hint=Esc guarda y cierra. La primera línea será el título.

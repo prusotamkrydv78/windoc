@@ -7,6 +7,7 @@
 // provider and scroll support.
 #![allow(dead_code)]
 
+pub mod editor;
 pub mod layout;
 pub mod palette;
 pub mod sample;
@@ -37,6 +38,8 @@ pub enum DashboardHit {
     ShelfEntry(usize),
     /// The header, which opens the command palette.
     Header,
+    /// Row on the Notes page: 0 is "New note".
+    NoteRow(usize),
 }
 
 struct PageState {
@@ -300,7 +303,7 @@ const MAX_NOTE_ROWS: usize = 50;
 
 thread_local! {
     /// Note titles and checklist progress, read once from `notes.json`.
-    static NOTE_ROWS: RefCell<Vec<(String, String)>> = RefCell::new(note_rows(&load_notes()));
+    static NOTE_ROWS: RefCell<Vec<(u64, String, String)>> = RefCell::new(note_rows(&load_notes()));
 }
 
 fn load_notes() -> winisland_core::notes::NoteStore {
@@ -355,7 +358,7 @@ pub fn start_pomodoro() {
     start_timer(TimerKind::Pomodoro(PomodoroConfig::default()));
 }
 
-fn note_rows(store: &winisland_core::notes::NoteStore) -> Vec<(String, String)> {
+fn note_rows(store: &winisland_core::notes::NoteStore) -> Vec<(u64, String, String)> {
     store
         .list()
         .into_iter()
@@ -373,28 +376,38 @@ fn note_rows(store: &winisland_core::notes::NoteStore) -> Vec<(String, String)> 
                 let done = checklist.iter().filter(|item| item.done).count();
                 format!("{done}/{}", checklist.len())
             };
-            (title, detail)
+            (note.id(), title, detail)
         })
         .collect()
 }
 
-fn draw_notes_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+fn draw_notes_page(
+    painter: Painter<'_>,
+    grid: Rect,
+    hovered_row: Option<usize>,
+    colors: &SemanticColors,
+) {
     use crate::ui::components::list_row::draw_list_row;
+    if editor::is_open() {
+        editor::draw(painter, grid, colors);
+        return;
+    }
     NOTE_ROWS.with(|cell| {
         let rows = cell.borrow();
-        if rows.is_empty() {
-            draw_text(
-                painter,
-                &tr("notes_empty_hint"),
-                typography::BODY,
-                grid,
-                Align::Center,
-                colors.text_secondary,
-            );
-            return;
-        }
-        for (index, (title, detail)) in rows.iter().enumerate() {
-            let row = list_row(grid, index, true);
+        let new_row = list_row(grid, 0, true);
+        draw_list_row(
+            painter,
+            &new_row,
+            &tr("notes_new"),
+            Some(tr("notes_new_detail").as_str()),
+            colors,
+            InteractionState {
+                hovered: hovered_row == Some(0),
+                ..InteractionState::default()
+            },
+        );
+        for (index, (_, title, detail)) in rows.iter().enumerate() {
+            let row = list_row(grid, index + 1, true);
             if row.bounds.top >= grid.bottom {
                 break;
             }
@@ -405,10 +418,56 @@ fn draw_notes_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
                 title,
                 detail,
                 colors,
-                InteractionState::default(),
+                InteractionState {
+                    hovered: hovered_row == Some(index + 1),
+                    ..InteractionState::default()
+                },
             );
         }
     });
+}
+
+/// Row 0 is "New note"; row n is the (n-1)th note.
+fn hit_note_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
+    if !layout.grid.contains(point) || editor::is_open() {
+        return None;
+    }
+    let count = NOTE_ROWS.with(|cell| cell.borrow().len()) + 1;
+    (0..count).find(|index| list_row(layout.grid, *index, true).bounds.contains(point))
+}
+
+fn open_note_row(index: usize) {
+    if index == 0 {
+        editor::open(None, "");
+        return;
+    }
+    let id = NOTE_ROWS.with(|cell| cell.borrow().get(index - 1).map(|row| row.0));
+    if let Some(id) = id {
+        let store = load_notes();
+        if let Some(note) = store.note(id) {
+            editor::open(Some(id), note.body());
+        }
+    }
+}
+
+/// Creates or updates a note from the editor and refreshes the Notes page.
+pub(crate) fn save_note(id: Option<u64>, body: &str) {
+    let mut store = load_notes();
+    let now = std::time::SystemTime::now();
+    let result = match id {
+        Some(id) => store.update_body(id, body, now).map(|_| ()),
+        None if body.trim().is_empty() => return,
+        None => store.create(body, now).map(|_| ()),
+    };
+    if let Err(error) = result {
+        log::warn!("Cannot save note: {error}");
+        return;
+    }
+    if let Err(error) = crate::core::json_store::write(NOTES_FILE, &store.snapshot()) {
+        log::warn!("Cannot save notes: {error}");
+        return;
+    }
+    NOTE_ROWS.with(|cell| *cell.borrow_mut() = note_rows(&store));
 }
 
 thread_local! {
@@ -511,7 +570,7 @@ pub fn reset_focus() {
 }
 
 pub fn is_animating() -> bool {
-    palette::is_open() || PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
+    wants_keyboard() || PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
 }
 
 /// Text for the compact Focus widget and whether the timer is running.
@@ -584,6 +643,9 @@ pub fn hit_test(
     if active == Destination::Shelf {
         return hit_shelf_row(&layout, local).map(DashboardHit::ShelfEntry);
     }
+    if active == Destination::Notes {
+        return hit_note_row(&layout, local).map(DashboardHit::NoteRow);
+    }
     layout
         .hit_card(local)
         .filter(|index| *index < cards_for(active).len())
@@ -609,6 +671,7 @@ pub fn apply(hit: DashboardHit) {
             DashboardHit::Destination(destination) => page.active = destination,
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
             DashboardHit::Header => palette::open(),
+            DashboardHit::NoteRow(index) => open_note_row(index),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -656,6 +719,7 @@ pub fn draw_page(
         },
         hovered_row: match hover {
             Some(DashboardHit::ShelfEntry(index)) => Some(index),
+            Some(DashboardHit::NoteRow(index)) => Some(index),
             Some(DashboardHit::Destination(destination)) if active == Destination::More => {
                 more_entries(&layout)
                     .iter()
@@ -798,7 +862,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
     } else if active == Destination::More {
         draw_more_page(painter, layout, interaction.hovered_row, colors);
     } else if active == Destination::Notes {
-        draw_notes_page(painter, layout.grid, colors);
+        draw_notes_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Clock {
         draw_clock_page(painter, layout.grid, colors);
     } else if active == Destination::AiUsage {
@@ -1271,4 +1335,9 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
             );
         }
     });
+}
+
+/// Whether a palette or editor needs the island to take keyboard focus.
+pub fn wants_keyboard() -> bool {
+    palette::is_open() || editor::is_open()
 }

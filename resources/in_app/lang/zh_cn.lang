@@ -309,3 +309,6 @@ ai_usage_live_detail=最近 2 分钟内有日志写入
 ai_usage_day_detail={} tokens · {} 个会话
 ai_usage_off_hint=AI 用量已关闭，可在设置的常规中开启。
 ai_usage_empty_hint=最近一周没有 Claude Code 或 Codex 活动。
+notes_new=+ 新建笔记
+notes_new_detail=在灵动岛中书写，按 Esc 保存
+notes_editor_hint=按 Esc 保存并关闭，第一行将作为标题。

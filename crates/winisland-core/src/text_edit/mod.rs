@@ -4,6 +4,9 @@
 //! Grapheme clusters such as combined emoji may take more than one arrow press; that is a
 //! known limitation until a segmentation library is adopted.
 
+mod area;
+pub use area::{AreaKey, TextArea};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditKey {
     Backspace,

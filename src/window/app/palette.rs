@@ -8,7 +8,7 @@ use crate::platform::window;
 impl App {
     /// Gives the island keyboard focus while the palette is open and gives it back after.
     pub(super) fn sync_palette_focus(&mut self) {
-        let open = crate::ui::dashboard::palette::is_open();
+        let open = crate::ui::dashboard::wants_keyboard();
         if open == self.palette_focused {
             return;
         }
