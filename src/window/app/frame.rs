@@ -90,6 +90,7 @@ impl App {
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         self.wellness.poll(&self.config, now);
         self.poll_image_job();
+        self.poll_drop(now);
         self.calendar.poll(&self.config.calendar_feeds, now);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::Agenda) {
             crate::ui::dashboard::sync_agenda(self.calendar.revision(), || {

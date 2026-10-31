@@ -129,3 +129,43 @@ impl App {
         );
     }
 }
+
+impl App {
+    /// Runs a Drop session only while the Drop page is open and the island is expanded.
+    pub(super) fn poll_drop(&mut self, now: std::time::Instant) {
+        use crate::ui::dashboard::{self, Destination};
+        let wanted = self.expanded
+            && dashboard::showing(Destination::Drop)
+            && !crate::core::safe_mode::active();
+        let expired = self
+            .drop_session
+            .as_ref()
+            .is_some_and(|session| session.expired(now));
+        if !wanted || expired {
+            if self.drop_session.take().is_some() {
+                log::info!("Drop session closed");
+            }
+            dashboard::set_drop(None);
+            return;
+        }
+        if self.drop_session.is_none() {
+            self.drop_session = crate::core::drop_server::start(self.shelf.existing_paths());
+        }
+        let Some(session) = &self.drop_session else {
+            dashboard::set_drop(None);
+            return;
+        };
+        let received = session.take_received();
+        let minutes_left = session.expires.saturating_duration_since(now).as_secs() / 60 + 1;
+        dashboard::set_drop(Some((&session.url, minutes_left)));
+        for path in received {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            crate::platform::notify()
+                .show_toast(&winisland_core::i18n::tr("drop_received_title"), &name);
+            self.shelf.add(path);
+        }
+    }
+}

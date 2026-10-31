@@ -6,6 +6,7 @@ pub mod clipboard_history;
 pub mod converter;
 pub mod currency_service;
 pub mod data_inventory;
+pub mod drop_server;
 pub mod focus_store;
 pub mod json_store;
 pub mod persistence;

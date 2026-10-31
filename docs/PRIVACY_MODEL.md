@@ -42,6 +42,7 @@ Clipboard and screen-time data are collected only after the user turns those fea
 | Open-Meteo (`geocoding-api.open-meteo.com`, `api.open-meteo.com`) | Place search (the typed city name and UI language) and forecasts (coordinates rounded to about 1 km) | **Opt-in.** `weather_enabled` defaults to off. Search runs only when the user presses Enter in the location field; forecasts refresh every 30 minutes while enabled and a place is set. |
 | Frankfurter (`api.frankfurter.app`) | Currency reference rates (no query data is sent) | Only after the user types a currency conversion in the palette; cached 12 hours; off in safe mode |
 | Calendar feed servers (user-supplied ICS/webcal links) | Downloads the subscribed calendars | Only for links the user adds; every 30 minutes; off in safe mode. Feed links are stored in plain config for now (encryption is planned) |
+| Local network (Drop) | A temporary HTTP server on the LAN address for phone transfer | Only while More, Drop is open (stops on leaving the page or after 10 minutes); every URL needs a 128-bit random token; never binds to public interfaces; off in safe mode |
 | Native plugins | Anything | Plugins run as native code with the user's privileges and are not network-restricted |
 
 No telemetry, analytics or crash reports are sent.

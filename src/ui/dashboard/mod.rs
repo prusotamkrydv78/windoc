@@ -793,6 +793,8 @@ pub enum Destination {
     ScreenTime,
     /// Upcoming events from calendar feeds; reached from More.
     Agenda,
+    /// Phone transfer by QR code; reached from More.
+    Drop,
 }
 
 impl Destination {
@@ -807,7 +809,7 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 11] = [
+    pub const MORE_ITEMS: [Self; 12] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -819,6 +821,7 @@ impl Destination {
         Self::Weather,
         Self::ScreenTime,
         Self::Agenda,
+        Self::Drop,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -836,6 +839,7 @@ impl Destination {
             Self::Weather => "dashboard_weather",
             Self::ScreenTime => "dashboard_screen_time",
             Self::Agenda => "dashboard_agenda",
+            Self::Drop => "dashboard_drop",
         }
     }
 }
@@ -904,6 +908,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_ai_usage_page(painter, layout.grid, colors);
     } else if active == Destination::Weather {
         draw_weather_page(painter, layout.grid, colors);
+    } else if active == Destination::Drop {
+        draw_drop_page(painter, layout.grid, colors);
     } else if active == Destination::Agenda {
         draw_rows_page(
             &AGENDA_ROWS,
@@ -1642,4 +1648,118 @@ pub fn sync_agenda(revision: u64, rows: impl FnOnce() -> Vec<(String, String)>) 
         let rows = rows();
         AGENDA_ROWS.with(|cell| *cell.borrow_mut() = rows);
     }
+}
+
+struct DropView {
+    url: String,
+    /// QR modules, row-major, `true` for dark.
+    modules: Vec<bool>,
+    width: usize,
+    minutes_left: u64,
+}
+
+thread_local! {
+    static DROP_VIEW: RefCell<Option<DropView>> = const { RefCell::new(None) };
+}
+
+/// Publishes the active Drop session as `(url, minutes left)`, or `None`.
+pub fn set_drop(session: Option<(&str, u64)>) {
+    DROP_VIEW.with(|cell| {
+        let mut view = cell.borrow_mut();
+        let Some((url, minutes_left)) = session else {
+            *view = None;
+            return;
+        };
+        if let Some(current) = view.as_mut().filter(|current| current.url == url) {
+            current.minutes_left = minutes_left;
+            return;
+        }
+        let Ok(code) = qrcode::QrCode::new(url.as_bytes()) else {
+            *view = None;
+            return;
+        };
+        let width = code.width();
+        let modules = code
+            .to_colors()
+            .into_iter()
+            .map(|color| color == qrcode::Color::Dark)
+            .collect();
+        *view = Some(DropView {
+            url: url.to_string(),
+            modules,
+            width,
+            minutes_left,
+        });
+    });
+}
+
+fn draw_drop_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    DROP_VIEW.with(|cell| {
+        let view = cell.borrow();
+        let Some(view) = view.as_ref() else {
+            draw_text(
+                painter,
+                &tr("drop_unavailable"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        };
+        // White quiet zone and dark modules, sized to fit the grid.
+        let side = grid.height().min(grid.width() * 0.5);
+        let quiet = 2.0;
+        let module = side / (view.width as f32 + quiet * 2.0);
+        let qr = Rect::from_xywh(grid.left, grid.top, side, side);
+        painter.fill_rect(qr, winisland_render::Rgba::WHITE);
+        for (index, dark) in view.modules.iter().enumerate() {
+            if *dark {
+                let x = (index % view.width) as f32;
+                let y = (index / view.width) as f32;
+                painter.fill_rect(
+                    Rect::from_xywh(
+                        qr.left + (x + quiet) * module,
+                        qr.top + (y + quiet) * module,
+                        module.ceil(),
+                        module.ceil(),
+                    ),
+                    winisland_render::Rgba::BLACK,
+                );
+            }
+        }
+        let text = Rect::from_ltrb(qr.right + space::S4, grid.top, grid.right, grid.bottom);
+        let line = typography::BODY.size * 1.6;
+        let lines = [
+            (
+                tr("drop_scan"),
+                typography::SECTION_TITLE,
+                colors.text_primary,
+            ),
+            (
+                winisland_core::i18n::tr_args(
+                    "drop_minutes_left",
+                    &[&view.minutes_left.to_string()],
+                ),
+                typography::CAPTION,
+                colors.text_secondary,
+            ),
+            (
+                tr("drop_same_wifi"),
+                typography::CAPTION,
+                colors.text_secondary,
+            ),
+        ];
+        for (index, (content, style, color)) in lines.iter().enumerate() {
+            let top = text.top + index as f32 * line;
+            draw_text(
+                painter,
+                content,
+                *style,
+                Rect::from_ltrb(text.left, top, text.right, top + line),
+                Align::Start,
+                *color,
+            );
+        }
+    });
 }
