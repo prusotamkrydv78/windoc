@@ -1617,7 +1617,7 @@ impl App {
 impl App {
     /// Shows a live preview of an app window after the pointer rests on its bar button for
     /// 450 ms, and removes it when the pointer moves on.
-    fn update_bar_preview(&mut self, window: &WindowRef, hovered: Option<isize>, now: Instant) {
+    pub(super) fn update_bar_preview(&mut self, window: &WindowRef, hovered: Option<isize>, now: Instant) {
         const DELAY: Duration = Duration::from_millis(450);
         let (bar_top, bar_width) = (self.bar_top(), self.bar_geometry.width as f32);
         let current = self.bar_preview.as_ref().map(|(handle, ..)| *handle);

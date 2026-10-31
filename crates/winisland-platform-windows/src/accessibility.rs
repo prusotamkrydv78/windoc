@@ -5,6 +5,9 @@
 //! changes; this module answers `WM_GETOBJECT` with a fragment root whose children are
 //! those elements, so Narrator and other assistive tools can read and navigate them.
 
+// The UIA constants matched below keep the casing of the Windows SDK.
+#![allow(non_upper_case_globals)]
+
 use std::sync::LazyLock;
 
 use parking_lot::Mutex;

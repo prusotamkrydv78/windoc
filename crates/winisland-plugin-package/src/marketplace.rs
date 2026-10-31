@@ -320,7 +320,7 @@ async fn download_catalog_icon(
             return Err("The icon response is too large".into());
         }
         total_bytes
-            .fetch_update(AtomicOrdering::AcqRel, AtomicOrdering::Acquire, |current| {
+            .try_update(AtomicOrdering::AcqRel, AtomicOrdering::Acquire, |current| {
                 current
                     .checked_add(chunk.len())
                     .filter(|total| *total <= MAX_TOTAL_ICON_BYTES)
