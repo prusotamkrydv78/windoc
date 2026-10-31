@@ -245,3 +245,7 @@ clipboard_turn_on=在设置中开启
 card_clipboard_items=历史条目
 clipboard_files={} 个文件
 clipboard_image=图片 {}
+dashboard_notes=笔记
+notes_untitled=无标题
+notes_empty_hint=还没有笔记。快速记录将随笔记编辑器推出。
+card_notes_count=已保存笔记

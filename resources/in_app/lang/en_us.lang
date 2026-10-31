@@ -245,3 +245,7 @@ clipboard_turn_on=Turn on in Settings
 card_clipboard_items=Items in history
 clipboard_files={} files
 clipboard_image=Image {}
+dashboard_notes=Notes
+notes_untitled=Untitled
+notes_empty_hint=No notes yet. Quick capture arrives with the note editor.
+card_notes_count=Notes saved

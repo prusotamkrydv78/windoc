@@ -225,7 +225,151 @@ fn draw_clipboard_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors
     });
 }
 
+/// Modules on the More page: everything in [`Destination::MORE_ITEMS`] not in the dock.
+fn more_entries(layout: &DashboardLayout) -> Vec<Destination> {
+    Destination::MORE_ITEMS
+        .into_iter()
+        .filter(|destination| !layout.destinations.contains(destination))
+        .collect()
+}
+
+/// Row geometry shared by list pages, so drawing and hit testing agree.
+fn list_row(
+    grid: Rect,
+    index: usize,
+    has_subtitle: bool,
+) -> crate::ui::components::list_row::ListRowLayout {
+    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec};
+    use winisland_render::tokens::Density;
+    let spec = ListRowSpec {
+        density: Density::Compact,
+        has_leading: false,
+        has_subtitle,
+        trailing_width: 0.0,
+    };
+    let top = grid.top + index as f32 * spec.density.list_row_height();
+    ListRowLayout::new(grid.left, top, grid.width(), spec)
+}
+
+fn hit_more_row(layout: &DashboardLayout, point: Point) -> Option<Destination> {
+    if !layout.grid.contains(point) {
+        return None;
+    }
+    more_entries(layout)
+        .into_iter()
+        .enumerate()
+        .find(|(index, _)| list_row(layout.grid, *index, false).bounds.contains(point))
+        .map(|(_, destination)| destination)
+}
+
+fn draw_more_page(
+    painter: Painter<'_>,
+    layout: &DashboardLayout,
+    hovered_row: Option<usize>,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::list_row::draw_list_row;
+    for (index, destination) in more_entries(layout).into_iter().enumerate() {
+        let row = list_row(layout.grid, index, false);
+        if row.bounds.top >= layout.grid.bottom {
+            break;
+        }
+        let state = InteractionState {
+            hovered: hovered_row == Some(index),
+            ..InteractionState::default()
+        };
+        draw_list_row(
+            painter,
+            &row,
+            &tr(destination.label_key()),
+            None,
+            colors,
+            state,
+        );
+    }
+}
+
+const NOTES_FILE: &str = "notes.json";
+const MAX_NOTES_FILE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_NOTE_ROWS: usize = 50;
+
+thread_local! {
+    /// Note titles and checklist progress, read once from `notes.json`.
+    static NOTE_ROWS: Vec<(String, String)> = load_note_rows();
+}
+
+fn load_note_rows() -> Vec<(String, String)> {
+    use winisland_core::notes::{NoteStore, NotesSnapshot};
+    let store =
+        match crate::core::json_store::read::<NotesSnapshot>(NOTES_FILE, MAX_NOTES_FILE_BYTES) {
+            Ok(Some(snapshot)) => NoteStore::restore(snapshot).unwrap_or_else(|error| {
+                log::warn!("Ignoring saved notes: {error}");
+                NoteStore::new()
+            }),
+            Ok(None) => NoteStore::new(),
+            Err(error) => {
+                log::warn!("Ignoring saved notes: {error}");
+                NoteStore::new()
+            }
+        };
+    store
+        .list()
+        .into_iter()
+        .take(MAX_NOTE_ROWS)
+        .map(|note| {
+            let title = if note.title().is_empty() {
+                tr("notes_untitled")
+            } else {
+                note.title().to_string()
+            };
+            let checklist = note.checklist();
+            let detail = if checklist.is_empty() {
+                note.tags().join(", ")
+            } else {
+                let done = checklist.iter().filter(|item| item.done).count();
+                format!("{done}/{}", checklist.len())
+            };
+            (title, detail)
+        })
+        .collect()
+}
+
+fn draw_notes_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    use crate::ui::components::list_row::draw_list_row;
+    NOTE_ROWS.with(|rows| {
+        if rows.is_empty() {
+            draw_text(
+                painter,
+                &tr("notes_empty_hint"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (title, detail)) in rows.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            let detail = (!detail.is_empty()).then_some(detail.as_str());
+            draw_list_row(
+                painter,
+                &row,
+                title,
+                detail,
+                colors,
+                InteractionState::default(),
+            );
+        }
+    });
+}
+
 fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
+    if card.kind == CardKind::Notes {
+        return NOTE_ROWS.with(|rows| (rows.len().to_string(), tr("card_notes_count")));
+    }
     if card.kind == CardKind::Clipboard {
         return CLIPBOARD_VIEW.with(|view| {
             let view = view.borrow();
@@ -327,6 +471,9 @@ pub fn hit_test(
         return Some(DashboardHit::Destination(destination));
     }
     let active = PAGE.with(|page| page.borrow().active);
+    if active == Destination::More {
+        return hit_more_row(&layout, local).map(DashboardHit::Destination);
+    }
     layout
         .hit_card(local)
         .filter(|index| *index < cards_for(active).len())
@@ -395,6 +542,14 @@ pub fn draw_page(
                 .position(|candidate| *candidate == destination),
             _ => None,
         },
+        hovered_row: match hover {
+            Some(DashboardHit::Destination(destination)) if active == Destination::More => {
+                more_entries(&layout)
+                    .iter()
+                    .position(|candidate| *candidate == destination)
+            }
+            _ => None,
+        },
         ..DashboardInteraction::default()
     };
     let colors = SemanticColors::for_scheme(ColorScheme::Dark);
@@ -422,6 +577,8 @@ pub enum Destination {
     Shelf,
     Focus,
     More,
+    /// Reached from More; not a dock destination.
+    Notes,
 }
 
 impl Destination {
@@ -435,6 +592,14 @@ impl Destination {
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
+    /// Modules listed on the More page when they are not already in the dock.
+    pub const MORE_ITEMS: [Self; 5] = [
+        Self::Media,
+        Self::Clipboard,
+        Self::Shelf,
+        Self::Focus,
+        Self::Notes,
+    ];
 
     pub const fn label_key(self) -> &'static str {
         match self {
@@ -444,6 +609,7 @@ impl Destination {
             Self::Shelf => "dashboard_shelf",
             Self::Focus => "dashboard_focus",
             Self::More => "dashboard_more",
+            Self::Notes => "dashboard_notes",
         }
     }
 }
@@ -455,6 +621,8 @@ pub struct DashboardInteraction {
     pub focused_card: Option<usize>,
     pub hovered_dock: Option<usize>,
     pub focused_dock: Option<usize>,
+    /// Hovered row on list pages such as More.
+    pub hovered_row: Option<usize>,
 }
 
 pub struct DashboardParams<'a> {
@@ -500,6 +668,10 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
     }
     if active == Destination::Clipboard {
         draw_clipboard_page(painter, layout.grid, colors);
+    } else if active == Destination::More {
+        draw_more_page(painter, layout, interaction.hovered_row, colors);
+    } else if active == Destination::Notes {
+        draw_notes_page(painter, layout.grid, colors);
     } else if cards.is_empty() {
         draw_text(
             painter,

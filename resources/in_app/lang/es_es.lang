@@ -245,3 +245,7 @@ clipboard_turn_on=Actívalo en Ajustes
 card_clipboard_items=Elementos en el historial
 clipboard_files={} archivos
 clipboard_image=Imagen {}
+dashboard_notes=Notas
+notes_untitled=Sin título
+notes_empty_hint=Aún no hay notas. La captura rápida llegará con el editor de notas.
+card_notes_count=Notas guardadas
