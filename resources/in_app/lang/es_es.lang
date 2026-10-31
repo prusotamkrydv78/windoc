@@ -353,3 +353,7 @@ section_modules=Módulos y atajo
 hotkey_opens_island=Ctrl+Alt+H abre la isla y la paleta de comandos (desactivado: oculta la isla)
 module_hide=Ocultar
 module_show=Mostrar
+section_shelves=Estantes
+shelves_add=Añadir estante
+shelves_placeholder=Nombre del estante e Intro
+shelf_switch=Haz clic para cambiar de estante

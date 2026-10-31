@@ -353,3 +353,7 @@ section_modules=Modules and shortcut
 hotkey_opens_island=Ctrl+Alt+H opens the island and command palette (off: hides the island)
 module_hide=Hide
 module_show=Show
+section_shelves=Shelves
+shelves_add=Add a shelf
+shelves_placeholder=Shelf name, then Enter
+shelf_switch=Click to switch shelf

@@ -1124,6 +1124,7 @@ fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
 
 struct ShelfView {
     revision: Option<u64>,
+    name: String,
     entries: Vec<crate::core::shelf_store::ShelfRow>,
 }
 
@@ -1131,23 +1132,28 @@ thread_local! {
     static SHELF: RefCell<ShelfView> = const {
         RefCell::new(ShelfView {
             revision: None,
+            name: String::new(),
             entries: Vec::new(),
         })
     };
     static SHELF_REMOVAL: Cell<Option<u64>> = const { Cell::new(None) };
+    static SHELF_CYCLE: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Publishes shelf entries for the Shelf page, rebuilding them only when they changed.
 pub fn sync_shelf(
     revision: u64,
+    name: impl FnOnce() -> String,
     entries: impl FnOnce() -> Vec<crate::core::shelf_store::ShelfRow>,
 ) {
     let stale = SHELF.with(|cell| cell.borrow().revision != Some(revision));
     if stale {
+        let name = name();
         let entries = entries();
         SHELF.with(|cell| {
             let mut view = cell.borrow_mut();
             view.revision = Some(revision);
+            view.name = name;
             view.entries = entries;
         });
     }
@@ -1158,17 +1164,26 @@ pub fn take_shelf_removal() -> Option<u64> {
     SHELF_REMOVAL.with(Cell::take)
 }
 
+/// Whether the user asked to switch shelves since the last call.
+pub fn take_shelf_cycle() -> bool {
+    SHELF_CYCLE.with(Cell::take)
+}
+
 fn hit_shelf_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
     if !layout.grid.contains(point) {
         return None;
     }
-    let count = SHELF.with(|cell| cell.borrow().entries.len());
+    let count = SHELF.with(|cell| cell.borrow().entries.len()) + 1;
     (0..count).find(|index| list_row(layout.grid, *index, true).bounds.contains(point))
 }
 
 /// Opens an existing file; clicking a missing one removes it from the shelf.
 fn open_shelf_entry(index: usize) {
-    let entry = SHELF.with(|cell| cell.borrow().entries.get(index).cloned());
+    if index == 0 {
+        SHELF_CYCLE.with(|cell| cell.set(true));
+        return;
+    }
+    let entry = SHELF.with(|cell| cell.borrow().entries.get(index - 1).cloned());
     let Some((id, _, path, _)) = entry else {
         return;
     };
@@ -1190,18 +1205,28 @@ fn draw_shelf_page(
     use crate::ui::components::list_row::draw_list_row;
     SHELF.with(|cell| {
         let view = cell.borrow();
-        if view.entries.is_empty() {
-            draw_text(
-                painter,
-                &tr("shelf_empty_hint"),
-                typography::BODY,
-                grid,
-                Align::Center,
-                colors.text_secondary,
-            );
-            return;
-        }
+        let header = list_row(grid, 0, true);
+        draw_list_row(
+            painter,
+            &header,
+            &view.name,
+            Some(
+                tr(if view.entries.is_empty() {
+                    "shelf_empty_hint"
+                } else {
+                    "shelf_switch"
+                })
+                .as_str(),
+            ),
+            colors,
+            InteractionState {
+                hovered: hovered_row == Some(0),
+                selected: true,
+                ..InteractionState::default()
+            },
+        );
         for (index, (_, name, path, exists)) in view.entries.iter().enumerate() {
+            let index = index + 1;
             let row = list_row(grid, index, true);
             if row.bounds.top >= grid.bottom {
                 break;

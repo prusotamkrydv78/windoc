@@ -353,3 +353,7 @@ section_modules=模块与快捷键
 hotkey_opens_island=Ctrl+Alt+H 打开灵动岛和命令面板（关闭时为隐藏灵动岛）
 module_hide=隐藏
 module_show=显示
+section_shelves=文件架
+shelves_add=添加文件架
+shelves_placeholder=输入名称后按回车
+shelf_switch=点击切换文件架

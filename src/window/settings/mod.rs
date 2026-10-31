@@ -183,6 +183,8 @@ pub(crate) enum PluginSettingsRequest {
     Restart,
     /// Deletes one kind of locally stored data.
     ClearData(crate::core::data_inventory::DataKind),
+    CreateShelf(String),
+    DeleteShelf(u64),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

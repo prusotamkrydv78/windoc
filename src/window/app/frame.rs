@@ -96,7 +96,14 @@ impl App {
             crate::ui::dashboard::palette::set_rates(rates);
             window.request_redraw();
         }
-        crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
+        crate::ui::dashboard::sync_shelf(
+            self.shelf.revision(),
+            || self.shelf.active_name(),
+            || self.shelf.entries(),
+        );
+        if crate::ui::dashboard::take_shelf_cycle() {
+            self.shelf.cycle();
+        }
         self.ai_usage.poll(
             self.config.ai_usage_enabled && !crate::core::safe_mode::active(),
             now,

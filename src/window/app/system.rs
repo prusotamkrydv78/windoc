@@ -130,6 +130,18 @@ impl App {
                 }
                 window().exit();
             }
+            Some(crate::window::settings::PluginSettingsRequest::CreateShelf(name)) => {
+                self.shelf.create(&name);
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.mark_items_dirty();
+                }
+            }
+            Some(crate::window::settings::PluginSettingsRequest::DeleteShelf(id)) => {
+                self.shelf.delete(id);
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.mark_items_dirty();
+                }
+            }
             Some(crate::window::settings::PluginSettingsRequest::ClearData(kind)) => {
                 use crate::core::data_inventory::DataKind;
                 match kind {

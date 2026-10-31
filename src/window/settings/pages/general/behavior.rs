@@ -19,6 +19,8 @@ pub(super) enum BehaviorAction {
     AddWorldClock,
     StatusMessage,
     AddLink,
+    AddShelf,
+    DeleteShelf(u64),
     ToggleModule(crate::ui::dashboard::Destination),
     RemoveLink(usize),
     ExportBackup,
@@ -169,6 +171,25 @@ impl SettingsApp {
                 BehaviorAction::ToggleModule(destination),
             );
         }
+        page.group_end();
+        page.section(tr("section_shelves"));
+        page.group_start();
+        let shelves = crate::core::shelf_store::saved_shelves();
+        for (id, name) in &shelves {
+            page.row_button(
+                name.clone(),
+                tr("world_clock_remove"),
+                shelves.len() > 1,
+                BehaviorAction::DeleteShelf(*id),
+            );
+        }
+        page.row_text_field(
+            tr("shelves_add"),
+            String::new(),
+            tr("shelves_placeholder"),
+            true,
+            BehaviorAction::AddShelf,
+        );
         page.group_end();
         page.section(tr("section_links"));
         page.group_start();
@@ -369,6 +390,17 @@ impl SettingsApp {
                     self.config.hidden_modules.push(key);
                 }
                 true
+            }
+            (BehaviorAction::DeleteShelf(id), ClickResult::RowButton(_)) => {
+                self.plugin_request = Some(
+                    crate::window::settings::PluginSettingsRequest::DeleteShelf(id),
+                );
+                false
+            }
+            (BehaviorAction::AddShelf, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.begin_text_input(rect, "", 60, commit_add_shelf);
+                false
             }
             (BehaviorAction::RemoveLink(index), ClickResult::RowButton(_)) => {
                 if index < self.config.links.len() {
@@ -652,4 +684,13 @@ fn commit_add_link(app: &mut SettingsApp, text: &str) {
     };
     app.config.links.push((name, url));
     app.mark_items_dirty();
+}
+
+fn commit_add_shelf(app: &mut SettingsApp, name: &str) {
+    let name = name.trim();
+    if !name.is_empty() {
+        app.plugin_request = Some(crate::window::settings::PluginSettingsRequest::CreateShelf(
+            name.to_string(),
+        ));
+    }
 }

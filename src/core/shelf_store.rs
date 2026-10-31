@@ -14,7 +14,7 @@ pub type ShelfRow = (u64, String, PathBuf, bool);
 
 pub struct ShelfService {
     store: ShelfStore,
-    default_shelf: u64,
+    active_shelf: u64,
     revision: u64,
 }
 
@@ -31,7 +31,7 @@ impl ShelfService {
                 ShelfStore::new()
             }
         };
-        let default_shelf = match store.shelves().first() {
+        let active_shelf = match store.shelves().first() {
             Some(shelf) => shelf.id,
             None => store
                 .create_shelf("Shelf", ShelfMode::Reference)
@@ -39,7 +39,7 @@ impl ShelfService {
         };
         Self {
             store,
-            default_shelf,
+            active_shelf,
             revision: 0,
         }
     }
@@ -48,7 +48,7 @@ impl ShelfService {
     pub fn add(&mut self, path: PathBuf) {
         match self
             .store
-            .add(self.default_shelf, path, None, SystemTime::now())
+            .add(self.active_shelf, path, None, SystemTime::now())
         {
             Ok(_) => self.changed(),
             Err(error) => log::warn!("Cannot add file to shelf: {error}"),
@@ -56,7 +56,7 @@ impl ShelfService {
     }
 
     pub fn remove(&mut self, entry_id: u64) {
-        if self.store.remove(self.default_shelf, entry_id).is_ok() {
+        if self.store.remove(self.active_shelf, entry_id).is_ok() {
             self.changed();
         }
     }
@@ -71,7 +71,7 @@ impl ShelfService {
     /// `(entry id, file name, path, exists)` for the default shelf.
     pub fn entries(&self) -> Vec<ShelfRow> {
         self.store
-            .shelf(self.default_shelf)
+            .shelf(self.active_shelf)
             .map(|shelf| {
                 shelf
                     .entries()
@@ -88,5 +88,73 @@ impl ShelfService {
 
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+}
+
+impl ShelfService {
+    /// `(id, name)` of every shelf, in creation order.
+    pub fn shelves(&self) -> Vec<(u64, String)> {
+        self.store
+            .shelves()
+            .iter()
+            .map(|shelf| (shelf.id, shelf.name.clone()))
+            .collect()
+    }
+
+    pub fn active_name(&self) -> String {
+        self.store
+            .shelf(self.active_shelf)
+            .map(|shelf| shelf.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Makes the next shelf active, wrapping around.
+    pub fn cycle(&mut self) {
+        let shelves = self.store.shelves();
+        if let Some(position) = shelves
+            .iter()
+            .position(|shelf| shelf.id == self.active_shelf)
+        {
+            self.active_shelf = shelves[(position + 1) % shelves.len()].id;
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    pub fn create(&mut self, name: &str) {
+        match self
+            .store
+            .create_shelf(name, winisland_core::shelf::ShelfMode::Reference)
+        {
+            Ok(id) => {
+                self.active_shelf = id;
+                self.changed();
+            }
+            Err(error) => log::warn!("Cannot create shelf: {error}"),
+        }
+    }
+
+    /// Deletes a shelf (never the last one). Originals are untouched.
+    pub fn delete(&mut self, id: u64) {
+        if self.store.shelves().len() <= 1 {
+            return;
+        }
+        if self.store.delete_shelf(id).is_ok() {
+            if self.active_shelf == id {
+                self.active_shelf = self.store.shelves().first().map_or(0, |shelf| shelf.id);
+            }
+            self.changed();
+        }
+    }
+}
+
+/// Shelf `(id, name)` pairs as saved on disk, for the settings window.
+pub fn saved_shelves() -> Vec<(u64, String)> {
+    match json_store::read::<ShelfSnapshot>(FILE_NAME, MAX_FILE_BYTES) {
+        Ok(Some(snapshot)) => snapshot
+            .shelves
+            .iter()
+            .map(|shelf| (shelf.id, shelf.name.clone()))
+            .collect(),
+        _ => Vec::new(),
     }
 }
