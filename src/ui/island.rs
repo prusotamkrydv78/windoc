@@ -466,6 +466,17 @@ fn draw_pager(
     if alpha <= MIN_VISIBLE_OPACITY {
         return;
     }
+    // The dashboard has its own dock; a second pager under it is just noise.
+    let current = params.layout.view_offset.round().max(0.0) as usize;
+    let alpha = if pages.get(current) == Some(&ExpandedPage::Home) {
+        let distance = (params.layout.view_offset - current as f32).abs();
+        alpha * (distance * 2.0).min(1.0)
+    } else {
+        alpha
+    };
+    if alpha <= MIN_VISIBLE_OPACITY {
+        return;
+    }
     let backdrop = (params.style.island_style == "dynamic")
         .then(|| {
             crate::utils::backdrop::get_blurred_cover_background(
