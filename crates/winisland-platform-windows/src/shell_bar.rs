@@ -639,3 +639,37 @@ impl Drop for WindowThumbnail {
         }
     }
 }
+
+/// Toggles the default microphone's mute and returns the new state (`true` = muted).
+/// Blocking COM work: call it off the UI thread.
+pub fn toggle_microphone_mute() -> Option<bool> {
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{
+        IMMDeviceEnumerator, MMDeviceEnumerator, eCapture, eCommunications,
+    };
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    let _com = crate::com::ComGuard::mta().ok()?;
+    // SAFETY: COM calls on interfaces created here, with the apartment held by `_com`.
+    unsafe {
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let device = enumerator
+            .GetDefaultAudioEndpoint(eCapture, eCommunications)
+            .ok()?;
+        let volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
+        let muted = !volume.GetMute().ok()?.as_bool();
+        volume.SetMute(muted, std::ptr::null()).ok()?;
+        Some(muted)
+    }
+}
+
+/// Executables of calling apps; a call is assumed while one runs and the mic is in use.
+pub const CALL_APPS: [&str; 7] = [
+    "ms-teams.exe",
+    "teams.exe",
+    "zoom.exe",
+    "slack.exe",
+    "discord.exe",
+    "skype.exe",
+    "webex.exe",
+];

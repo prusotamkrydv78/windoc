@@ -138,6 +138,10 @@ pub struct App {
     battery_checked_at: Option<Instant>,
     file_drag_hover: bool,
     top_bar: Option<crate::core::top_bar::TopBarSession>,
+    /// Active call: when it started and the calling app's name.
+    call: Option<(Instant, String)>,
+    /// Microphone mute as last set from the notch.
+    call_muted: bool,
     /// Hovered app window, when the hover started, and its live preview once shown.
     bar_preview: Option<(
         isize,
@@ -301,6 +305,8 @@ impl Default for App {
             battery_checked_at: None,
             file_drag_hover: false,
             top_bar: None,
+            call: None,
+            call_muted: false,
             bar_preview: None,
             onboarding_tick: 0,
             is_cursor_suppressed: false,

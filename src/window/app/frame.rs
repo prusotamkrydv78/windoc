@@ -1352,6 +1352,7 @@ impl App {
             .set_activities_enabled(self.config.live_activities);
         let (microphone, camera) = crate::platform::capture_in_use();
         crate::ui::island::set_capture_in_use(microphone, camera);
+        self.update_call(microphone, now);
         self.poll_onboarding();
         const IDLE_DIM_AFTER: Duration = Duration::from_secs(10 * 60);
         crate::ui::island::set_idle_dimmed(
@@ -1652,4 +1653,82 @@ impl App {
         *thumbnail = Some(preview);
         window.request_redraw();
     }
+}
+
+impl App {
+    /// Meeting mode: while the microphone is in use and a calling app runs, the notch shows
+    /// the call with its duration and mic state, refreshed every poll so it stays up.
+    fn update_call(&mut self, microphone: bool, now: Instant) {
+        use winisland_platform_windows::shell_bar;
+        let caller = microphone
+            .then(|| {
+                shell_bar::app_windows().into_iter().find(|window| {
+                    shell_bar::CALL_APPS
+                        .iter()
+                        .any(|app| window.executable.eq_ignore_ascii_case(app))
+                        || window.title.contains("Meet - ")
+                })
+            })
+            .flatten()
+            .map(|window| crate::ui::top_bar::app_label(&window.executable, &window.title));
+        match (caller, self.call.take()) {
+            (Some(name), previous) => {
+                let started = previous.map_or(now, |(started, _)| started);
+                self.call = Some((started, name));
+                self.push_call_activity(now);
+            }
+            (None, Some((started, name))) => {
+                self.call_muted = false;
+                if !self.expanded && !self.is_hidden() {
+                    self.compact_overlay
+                        .push_activity(crate::ui::compact::Activity {
+                            icon: crate::ui::components::icon::Icon::Phone,
+                            accent: winisland_render::Rgba::WHITE,
+                            primary: format!("{name} call ended"),
+                            secondary: format_call_time(now.duration_since(started)),
+                            progress: None,
+                        });
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    pub(super) fn push_call_activity(&mut self, now: Instant) {
+        let Some((started, name)) = &self.call else {
+            return;
+        };
+        if self.expanded || self.is_hidden() {
+            return;
+        }
+        let (accent, mic) = if self.call_muted {
+            (winisland_render::Rgba::from_rgb(255, 69, 58), "Muted")
+        } else {
+            (winisland_render::Rgba::from_rgb(48, 209, 88), "Mic on")
+        };
+        let activity = crate::ui::compact::Activity {
+            icon: crate::ui::components::icon::Icon::Phone,
+            accent,
+            primary: name.clone(),
+            secondary: format!("{} · {mic}", format_call_time(now.duration_since(*started))),
+            progress: None,
+        };
+        self.compact_overlay.push_activity(activity);
+    }
+
+    /// Middle-click during a call mutes or unmutes the microphone.
+    pub(super) fn toggle_call_mute(&mut self) -> bool {
+        if self.call.is_none() {
+            return false;
+        }
+        self.call_muted = !self.call_muted;
+        std::thread::spawn(winisland_platform_windows::shell_bar::toggle_microphone_mute);
+        self.push_call_activity(Instant::now());
+        true
+    }
+}
+
+fn format_call_time(elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }

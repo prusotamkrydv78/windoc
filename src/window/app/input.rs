@@ -572,7 +572,7 @@ impl App {
             self.springs.h.value as f64,
             self.springs.r.value as f64,
         );
-        if over_island {
+        if over_island && !self.toggle_call_mute() {
             self.smtc.request_toggle_play();
         }
     }
