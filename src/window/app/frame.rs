@@ -92,7 +92,8 @@ impl App {
             self.geom.win_y = self.geom.configured_y;
             window.set_outer_position(WindowPosition::new(self.geom.win_x, self.geom.win_y));
         }
-        if self.topmost_check.due(now) {
+        self.sync_palette_focus();
+        if self.topmost_check.due(now) && !self.palette_focused {
             Self::enforce_overlay_window(&window);
         }
         self.handle_tray_events(&window);

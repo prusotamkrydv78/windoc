@@ -422,6 +422,17 @@ impl WindowSystem for WindowsWindowSystem {
         });
     }
 
+    fn set_keyboard_focus(&self, id: WindowId, focused: bool) {
+        let _ = with_window(id, |window| {
+            if let Some(hwnd) = window_hwnd(window) {
+                styles::set_keyboard_focus(
+                    windows::Win32::Foundation::HWND(hwnd as *mut _),
+                    focused,
+                );
+            }
+        });
+    }
+
     fn theme(&self, id: WindowId) -> Option<Theme> {
         with_window(id, |window| {
             window.theme().map(|theme| match theme {

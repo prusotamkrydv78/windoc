@@ -100,6 +100,16 @@ impl App {
                     self.shelf.add(path);
                     win.request_redraw();
                 }
+                PlatformEvent::KeyInput {
+                    key,
+                    state: InputState::Pressed,
+                    ..
+                } if crate::ui::dashboard::palette::is_open() => {
+                    if let Some(command) = crate::ui::dashboard::palette::handle_key(&key) {
+                        self.run_palette_command(command);
+                    }
+                    win.request_redraw();
+                }
                 PlatformEvent::MouseWheel { delta, .. } => {
                     let (px, py) = get_global_cursor_pos();
                     if self.handle_mouse_wheel(delta, px, py) {

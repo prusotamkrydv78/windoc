@@ -104,6 +104,9 @@ pub trait WindowSystem {
     fn apply_overlay_styles(&self, id: WindowId, styles: OverlayStyles);
     /// Changes topmost order without activation; a missing window is ignored.
     fn set_topmost(&self, id: WindowId, topmost: bool);
+    /// Lets an overlay take keyboard focus (for text entry) or returns it to never
+    /// activating. The default does nothing.
+    fn set_keyboard_focus(&self, _id: WindowId, _focused: bool) {}
     /// Reads the theme; `None` includes unknown theme and missing window.
     fn theme(&self, id: WindowId) -> Option<Theme>;
     /// Sets the cursor icon; a missing window is ignored.

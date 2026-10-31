@@ -29,6 +29,7 @@ mod frame;
 mod input;
 mod layout;
 mod pages;
+mod palette;
 mod startup;
 mod system;
 mod v2;
@@ -72,6 +73,7 @@ pub struct App {
     clipboard: crate::core::clipboard_history::ClipboardService,
     weather: crate::core::weather_service::WeatherService,
     shelf: crate::core::shelf_store::ShelfService,
+    palette_focused: bool,
     compact_overlay: CompactOverlay,
     config: AppConfig,
     expanded: bool,
@@ -224,6 +226,7 @@ impl Default for App {
             ),
             weather: crate::core::weather_service::WeatherService::load(),
             shelf: crate::core::shelf_store::ShelfService::load(),
+            palette_focused: false,
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,
                 config.brightness_overlay_enabled,

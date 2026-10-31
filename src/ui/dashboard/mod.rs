@@ -8,6 +8,7 @@
 #![allow(dead_code)]
 
 pub mod layout;
+pub mod palette;
 pub mod sample;
 
 use std::cell::{Cell, RefCell};
@@ -34,6 +35,8 @@ pub enum DashboardHit {
     Destination(Destination),
     /// Index of a row on the Shelf page.
     ShelfEntry(usize),
+    /// The header, which opens the command palette.
+    Header,
 }
 
 struct PageState {
@@ -297,23 +300,62 @@ const MAX_NOTE_ROWS: usize = 50;
 
 thread_local! {
     /// Note titles and checklist progress, read once from `notes.json`.
-    static NOTE_ROWS: Vec<(String, String)> = load_note_rows();
+    static NOTE_ROWS: RefCell<Vec<(String, String)>> = RefCell::new(note_rows(&load_notes()));
 }
 
-fn load_note_rows() -> Vec<(String, String)> {
+fn load_notes() -> winisland_core::notes::NoteStore {
     use winisland_core::notes::{NoteStore, NotesSnapshot};
-    let store =
-        match crate::core::json_store::read::<NotesSnapshot>(NOTES_FILE, MAX_NOTES_FILE_BYTES) {
-            Ok(Some(snapshot)) => NoteStore::restore(snapshot).unwrap_or_else(|error| {
-                log::warn!("Ignoring saved notes: {error}");
-                NoteStore::new()
-            }),
-            Ok(None) => NoteStore::new(),
-            Err(error) => {
-                log::warn!("Ignoring saved notes: {error}");
-                NoteStore::new()
-            }
-        };
+    match crate::core::json_store::read::<NotesSnapshot>(NOTES_FILE, MAX_NOTES_FILE_BYTES) {
+        Ok(Some(snapshot)) => NoteStore::restore(snapshot).unwrap_or_else(|error| {
+            log::warn!("Ignoring saved notes: {error}");
+            NoteStore::new()
+        }),
+        Ok(None) => NoteStore::new(),
+        Err(error) => {
+            log::warn!("Ignoring saved notes: {error}");
+            NoteStore::new()
+        }
+    }
+}
+
+/// Saves a quick note from the command palette and refreshes the Notes page.
+pub fn add_quick_note(text: &str) {
+    let mut store = load_notes();
+    if let Err(error) = store.create(text, std::time::SystemTime::now()) {
+        log::warn!("Cannot add note: {error}");
+        return;
+    }
+    if let Err(error) = crate::core::json_store::write(NOTES_FILE, &store.snapshot()) {
+        log::warn!("Cannot save notes: {error}");
+        return;
+    }
+    NOTE_ROWS.with(|cell| *cell.borrow_mut() = note_rows(&store));
+}
+
+/// Switches the dashboard to `destination`.
+pub fn show(destination: Destination) {
+    PAGE.with(|page| page.borrow_mut().active = destination);
+}
+
+fn start_timer(kind: TimerKind) {
+    PAGE.with(|page| {
+        let mut page = page.borrow_mut();
+        page.focus = FocusTimer::new(kind);
+        page.focus.start(Instant::now());
+        crate::core::focus_store::save(&page.focus);
+        page.active = Destination::Home;
+    });
+}
+
+pub fn start_countdown(duration: Duration) {
+    start_timer(TimerKind::Countdown(duration));
+}
+
+pub fn start_pomodoro() {
+    start_timer(TimerKind::Pomodoro(PomodoroConfig::default()));
+}
+
+fn note_rows(store: &winisland_core::notes::NoteStore) -> Vec<(String, String)> {
     store
         .list()
         .into_iter()
@@ -338,7 +380,8 @@ fn load_note_rows() -> Vec<(String, String)> {
 
 fn draw_notes_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
     use crate::ui::components::list_row::draw_list_row;
-    NOTE_ROWS.with(|rows| {
+    NOTE_ROWS.with(|cell| {
+        let rows = cell.borrow();
         if rows.is_empty() {
             draw_text(
                 painter,
@@ -398,7 +441,7 @@ fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
         });
     }
     if card.kind == CardKind::Notes {
-        return NOTE_ROWS.with(|rows| (rows.len().to_string(), tr("card_notes_count")));
+        return NOTE_ROWS.with(|cell| (cell.borrow().len().to_string(), tr("card_notes_count")));
     }
     if card.kind == CardKind::Clipboard {
         return CLIPBOARD_VIEW.with(|view| {
@@ -468,7 +511,7 @@ pub fn reset_focus() {
 }
 
 pub fn is_animating() -> bool {
-    PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
+    palette::is_open() || PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
 }
 
 /// Text for the compact Focus widget and whether the timer is running.
@@ -531,6 +574,9 @@ pub fn hit_test(
     if let Some(destination) = layout.hit_destination(local) {
         return Some(DashboardHit::Destination(destination));
     }
+    if layout.header.contains(local) {
+        return Some(DashboardHit::Header);
+    }
     let active = PAGE.with(|page| page.borrow().active);
     if active == Destination::More {
         return hit_more_row(&layout, local).map(DashboardHit::Destination);
@@ -562,6 +608,7 @@ pub fn apply(hit: DashboardHit) {
         match hit {
             DashboardHit::Destination(destination) => page.active = destination,
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
+            DashboardHit::Header => palette::open(),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -631,6 +678,12 @@ pub fn draw_page(
         focus: Some(focus),
         interaction,
     });
+    let caret_visible = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(true, |elapsed| {
+            (elapsed.as_millis() / 500).is_multiple_of(2)
+        });
+    palette::draw(painter, layout.header, &colors, caret_visible);
     painter.restore();
 }
 

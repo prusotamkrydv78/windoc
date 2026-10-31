@@ -167,3 +167,15 @@ pub(crate) fn set_titlebar_theme(hwnd: HWND, light: bool) {
         );
     }
 }
+
+/// Temporarily allows the overlay to become the foreground window so it receives typed
+/// keys, or restores the no-activate style afterwards.
+pub(crate) fn set_keyboard_focus(hwnd: HWND, focused: bool) {
+    if focused {
+        modify_window_ex_style(hwnd, 0, WS_EX_NOACTIVATE.0 as isize);
+        // SAFETY: hwnd is a validated, live overlay window owned by this process.
+        let _ = unsafe { windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd) };
+    } else {
+        modify_window_ex_style(hwnd, WS_EX_NOACTIVATE.0 as isize, 0);
+    }
+}
