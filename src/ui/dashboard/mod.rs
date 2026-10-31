@@ -1315,7 +1315,7 @@ fn draw_header(
             pill_width,
             26.0,
         );
-        if pill.left > date_left + 150.0 && pill.right < settings.left - space::S2 {
+        if pill.left > date_left + 150.0 && pill.right < settings.left - BATTERY_CHIP_WIDTH {
             painter.fill_round_rect(pill, Radius::uniform(13.0), colors.surface_raised);
             painter.stroke_round_rect(pill, Radius::uniform(13.0), 1.0, colors.accent_soft);
             draw_icon(
@@ -1334,6 +1334,7 @@ fn draw_header(
             );
         }
     }
+    draw_battery_chip(painter, header, settings.left - space::S2, colors);
     // Right: settings and close.
     for (rect, icon, hit) in [
         (settings, Icon::Settings, DashboardHit::OpenSettings),
@@ -2858,4 +2859,73 @@ fn draw_focus_page(
             _ => draw_icon(painter, Icon::More, inner, icon_color),
         }
     }
+}
+
+/// Room the battery chip takes in the header, divider included.
+const BATTERY_CHIP_WIDTH: f32 = 84.0;
+
+thread_local! {
+    /// Battery charge and AC state for the header chip, or `None` without a battery.
+    static BATTERY: Cell<Option<(u8, bool)>> = const { Cell::new(None) };
+}
+
+/// Publishes the battery state shown in the dashboard header.
+pub fn set_battery(state: Option<(u8, bool)>) {
+    BATTERY.with(|cell| cell.set(state));
+}
+
+/// "74% [▮▮▮ ]" ending at `right`, followed by a thin divider before the header buttons.
+fn draw_battery_chip(painter: Painter<'_>, header: Rect, right: f32, colors: &SemanticColors) {
+    let Some((level, charging)) = BATTERY.with(Cell::get) else {
+        return;
+    };
+    let fill_color = if charging {
+        winisland_render::Rgba::from_argb(255, 52, 199, 89)
+    } else if level <= 15 {
+        winisland_render::Rgba::from_argb(255, 255, 69, 58)
+    } else {
+        colors.text_primary
+    };
+    painter.fill_rect(
+        Rect::from_xywh(right - 1.0, header.center_y() - 8.0, 1.0, 16.0),
+        colors.border_strong,
+    );
+    let body = Rect::from_xywh(
+        right - space::S2 - 26.0,
+        header.center_y() - 6.0,
+        22.0,
+        12.0,
+    );
+    painter.stroke_round_rect(body, Radius::uniform(3.5), 1.2, colors.text_secondary);
+    painter.fill_round_rect(
+        Rect::from_xywh(body.right + 1.0, body.center_y() - 2.5, 2.0, 5.0),
+        Radius::uniform(1.0),
+        colors.text_secondary,
+    );
+    let inner = Rect::from_xywh(
+        body.left + 2.0,
+        body.top + 2.0,
+        ((body.width() - 4.0) * f32::from(level.min(100)) / 100.0).max(2.0),
+        body.height() - 4.0,
+    );
+    painter.fill_round_rect(inner, Radius::uniform(2.0), fill_color);
+    let label = format!("{level}%");
+    let label_width = winisland_render::text::FontManager::global().measure_text_cached(
+        &label,
+        typography::LABEL.size,
+        winisland_render::FontStyle::normal(),
+    );
+    draw_text(
+        painter,
+        &label,
+        typography::LABEL,
+        Rect::from_xywh(
+            body.left - space::S1 - label_width - 2.0,
+            header.top,
+            label_width + 2.0,
+            header.height(),
+        ),
+        Align::Start,
+        colors.text_primary,
+    );
 }

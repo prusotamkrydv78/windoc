@@ -1339,6 +1339,7 @@ impl App {
                     progress: None,
                 });
         }
+        crate::ui::dashboard::set_battery(crate::platform::battery());
         let Some((level, plugged)) = crate::platform::battery() else {
             return;
         };
