@@ -235,9 +235,47 @@ impl App {
         }
     }
 
+    /// Scrolling over the collapsed notch changes the system volume in 2% steps; the volume
+    /// live activity picks the change up on its own.
+    fn handle_collapsed_wheel(&mut self, delta: MouseWheelDelta, px: i32, py: i32) -> bool {
+        const VOLUME_STEP: f32 = 0.02;
+        let layout = self.compute_island_layout();
+        let over_island = is_point_in_continuous_rounded_rect(
+            (px - self.geom.win_x) as f64,
+            (py - self.geom.win_y) as f64,
+            layout.current_island_x,
+            layout.current_island_y.min(0.0),
+            self.springs.w.value as f64,
+            self.springs.h.value as f64 + layout.current_island_y.max(0.0),
+            self.springs.r.value as f64,
+        );
+        if !over_island || self.is_hidden() {
+            return false;
+        }
+        let steps = match delta {
+            MouseWheelDelta::Lines { y, .. } => y,
+            MouseWheelDelta::Pixels { y, .. } => {
+                self.wheel_accumulator += y as f32;
+                let steps = (self.wheel_accumulator / WHEEL_PIXEL_THRESHOLD).trunc();
+                self.wheel_accumulator -= steps * WHEEL_PIXEL_THRESHOLD;
+                steps
+            }
+        };
+        if steps == 0.0 {
+            return true;
+        }
+        std::thread::spawn(move || {
+            let audio = crate::platform::audio();
+            if let Ok(state) = audio.volume() {
+                let _ = audio.set_volume((state.level + steps * VOLUME_STEP).clamp(0.0, 1.0));
+            }
+        });
+        true
+    }
+
     pub(super) fn handle_mouse_wheel(&mut self, delta: MouseWheelDelta, px: i32, py: i32) -> bool {
         if !self.expanded {
-            return false;
+            return self.handle_collapsed_wheel(delta, px, py);
         }
         let rel_x = px - self.geom.win_x;
         let rel_y = py - self.geom.win_y;
