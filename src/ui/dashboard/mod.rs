@@ -1644,6 +1644,19 @@ pub fn set_weather_rows(rows: Vec<(String, String)>) {
 }
 
 fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    let hourly = WEATHER_HOURLY.with(|cell| cell.borrow().clone());
+    let grid = if hourly.len() >= 2 {
+        let chart = Rect::from_ltrb(
+            grid.left,
+            grid.top,
+            grid.right,
+            grid.top + WEATHER_CHART_HEIGHT,
+        );
+        draw_temperature_chart(painter, chart, &hourly, colors);
+        Rect::from_ltrb(grid.left, chart.bottom + space::S2, grid.right, grid.bottom)
+    } else {
+        grid
+    };
     use crate::ui::components::list_row::draw_list_row;
     WEATHER_ROWS.with(|cell| {
         let rows = cell.borrow();
@@ -1977,6 +1990,107 @@ fn draw_system_rings(painter: Painter<'_>, content: Rect, colors: &SemanticColor
             typography::CAPTION,
             Rect::from_xywh(center_x - slot / 2.0, content.top + size, slot, label_h),
             Align::Center,
+            colors.text_secondary,
+        );
+    }
+}
+
+const WEATHER_CHART_HEIGHT: f32 = 64.0;
+
+thread_local! {
+    static WEATHER_HOURLY: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the next hours' temperatures for the Weather chart.
+pub fn set_weather_hourly(temperatures: Vec<f32>) {
+    WEATHER_HOURLY.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != temperatures {
+            *current = temperatures;
+        }
+    });
+}
+
+/// A smooth temperature line with a soft fill, plus the high and low labels.
+fn draw_temperature_chart(
+    painter: Painter<'_>,
+    rect: Rect,
+    values: &[f32],
+    colors: &SemanticColors,
+) {
+    use winisland_render::{GradientStop, PathBuilder, StrokeCap, StrokeJoin, TileMode};
+    let (min, max) = values
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(min, max), value| {
+            (min.min(*value), max.max(*value))
+        });
+    let range = (max - min).max(1.0);
+    let plot = rect.inset(space::S2);
+    let step = plot.width() / (values.len() - 1) as f32;
+    let points: Vec<Point> = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            Point::new(
+                plot.left + step * index as f32,
+                plot.bottom - (value - min) / range * plot.height(),
+            )
+        })
+        .collect();
+    // Catmull-Rom style smoothing through the points.
+    let mut line = PathBuilder::new();
+    line.move_to(points[0]);
+    for index in 1..points.len() {
+        let previous = points[index - 1];
+        let current = points[index];
+        let before = points[index.saturating_sub(2)];
+        let after = points[(index + 1).min(points.len() - 1)];
+        let control1 = Point::new(
+            previous.x + (current.x - before.x) / 6.0,
+            previous.y + (current.y - before.y) / 6.0,
+        );
+        let control2 = Point::new(
+            current.x - (after.x - previous.x) / 6.0,
+            current.y - (after.y - previous.y) / 6.0,
+        );
+        line.cubic_to(control1, control2, current);
+    }
+    let stroke = line.detach();
+    let mut area = PathBuilder::new();
+    area.move_to(Point::new(points[0].x, plot.bottom));
+    for point in &points {
+        area.line_to(*point);
+    }
+    area.line_to(Point::new(points[points.len() - 1].x, plot.bottom));
+    area.close();
+    let accent = colors.accent_primary;
+    painter.fill_path_with_gradient(
+        &area.detach(),
+        Point::new(plot.left, plot.top),
+        Point::new(plot.left, plot.bottom),
+        &[
+            GradientStop {
+                offset: 0.0,
+                color: accent.with_alpha(70),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: accent.with_alpha(0),
+            },
+        ],
+        TileMode::Clamp,
+    );
+    painter.stroke_path(&stroke, 2.0, accent, StrokeCap::Round, StrokeJoin::Round);
+    for (label, y) in [
+        (format!("{max:.0}°"), plot.top),
+        (format!("{min:.0}°"), plot.bottom - typography::CAPTION.size),
+    ] {
+        draw_text(
+            painter,
+            &label,
+            typography::CAPTION,
+            Rect::from_xywh(rect.right - 40.0, y, 40.0, typography::CAPTION.size + 2.0),
+            Align::Start,
             colors.text_secondary,
         );
     }

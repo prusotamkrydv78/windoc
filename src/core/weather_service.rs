@@ -197,3 +197,21 @@ impl WeatherService {
         rows
     }
 }
+
+impl WeatherService {
+    /// Temperatures for the next 12 hours, for the Weather page chart.
+    pub fn hourly_temperatures(&self, config: &AppConfig) -> Vec<f32> {
+        self.forecast
+            .as_ref()
+            .filter(|_| config.weather_enabled)
+            .map(|forecast| {
+                forecast
+                    .hourly
+                    .iter()
+                    .take(12)
+                    .map(|hour| hour.temperature as f32)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
