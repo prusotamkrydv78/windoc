@@ -1027,11 +1027,29 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             colors,
         );
     } else if active == Destination::ScreenTime {
+        let week = SCREEN_TIME_WEEK.with(|cell| cell.borrow().clone());
+        let grid = if week.iter().any(|(_, minutes)| *minutes > 0.0) {
+            let chart = Rect::from_ltrb(
+                layout.grid.left,
+                layout.grid.top,
+                layout.grid.right,
+                layout.grid.top + WEEK_CHART_HEIGHT,
+            );
+            draw_week_chart(painter, chart, &week, colors);
+            Rect::from_ltrb(
+                layout.grid.left,
+                chart.bottom + space::S2,
+                layout.grid.right,
+                layout.grid.bottom,
+            )
+        } else {
+            layout.grid
+        };
         draw_rows_page(
             &SCREEN_TIME_ROWS,
             "screen_time_turn_on",
             painter,
-            layout.grid,
+            grid,
             colors,
         );
     } else if active == Destination::Links {
