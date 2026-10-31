@@ -26,6 +26,7 @@ impl App {
         match command {
             Command::StartTimer(duration) => dashboard::start_countdown(duration),
             Command::StartPomodoro => dashboard::start_pomodoro(),
+            Command::StartStopwatch => dashboard::start_stopwatch(),
             Command::QuickNote(text) => dashboard::add_quick_note(&text),
             Command::OpenFolder(folder) => {
                 let path = match folder {

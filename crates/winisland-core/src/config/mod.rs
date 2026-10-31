@@ -92,6 +92,18 @@ pub struct AppConfig {
     pub world_clocks: Vec<String>,
     /// Text shown by the Message compact widget.
     pub status_message: String,
+    /// Minutes between water reminders; 0 turns them off.
+    #[setting(
+        number(min = 0.0, max = 240.0, step = 15.0),
+        label = "water_reminder_minutes"
+    )]
+    pub water_reminder_minutes: f32,
+    /// Minutes between stretch reminders; 0 turns them off.
+    #[setting(
+        number(min = 0.0, max = 240.0, step = 15.0),
+        label = "stretch_reminder_minutes"
+    )]
+    pub stretch_reminder_minutes: f32,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

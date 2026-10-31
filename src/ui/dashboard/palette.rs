@@ -60,6 +60,7 @@ fn preview(query: &str) -> Option<String> {
             &[&(duration.as_secs() / 60).to_string()],
         )),
         Command::StartPomodoro => Some(tr("palette_pomodoro")),
+        Command::StartStopwatch => Some(tr("palette_stopwatch")),
         Command::QuickNote(_) => Some(tr("palette_note")),
         Command::OpenFolder(_) | Command::OpenModule(_) => Some(tr("palette_open")),
         Command::SearchClipboard(_) => Some(tr("palette_clipboard")),

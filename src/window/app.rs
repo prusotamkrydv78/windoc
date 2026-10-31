@@ -74,6 +74,7 @@ pub struct App {
     weather: crate::core::weather_service::WeatherService,
     shelf: crate::core::shelf_store::ShelfService,
     palette_focused: bool,
+    wellness: crate::core::wellness::WellnessReminders,
     ai_usage: crate::core::ai_usage_service::AiUsageService,
     compact_overlay: CompactOverlay,
     config: AppConfig,
@@ -228,6 +229,7 @@ impl Default for App {
             weather: crate::core::weather_service::WeatherService::load(),
             shelf: crate::core::shelf_store::ShelfService::load(),
             palette_focused: false,
+            wellness: crate::core::wellness::WellnessReminders::new(),
             ai_usage: crate::core::ai_usage_service::AiUsageService::new(),
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,

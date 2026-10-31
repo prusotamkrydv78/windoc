@@ -316,3 +316,12 @@ section_status_message=Status message
 status_message=Message
 status_message_placeholder=e.g. In a meeting, back at 3
 status_message_hint=Add the Message widget to the compact island in Widgets to show it, for example while sharing your screen.
+section_wellness=Breaks
+water_reminder_minutes=Water reminder (minutes, 0 = off)
+stretch_reminder_minutes=Stretch reminder (minutes, 0 = off)
+wellness_hint=Gentle notifications at the interval you choose.
+water_reminder_title=Time for water
+water_reminder_body=Have a glass of water.
+stretch_reminder_title=Time to stretch
+stretch_reminder_body=Stand up and stretch for a minute.
+palette_stopwatch=Start a stopwatch

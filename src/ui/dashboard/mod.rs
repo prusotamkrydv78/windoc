@@ -358,6 +358,10 @@ pub fn start_pomodoro() {
     start_timer(TimerKind::Pomodoro(PomodoroConfig::default()));
 }
 
+pub fn start_stopwatch() {
+    start_timer(TimerKind::Stopwatch);
+}
+
 fn note_rows(store: &winisland_core::notes::NoteStore) -> Vec<(u64, String, String)> {
     store
         .list()

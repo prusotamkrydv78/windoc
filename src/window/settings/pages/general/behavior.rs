@@ -142,6 +142,12 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::AiUsageEnabled, true);
         page.row_label(tr("ai_usage_hint"));
         page.group_end();
+        page.section(tr("section_wellness"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::WaterReminderMinutes, true);
+        page.setting(&self.config, AppConfigField::StretchReminderMinutes, true);
+        page.row_label(tr("wellness_hint"));
+        page.group_end();
         page.section(tr("section_status_message"));
         page.group_start();
         page.row_text_field(

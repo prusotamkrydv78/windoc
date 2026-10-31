@@ -38,6 +38,8 @@ pub enum Command {
     StartTimer(Duration),
     /// `pomodoro`
     StartPomodoro,
+    /// `stopwatch`
+    StartStopwatch,
     /// `10 km to mi`
     Convert {
         value: f64,
@@ -124,6 +126,7 @@ pub fn parse(query: &str) -> Option<Command> {
             return parse_duration(rest).map(Command::StartTimer);
         }
         "pomodoro" if rest.is_empty() => return Some(Command::StartPomodoro),
+        "stopwatch" if rest.is_empty() => return Some(Command::StartStopwatch),
         "note" if !original_rest.is_empty() => {
             return Some(Command::QuickNote(original_rest.to_string()));
         }
