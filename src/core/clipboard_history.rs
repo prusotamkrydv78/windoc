@@ -28,7 +28,7 @@ pub struct ClipboardService {
 
 pub fn settings_for(config: &winisland_core::config::AppConfig) -> ClipboardSettings {
     ClipboardSettings {
-        enabled: config.clipboard_history_enabled,
+        enabled: config.clipboard_history_enabled && !super::safe_mode::active(),
         ..ClipboardSettings::default()
     }
 }

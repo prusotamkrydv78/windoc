@@ -37,6 +37,10 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     let restart_requested = args.iter().any(|arg| arg == RESTART_ARG);
+    if args.iter().any(|arg| arg == crate::core::safe_mode::ARG) {
+        crate::core::safe_mode::enable();
+        log::warn!("Safe mode: plugins and optional modules are disabled for this session");
+    }
     log::info!("Args: {args:?}");
     log::info!(
         "Config: style={:?}, compact_scale={}, expanded_scale={}, lang={}",

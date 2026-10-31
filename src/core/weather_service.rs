@@ -50,7 +50,7 @@ impl WeatherService {
         let Some(place) = config
             .weather_place
             .as_ref()
-            .filter(|_| config.weather_enabled)
+            .filter(|_| config.weather_enabled && !super::safe_mode::active())
         else {
             self.pending = None;
             return false;

@@ -4,6 +4,7 @@ pub mod data_inventory;
 pub mod focus_store;
 pub mod json_store;
 pub mod persistence;
+pub mod safe_mode;
 pub mod screen_time;
 pub mod smtc;
 pub mod weather_service;

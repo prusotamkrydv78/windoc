@@ -32,7 +32,7 @@ pub struct ScreenTimeService {
 /// Screen time settings from the app configuration.
 pub fn settings_for(config: &winisland_core::config::AppConfig) -> ScreenTimeSettings {
     ScreenTimeSettings {
-        enabled: config.screen_time_enabled,
+        enabled: config.screen_time_enabled && !super::safe_mode::active(),
         store_titles: config.screen_time_titles,
         ..ScreenTimeSettings::default()
     }

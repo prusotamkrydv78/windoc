@@ -173,11 +173,15 @@ impl Default for App {
         winisland_render::text::FontManager::global()
             .set_custom_font_path(config.custom_font_path.as_deref());
         let plugin_mgr = PluginManager::default();
-        let plugin_host = match PluginHost::new(plugin_mgr.plugin_dir.clone(), 1) {
-            Ok(host) => Some(Rc::new(host)),
-            Err(error) => {
-                log::error!("Cannot initialize ABI v2 plugin host: {error}");
-                None
+        let plugin_host = if crate::core::safe_mode::active() {
+            None
+        } else {
+            match PluginHost::new(plugin_mgr.plugin_dir.clone(), 1) {
+                Ok(host) => Some(Rc::new(host)),
+                Err(error) => {
+                    log::error!("Cannot initialize ABI v2 plugin host: {error}");
+                    None
+                }
             }
         };
         Self {

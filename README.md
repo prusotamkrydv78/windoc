@@ -24,6 +24,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 ```
 
+## Safe mode
+
+If a plugin or module stops the app from starting, run it with `--safe-mode`. No plugins are loaded and audio capture, screen time, clipboard history and weather stay off for that session. Saved settings are not changed.
+
 ## Development guides
 
 - [`docs/PRODUCT_ENGINEERING_WORKFLOW.md`](docs/PRODUCT_ENGINEERING_WORKFLOW.md) defines the Rust-only architecture, feature order, privacy requirements and release gates.

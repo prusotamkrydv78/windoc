@@ -486,7 +486,8 @@ impl App {
             self.smtc_media_info = media;
             cover_changed
         });
-        self.audio.set_enabled(self.config.audio_visualizer_enabled);
+        self.audio
+            .set_enabled(self.config.audio_visualizer_enabled && !crate::core::safe_mode::active());
         self.audio.set_target_app_id(self.audio_target_app_id());
         let music_active = self.media_active();
         let media_is_playing = music_active && self.current_media_info().is_playing;
