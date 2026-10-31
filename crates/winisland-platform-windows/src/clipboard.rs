@@ -22,9 +22,9 @@ use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetMessageW, GetWindowThreadProcessId,
-    HWND_MESSAGE, MSG, PostThreadMessageW, RegisterClassW, WINDOW_EX_STYLE, WINDOW_STYLE,
-    WM_CLIPBOARDUPDATE, WM_QUIT, WNDCLASSW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+    GetWindowThreadProcessId, HWND_MESSAGE, MSG, PostThreadMessageW, RegisterClassW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_QUIT, WNDCLASSW,
 };
 use windows::core::w;
 use winisland_platform::PlatformError;
@@ -45,6 +45,9 @@ const MAX_FILES: u32 = 256;
 const CHANNEL_CAPACITY: usize = 32;
 const OPEN_ATTEMPTS: u32 = 5;
 const OPEN_RETRY_DELAY: Duration = Duration::from_millis(20);
+/// Apps often write the clipboard in several steps; opening it the instant it changes can
+/// make their next step fail, so reading waits briefly and then takes the settled content.
+const SETTLE_DELAY: Duration = Duration::from_millis(100);
 
 /// One registered clipboard format present on the clipboard, with its DWORD value when it
 /// is one of the marker formats.
@@ -139,8 +142,12 @@ fn run(sender: SyncSender<ClipboardChange>, ready: mpsc::Sender<Result<u32, Stri
     if ready.send(Ok(thread_id)).is_ok() {
         let mut message = MSG::default();
         // SAFETY: `message` is a valid out-pointer and the queue belongs to this thread.
-        // WM_CLIPBOARDUPDATE is a sent message, dispatched to the window procedure here.
-        while unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool() {}
+        // WM_CLIPBOARDUPDATE is posted, so it reaches the window procedure only through
+        // DispatchMessageW.
+        while unsafe { GetMessageW(&mut message, None, 0, 0) }.as_bool() {
+            // SAFETY: `message` was just filled in by GetMessageW for this thread.
+            unsafe { DispatchMessageW(&message) };
+        }
     }
     // SAFETY: The listener was added for this window on this thread.
     let _ = unsafe { RemoveClipboardFormatListener(window) };
@@ -193,6 +200,9 @@ unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     if message == WM_CLIPBOARDUPDATE {
+        // Only this monitor thread waits; repeated updates read the same content and the
+        // history drops the duplicates.
+        std::thread::sleep(SETTLE_DELAY);
         if let Some(change) = read_clipboard(window) {
             SINK.with(|sink| {
                 if let Some(sender) = sink.borrow().as_ref() {
