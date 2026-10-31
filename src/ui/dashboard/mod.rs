@@ -240,6 +240,14 @@ fn more_entries(layout: &DashboardLayout) -> Vec<Destination> {
     Destination::MORE_ITEMS
         .into_iter()
         .filter(|destination| !layout.destinations.contains(destination))
+        .filter(|destination| {
+            HIDDEN_MODULES.with(|cell| {
+                !cell
+                    .borrow()
+                    .iter()
+                    .any(|key| key == destination.label_key())
+            })
+        })
         .collect()
 }
 
@@ -1567,6 +1575,20 @@ fn draw_rows_page(
                 colors,
                 InteractionState::default(),
             );
+        }
+    });
+}
+
+thread_local! {
+    static HIDDEN_MODULES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes which More-page modules the user hid.
+pub fn set_hidden_modules(keys: &[String]) {
+    HIDDEN_MODULES.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if current.as_slice() != keys {
+            *current = keys.to_vec();
         }
     });
 }

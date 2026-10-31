@@ -349,3 +349,7 @@ screen_time_limit_title=已达到每日屏幕时间
 screen_time_limit_body=今天的屏幕时间已达到你设定的上限，休息一下吧。
 screen_time_today=今天 {}
 dashboard_screen_time=屏幕时间
+section_modules=模块与快捷键
+hotkey_opens_island=Ctrl+Alt+H 打开灵动岛和命令面板（关闭时为隐藏灵动岛）
+module_hide=隐藏
+module_show=显示

@@ -87,6 +87,7 @@ impl App {
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::widget::compact::message::set(&self.config.status_message);
         crate::ui::dashboard::set_links(&self.config.links);
+        crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         self.wellness.poll(&self.config, now);
         if let Some(rates) = self
             .currency
@@ -484,6 +485,21 @@ impl App {
             self.fullscreen_hide_paused = false;
             log::info!("Fullscreen auto-hide resumed by hotkey");
             self.apply_fullscreen_hide(window, now);
+        } else if self.config.hotkey_opens_island && !self.expanded {
+            if self.is_hidden() {
+                self.reveal_island();
+            }
+            self.expanded = true;
+            crate::ui::dashboard::show(crate::ui::dashboard::Destination::Home);
+            self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
+            self.snap_to_current_page();
+            crate::ui::dashboard::palette::open();
+            log::info!("Island opened by hotkey");
+        } else if self.config.hotkey_opens_island {
+            crate::ui::dashboard::palette::close();
+            crate::ui::dashboard::editor::close();
+            self.expanded = false;
+            log::info!("Island closed by hotkey");
         } else if self.is_hidden() {
             self.reveal_island();
             log::info!("Island revealed by hotkey");

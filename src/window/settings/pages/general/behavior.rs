@@ -19,6 +19,7 @@ pub(super) enum BehaviorAction {
     AddWorldClock,
     StatusMessage,
     AddLink,
+    ToggleModule(crate::ui::dashboard::Destination),
     RemoveLink(usize),
     ExportBackup,
     RestoreBackup,
@@ -150,6 +151,24 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::WaterReminderMinutes, true);
         page.setting(&self.config, AppConfigField::StretchReminderMinutes, true);
         page.row_label(tr("wellness_hint"));
+        page.group_end();
+        page.section(tr("section_modules"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::HotkeyOpensIsland, true);
+        for destination in crate::ui::dashboard::Destination::MORE_ITEMS {
+            let key = destination.label_key();
+            let hidden = self
+                .config
+                .hidden_modules
+                .iter()
+                .any(|hidden| hidden == key);
+            page.row_button(
+                tr(key),
+                tr(if hidden { "module_show" } else { "module_hide" }),
+                true,
+                BehaviorAction::ToggleModule(destination),
+            );
+        }
         page.group_end();
         page.section(tr("section_links"));
         page.group_start();
@@ -336,6 +355,20 @@ impl SettingsApp {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 self.begin_text_input(rect, "", 128, commit_restore_backup);
                 false
+            }
+            (BehaviorAction::ToggleModule(destination), ClickResult::RowButton(_)) => {
+                let key = destination.label_key().to_string();
+                if let Some(position) = self
+                    .config
+                    .hidden_modules
+                    .iter()
+                    .position(|hidden| *hidden == key)
+                {
+                    self.config.hidden_modules.remove(position);
+                } else {
+                    self.config.hidden_modules.push(key);
+                }
+                true
             }
             (BehaviorAction::RemoveLink(index), ClickResult::RowButton(_)) => {
                 if index < self.config.links.len() {

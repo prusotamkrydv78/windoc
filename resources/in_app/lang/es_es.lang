@@ -349,3 +349,7 @@ screen_time_limit_title=Tiempo de pantalla diario alcanzado
 screen_time_limit_body=Has alcanzado el tiempo de pantalla diario que configuraste. Considera un descanso.
 screen_time_today=Hoy {}
 dashboard_screen_time=Tiempo de pantalla
+section_modules=Módulos y atajo
+hotkey_opens_island=Ctrl+Alt+H abre la isla y la paleta de comandos (desactivado: oculta la isla)
+module_hide=Ocultar
+module_show=Mostrar

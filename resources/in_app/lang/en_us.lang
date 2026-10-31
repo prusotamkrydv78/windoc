@@ -349,3 +349,7 @@ screen_time_limit_title=Daily screen time reached
 screen_time_limit_body=You have reached the daily screen time you set. Consider a break.
 screen_time_today=Today {}
 dashboard_screen_time=Screen time
+section_modules=Modules and shortcut
+hotkey_opens_island=Ctrl+Alt+H opens the island and command palette (off: hides the island)
+module_hide=Hide
+module_show=Show
