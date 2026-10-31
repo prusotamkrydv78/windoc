@@ -49,6 +49,10 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle)]
     pub notch_shape: bool,
+    /// Short notch activities: charging, copied, focus, meetings and file drops.
+    #[educe(Default = true)]
+    #[setting(toggle)]
+    pub live_activities: bool,
     #[educe(Default = 0)]
     #[setting(choice(
         30 => "30 FPS",

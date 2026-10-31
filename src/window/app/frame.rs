@@ -1308,6 +1308,8 @@ impl App {
         self.battery_checked_at = Some(now);
         self.compact_overlay
             .set_quiet(crate::platform::do_not_disturb());
+        self.compact_overlay
+            .set_activities_enabled(self.config.live_activities);
         let (microphone, camera) = crate::platform::capture_in_use();
         crate::ui::island::set_capture_in_use(microphone, camera);
         self.poll_onboarding();
