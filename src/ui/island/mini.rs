@@ -101,8 +101,12 @@ fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
     if no_lyrics {
         draw_mini_title(params, alpha);
     }
-    // With audio capture off the spectrum is silent; draw no idle bars.
+    // With audio capture off the spectrum is silent: show a gentle album-tinted
+    // "now playing" indicator instead of flat idle bars.
     if params.media.spectrum.iter().all(|level| *level <= 0.0) {
+        if params.media.is_playing {
+            draw_playing_indicator(params, alpha);
+        }
         if !no_lyrics {
             draw_mini_lyrics(params, alpha);
         }
@@ -582,4 +586,39 @@ fn draw_mini_title(params: &MiniContentParams<'_>, alpha: u8) {
         color: params.text_color.with_alpha(alpha),
         blur: None,
     });
+}
+
+/// Four rounded bars that breathe at different rates in the album's accent colour, drawn
+/// where the visualizer would be. Used while audio capture is off.
+fn draw_playing_indicator(params: &MiniContentParams<'_>, alpha: u8) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    const BARS: [(f32, f32); 4] = [(5.1, 0.0), (7.3, 1.3), (6.2, 2.1), (8.4, 0.7)];
+    let scale = params.global_scale;
+    let bar_w = 2.6 * scale;
+    let gap = 2.4 * scale;
+    let max_h = 12.0 * scale;
+    let total_w = BARS.len() as f32 * bar_w + (BARS.len() - 1) as f32 * gap;
+    let right = params.offset_x + params.current_w - MINI_VISUALIZER_RIGHT_INSET * scale;
+    let left = right - total_w / 2.0;
+    let center_y = params.stable_offset_y + params.base_h / 2.0;
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|time| (time.as_millis() % 600_000) as f32 / 1000.0)
+        .unwrap_or_default();
+    let color = params
+        .palette
+        .first()
+        .copied()
+        .unwrap_or(params.text_color)
+        .with_alpha(alpha);
+    for (index, (speed, phase)) in BARS.iter().enumerate() {
+        let wave = 0.5 + 0.5 * (seconds * speed + phase).sin();
+        let height = (0.3 + 0.7 * wave) * max_h;
+        let x = left + index as f32 * (bar_w + gap);
+        params.painter.fill_round_rect(
+            Rect::from_xywh(x, center_y - height / 2.0, bar_w, height),
+            Radius::uniform(bar_w / 2.0),
+            color,
+        );
+    }
 }
