@@ -228,6 +228,17 @@ impl<'a> Painter<'a> {
         (info.width(), info.height())
     }
 
+    /// Strokes `path` with a Gaussian blur, for glows that follow a line.
+    pub fn stroke_path_blurred(&self, path: &Path, width: f32, color: Rgba, sigma: f32) {
+        let mut paint = stroked(width, color);
+        paint.set_stroke_cap(to_skia_cap(StrokeCap::Round));
+        paint.set_stroke_join(to_skia_join(StrokeJoin::Round));
+        if let Some(filter) = image_filters::blur((sigma, sigma), None, None, None) {
+            paint.set_image_filter(filter);
+        }
+        self.canvas.draw_path(path.as_skia(), &paint);
+    }
+
     pub fn fill_path_blurred(&self, path: &Path, color: Rgba, blur: BlurSpec) {
         let mut paint = filled(color);
         if let Some(filter) =

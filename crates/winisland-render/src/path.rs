@@ -152,6 +152,78 @@ impl Path {
         builder.detach()
     }
 
+    /// The open line along a top bar's lower edge at `bar`, from x = 0 to `width`, dipping
+    /// around the notch `rect` with the same shoulders and corners as [`Path::notch`].
+    pub fn bar_edge(width: f32, bar: f32, rect: Rect, radius: f32, shoulder: f32) -> Self {
+        const ARC: f32 = std::f32::consts::FRAC_1_SQRT_2;
+        let mut builder = PathBuilder::new();
+        if !rect.is_finite() || rect.bottom <= bar + 1.0 {
+            builder
+                .move_to(Point::new(0.0, bar))
+                .line_to(Point::new(width, bar));
+            return builder.detach();
+        }
+        let (left, right, bottom) = (rect.left, rect.right, rect.bottom);
+        let height = bottom - bar;
+        let shoulder = shoulder.max(0.0).min(height / 2.0);
+        let radius = radius
+            .max(0.0)
+            .min(rect.width() / 2.0)
+            .min(height - shoulder);
+        builder
+            .move_to(Point::new(0.0, bar))
+            .line_to(Point::new(left - shoulder, bar))
+            .conic_to(Point::new(left, bar), Point::new(left, bar + shoulder), ARC)
+            .line_to(Point::new(left, bottom - radius))
+            .conic_to(
+                Point::new(left, bottom),
+                Point::new(left + radius, bottom),
+                ARC,
+            )
+            .line_to(Point::new(right - radius, bottom))
+            .conic_to(
+                Point::new(right, bottom),
+                Point::new(right, bottom - radius),
+                ARC,
+            )
+            .line_to(Point::new(right, bar + shoulder))
+            .conic_to(
+                Point::new(right, bar),
+                Point::new(right + shoulder, bar),
+                ARC,
+            )
+            .line_to(Point::new(width, bar));
+        builder.detach()
+    }
+
+    /// Total length of the path's first contour.
+    pub fn length(&self) -> f32 {
+        skia_safe::ContourMeasureIter::new(&self.inner, false, None)
+            .next()
+            .map_or(0.0, |contour| contour.length())
+    }
+
+    /// The part of the first contour between `start` and `end` (distances along the path).
+    pub fn segment(&self, start: f32, end: f32) -> Self {
+        let Some(contour) = skia_safe::ContourMeasureIter::new(&self.inner, false, None).next()
+        else {
+            return Self::default();
+        };
+        let mut builder = SkPathBuilder::new();
+        if contour.segment(
+            start.max(0.0),
+            end.min(contour.length()),
+            &mut builder,
+            true,
+        ) {
+            Self {
+                inner: builder.detach(),
+            }
+        } else {
+            Self::default()
+        }
+    }
+
     pub(crate) fn as_skia(&self) -> &SkPath {
         &self.inner
     }

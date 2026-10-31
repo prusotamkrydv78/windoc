@@ -415,6 +415,9 @@ impl App {
                         } else {
                             0.0
                         };
+                        // The edge light runs while something is happening (an activity or the open
+                        // panel), when frames are already being drawn; at rest the bar stays still.
+                        let top_bar_edge_live = self.expanded || self.compact_overlay.is_visible();
                         let top_bar_notch = (
                             island_layout.current_island_x as f32,
                             island_layout.current_island_x as f32 + self.springs.w.value,
@@ -431,7 +434,7 @@ impl App {
                                         top_bar_notch,
                                     );
                                 }
-                                draw_island(
+                                let island_result = draw_island(
                                     drawing_context,
                                     painter,
                                     crate::ui::island::DrawIslandParams {
@@ -521,7 +524,28 @@ impl App {
                                         compact_overlay: &self.compact_overlay,
                                         attention_alpha,
                                     },
-                                )
+                                );
+                                if top_bar_height > 0.0 && top_bar_edge_live {
+                                    let notch = winisland_render::Rect::from_xywh(
+                                        island_layout.current_island_x as f32,
+                                        island_layout.current_island_y as f32,
+                                        self.springs.w.value,
+                                        self.springs.h.value,
+                                    );
+                                    let compact = self.config.compact_scale.max(0.5);
+                                    let radius = self.springs.r.value;
+                                    crate::ui::top_bar::draw_edge_light(
+                                        painter,
+                                        self.geom.os_w as f32,
+                                        top_bar_height,
+                                        notch,
+                                        radius,
+                                        (radius * 0.6).clamp(6.0 * compact, 14.0 * compact),
+                                        top_bar_scale,
+                                        crate::ui::top_bar::animation_seconds(),
+                                    );
+                                }
+                                island_result
                             });
                         self.renderer = Some(renderer);
                         if let Err(error) = render_result {

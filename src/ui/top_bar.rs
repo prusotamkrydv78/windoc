@@ -438,3 +438,69 @@ fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
     );
     painter.restore();
 }
+
+/// Seconds per full pass of the edge light across the bar.
+const EDGE_PASS_SECONDS: f32 = 6.0;
+/// Length of the travelling light in logical pixels.
+const EDGE_COMET: f32 = 260.0;
+
+/// The light that travels along the bar's lower edge and around the notch, left to right, at
+/// a constant speed measured along the line itself, looping with no gap.
+pub fn draw_edge_light(
+    painter: Painter<'_>,
+    width: f32,
+    bar: f32,
+    notch: Rect,
+    radius: f32,
+    shoulder: f32,
+    scale: f32,
+    seconds: f32,
+) {
+    let edge = winisland_render::Path::bar_edge(width, bar, notch, radius, shoulder);
+    let total = edge.length();
+    if total <= 1.0 {
+        return;
+    }
+    let comet = EDGE_COMET * scale;
+    let head = (seconds / EDGE_PASS_SECONDS * total).rem_euclid(total);
+    // The current comet plus, while it wraps, the previous one leaving on the right.
+    let draw_layers = |head: f32| {
+        // (length behind the head, stroke width, colour, blur sigma)
+        let layers: [(f32, f32, Rgba, f32); 5] = [
+            (1.0, 16.0, Rgba::from_argb(110, 143, 123, 255), 8.0),
+            (0.8, 6.0, Rgba::from_argb(200, 167, 123, 255), 3.0),
+            (1.0, 1.8, Rgba::from_argb(180, 91, 140, 255), 0.0),
+            (0.45, 1.8, Rgba::from_argb(240, 255, 143, 207), 0.0),
+            (0.12, 1.8, Rgba::WHITE, 0.0),
+        ];
+        for (fraction, stroke, color, sigma) in layers {
+            let segment = edge.segment(head - comet * fraction, head);
+            if segment.is_empty() {
+                continue;
+            }
+            if sigma > 0.0 {
+                painter.stroke_path_blurred(&segment, stroke * scale, color, sigma * scale);
+            } else {
+                painter.stroke_path(
+                    &segment,
+                    stroke * scale,
+                    color,
+                    winisland_render::StrokeCap::Round,
+                    winisland_render::StrokeJoin::Round,
+                );
+            }
+        }
+    };
+    draw_layers(head);
+    if head < comet {
+        draw_layers(head + total);
+    }
+}
+
+/// Seconds since the bar first animated, for time-based effects.
+pub fn animation_seconds() -> f32 {
+    thread_local! {
+        static START: std::time::Instant = std::time::Instant::now();
+    }
+    START.with(|start| start.elapsed().as_secs_f32())
+}
