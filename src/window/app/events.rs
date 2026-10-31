@@ -146,6 +146,8 @@ impl App {
                         self.handle_input(state, px, py, InputSource::Mouse);
                     } else if button == MouseButton::Right {
                         self.handle_right_input(state, px, py);
+                    } else if button == MouseButton::Middle && state == InputState::Pressed {
+                        self.handle_middle_click(px, py);
                     }
                 }
                 PlatformEvent::Touch {

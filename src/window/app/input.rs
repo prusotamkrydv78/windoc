@@ -523,3 +523,25 @@ impl App {
         self.expanded = true;
     }
 }
+
+impl App {
+    /// Middle-clicking the collapsed notch plays or pauses the current media.
+    pub(super) fn handle_middle_click(&mut self, px: i32, py: i32) {
+        if self.expanded || self.is_hidden() {
+            return;
+        }
+        let layout = self.compute_island_layout();
+        let over_island = is_point_in_continuous_rounded_rect(
+            (px - self.geom.win_x) as f64,
+            (py - self.geom.win_y) as f64,
+            layout.current_island_x,
+            layout.current_island_y,
+            self.springs.w.value as f64,
+            self.springs.h.value as f64,
+            self.springs.r.value as f64,
+        );
+        if over_island {
+            self.smtc.request_toggle_play();
+        }
+    }
+}

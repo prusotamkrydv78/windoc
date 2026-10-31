@@ -101,6 +101,7 @@ pub enum InputState {
 pub enum MouseButton {
     Left,
     Right,
+    Middle,
     Other,
 }
 

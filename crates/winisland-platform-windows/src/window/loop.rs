@@ -234,6 +234,7 @@ fn platform_event(id: WinitWindowId, event: WindowEvent) -> Option<PlatformEvent
             button: match button {
                 WinitMouseButton::Left => MouseButton::Left,
                 WinitMouseButton::Right => MouseButton::Right,
+                WinitMouseButton::Middle => MouseButton::Middle,
                 _ => MouseButton::Other,
             },
             state: input_state(state),
