@@ -457,11 +457,6 @@ const SEARCH: &str = "M11 4.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM16 16l4.5 4
 pub(crate) const BLUETOOTH: &str = "M7 7l10 10-5 4V3l5 4L7 17";
 pub(crate) const MOON: &str = "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z";
 pub(crate) const SUN: &str = "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4";
-pub(crate) const SPARKLE: &str = "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z";
-pub(crate) const CAMERA: &str =
-    "M4 8h3l2-2.5h6L17 8h3v11H4zM12 9.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z";
-pub(crate) const CUP: &str =
-    "M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M11 3v3";
 
 /// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
 pub(crate) fn draw_glyph(painter: Painter<'_>, svg: &'static str, rect: Rect, scale: f32) {

@@ -456,6 +456,10 @@ fn draw_compact_layer(
         lyric_transition: lyrics.lyric_transition,
         lyric_transition_animation: lyrics.lyric_transition_animation,
         text_color: Rgba::WHITE,
+        robot_beside: style
+            .compact_widget_layout
+            .iter()
+            .any(|slot| slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)),
     });
     crate::ui::widget::compact::draw(
         painter,

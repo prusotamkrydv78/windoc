@@ -422,6 +422,7 @@ activity_display_changed=显示器已更改
 activity_drive_added=已连接 USB 驱动器
 activity_drive_removed=驱动器已移除
 activity_open=打开
+activity_screenshot_saved=截图已保存
 activity_settings=设置
 tab_notch=刘海
 tab_top_bar=任务栏

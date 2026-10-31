@@ -409,73 +409,83 @@ impl App {
         is_paused: bool,
         dt: f32,
     ) -> f32 {
-        let target_base_w = if music_active && !self.expanded && !self.is_width_hiding() {
-            let has_visible_lyrics = self.config.show_lyrics
-                && (!self.lyrics.current_text.is_empty()
-                    || (!self.lyrics.old_text.is_empty() && self.lyrics.transition < 1.0));
+        let robot_beside = self
+            .config
+            .compact_widget_layout
+            .iter()
+            .any(|slot| slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot));
+        let target_base_w =
+            if music_active && robot_beside && !self.expanded && !self.is_width_hiding() {
+                // Only the cover and waveform show beside the robot.
+                self.lyrics.scroll_offset = 0.0;
+                self.config.base_width
+            } else if music_active && !self.expanded && !self.is_width_hiding() {
+                let has_visible_lyrics = self.config.show_lyrics
+                    && (!self.lyrics.current_text.is_empty()
+                        || (!self.lyrics.old_text.is_empty() && self.lyrics.transition < 1.0));
 
-            if has_visible_lyrics {
-                let (left_inset, right_inset) =
-                    crate::ui::island::mini_lyric_insets(self.config.lyrics_side_gap);
-                let horizontal_insets = left_inset + right_inset;
-                if self.config.lyrics_scroll {
-                    let (primary, secondary) = self.displayed_lyric_texts();
-                    let primary_w = self.measure_lyric_text_width(primary);
-                    let text_w = primary_w.max(self.measure_lyric_text_width(secondary));
-                    let natural_w = horizontal_insets + text_w;
-                    let max_w = self
-                        .config
-                        .lyrics_scroll_max_width
-                        .max(horizontal_insets + 32.0);
-                    if natural_w > max_w {
-                        let fixed_w = max_w;
-                        let available_text_w =
-                            (fixed_w - horizontal_insets) * self.config.compact_scale;
-                        let full_primary_w = primary_w * self.config.compact_scale;
-                        let overflow = full_primary_w - available_text_w;
-                        if overflow > 0.0 && self.lyrics.transition >= 1.0 && !is_paused {
-                            self.lyrics.scroll_offset = self.lyrics.scroll_offset.min(overflow);
-                            if self.lyrics.scroll_offset < overflow {
-                                if self.lyrics.scroll_pause > 0.0 {
-                                    self.lyrics.scroll_pause -= dt / 60.0;
-                                } else {
-                                    self.lyrics.scroll_offset += 0.8 * dt;
-                                    if self.lyrics.scroll_offset >= overflow {
-                                        self.lyrics.scroll_offset = overflow;
+                if has_visible_lyrics {
+                    let (left_inset, right_inset) =
+                        crate::ui::island::mini_lyric_insets(self.config.lyrics_side_gap);
+                    let horizontal_insets = left_inset + right_inset;
+                    if self.config.lyrics_scroll {
+                        let (primary, secondary) = self.displayed_lyric_texts();
+                        let primary_w = self.measure_lyric_text_width(primary);
+                        let text_w = primary_w.max(self.measure_lyric_text_width(secondary));
+                        let natural_w = horizontal_insets + text_w;
+                        let max_w = self
+                            .config
+                            .lyrics_scroll_max_width
+                            .max(horizontal_insets + 32.0);
+                        if natural_w > max_w {
+                            let fixed_w = max_w;
+                            let available_text_w =
+                                (fixed_w - horizontal_insets) * self.config.compact_scale;
+                            let full_primary_w = primary_w * self.config.compact_scale;
+                            let overflow = full_primary_w - available_text_w;
+                            if overflow > 0.0 && self.lyrics.transition >= 1.0 && !is_paused {
+                                self.lyrics.scroll_offset = self.lyrics.scroll_offset.min(overflow);
+                                if self.lyrics.scroll_offset < overflow {
+                                    if self.lyrics.scroll_pause > 0.0 {
+                                        self.lyrics.scroll_pause -= dt / 60.0;
+                                    } else {
+                                        self.lyrics.scroll_offset += 0.8 * dt;
+                                        if self.lyrics.scroll_offset >= overflow {
+                                            self.lyrics.scroll_offset = overflow;
+                                        }
                                     }
+                                    window.request_redraw();
                                 }
-                                window.request_redraw();
+                            } else {
+                                self.lyrics.scroll_offset = 0.0;
                             }
+                            fixed_w
                         } else {
                             self.lyrics.scroll_offset = 0.0;
+                            let min_w = self.config.base_width + 35.0;
+                            natural_w.clamp(min_w.min(max_w), max_w)
                         }
-                        fixed_w
                     } else {
+                        let (primary, secondary) = self.displayed_lyric_texts();
+                        let text_w = self.measure_lyric_pair_width(primary, secondary);
                         self.lyrics.scroll_offset = 0.0;
                         let min_w = self.config.base_width + 35.0;
-                        natural_w.clamp(min_w.min(max_w), max_w)
+                        let w = horizontal_insets + text_w;
+                        w.clamp(min_w.min(MAX_LYRIC_WIDTH), MAX_LYRIC_WIDTH)
                     }
                 } else {
-                    let (primary, secondary) = self.displayed_lyric_texts();
-                    let text_w = self.measure_lyric_pair_width(primary, secondary);
-                    self.lyrics.scroll_offset = 0.0;
+                    // No lyrics: size the island to show the track title instead.
+                    let (left_inset, right_inset) =
+                        crate::ui::island::mini_lyric_insets(self.config.lyrics_side_gap);
+                    let title = self.current_media_info().title.clone();
+                    let title_w = self.measure_lyric_text_width(&title);
                     let min_w = self.config.base_width + 35.0;
-                    let w = horizontal_insets + text_w;
-                    w.clamp(min_w.min(MAX_LYRIC_WIDTH), MAX_LYRIC_WIDTH)
+                    (left_inset + right_inset + title_w).clamp(min_w, MAX_TITLE_WIDTH.max(min_w))
                 }
             } else {
-                // No lyrics: size the island to show the track title instead.
-                let (left_inset, right_inset) =
-                    crate::ui::island::mini_lyric_insets(self.config.lyrics_side_gap);
-                let title = self.current_media_info().title.clone();
-                let title_w = self.measure_lyric_text_width(&title);
-                let min_w = self.config.base_width + 35.0;
-                (left_inset + right_inset + title_w).clamp(min_w, MAX_TITLE_WIDTH.max(min_w))
-            }
-        } else {
-            self.lyrics.scroll_offset = 0.0;
-            self.config.base_width
-        };
+                self.lyrics.scroll_offset = 0.0;
+                self.config.base_width
+            };
         if self.expanded {
             self.config.expanded_width * self.config.expanded_scale
         } else {

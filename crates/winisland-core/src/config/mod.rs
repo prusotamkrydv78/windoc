@@ -33,7 +33,7 @@ pub struct AppConfig {
     #[educe(Default = 120.0)]
     #[setting(number(min = 40.0, max = 400.0, step = 5.0))]
     pub base_width: f32,
-    #[educe(Default = 27.0)]
+    #[educe(Default = 32.0)]
     #[setting(number(min = 15.0, max = 200.0, step = 2.0))]
     pub base_height: f32,
     #[educe(Default = 720.0)]

@@ -422,6 +422,7 @@ activity_display_changed=Display changed
 activity_drive_added=USB drive connected
 activity_drive_removed=Drive removed
 activity_open=Open
+activity_screenshot_saved=Screenshot saved
 activity_settings=Settings
 tab_notch=Notch
 tab_top_bar=Taskbar

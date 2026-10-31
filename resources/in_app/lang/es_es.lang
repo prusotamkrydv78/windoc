@@ -422,6 +422,7 @@ activity_display_changed=Pantalla cambiada
 activity_drive_added=Unidad USB conectada
 activity_drive_removed=Unidad extraída
 activity_open=Abrir
+activity_screenshot_saved=Captura guardada
 activity_settings=Ajustes
 tab_notch=Muesca
 tab_top_bar=Barra de tareas

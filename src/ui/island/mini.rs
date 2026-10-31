@@ -77,6 +77,8 @@ pub(super) struct MiniContentParams<'a> {
     pub(super) lyric_transition: f32,
     pub(super) lyric_transition_animation: LyricTransitionAnimation,
     pub(super) text_color: Rgba,
+    /// The robot sits beside the music, so only the cover and waveform show.
+    pub(super) robot_beside: bool,
 }
 
 pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
@@ -98,7 +100,8 @@ pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
 fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
     draw_mini_cover(params, alpha);
     let no_lyrics = params.current_lyric.is_empty() && params.old_lyric.is_empty();
-    if no_lyrics {
+    let show_text = !params.robot_beside;
+    if no_lyrics && show_text {
         draw_mini_title(params, alpha);
     }
     // With audio capture off the spectrum is silent: show a gentle album-tinted
@@ -107,7 +110,7 @@ fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
         if params.media.is_playing {
             draw_playing_indicator(params, alpha);
         }
-        if !no_lyrics {
+        if !no_lyrics && show_text {
             draw_mini_lyrics(params, alpha);
         }
         return;
@@ -124,7 +127,9 @@ fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
         h_scale: params.viz_h_scale * params.global_scale,
         smooth_factors: MINI_VISUALIZER_SMOOTHING,
     });
-    draw_mini_lyrics(params, alpha);
+    if show_text {
+        draw_mini_lyrics(params, alpha);
+    }
 }
 
 fn draw_mini_cover(params: &MiniContentParams<'_>, alpha: u8) {

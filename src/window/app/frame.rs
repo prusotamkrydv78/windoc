@@ -1842,10 +1842,37 @@ impl App {
         use winisland_core::i18n::tr;
         use winisland_platform_windows::shell_bar::ShellEvent;
         use winisland_render::Rgba;
+        let media = self.current_media_info();
+        let playing_track = media.is_playing.then(|| media.title.clone());
         crate::ui::widget::compact::mascot::set_context(
             &self.display_name(),
             crate::ui::dashboard::focus_running(),
+            playing_track.as_deref(),
         );
+        if let Some(path) = crate::core::screenshot_watch::poll(std::time::Instant::now())
+            && !self.expanded
+            && !self.is_hidden()
+        {
+            // The robot holds up the new picture; the tall card grows the notch for it.
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            self.compact_overlay
+                .push_activity(crate::ui::compact::Activity {
+                    icon: crate::ui::components::icon::Icon::PetPhoto,
+                    accent: winisland_render::Rgba::WHITE,
+                    primary: winisland_core::i18n::tr("activity_screenshot_saved"),
+                    secondary: name,
+                    progress: None,
+                    actions: vec![(
+                        winisland_core::i18n::tr("activity_open"),
+                        path.to_string_lossy().into_owned(),
+                    )],
+                    tall: true,
+                    priority: crate::ui::compact::Priority::High,
+                });
+        }
         // The robot says hello once when the app starts.
         static GREETED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !self.expanded

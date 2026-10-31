@@ -12,7 +12,7 @@ use winisland_render::text::{DrawTextCachedParams, FontManager};
 use winisland_render::{Painter, Point, Radius, Rect, Rgba, StrokeCap, Vec2};
 
 /// Room for the robot and the props of its current scene.
-pub(super) const WIDTH: f32 = 112.0;
+pub(super) const WIDTH: f32 = 132.0;
 /// About 20 frames a second keeps the motion smooth without busy redraws.
 pub(super) const FRAME: Duration = Duration::from_millis(50);
 /// How long each daytime scene plays before the next one.
@@ -52,13 +52,16 @@ enum Scene {
     Stretch,
     LookAround,
     Nap,
+    Paint,
+    Dance,
     Night,
 }
 
 /// The daytime order: a hello, then chai, then the rest of the day.
-const DAY: [Scene; 8] = [
+const DAY: [Scene; 9] = [
     Scene::Wave,
     Scene::Chai,
+    Scene::Paint,
     Scene::Laptop,
     Scene::LookAround,
     Scene::Read,
@@ -67,25 +70,52 @@ const DAY: [Scene; 8] = [
     Scene::Nap,
 ];
 
+/// How long the robot dances when a song starts.
+const DANCE_SECONDS: f32 = 8.0;
+
 #[derive(Default)]
 struct Context {
     name: String,
     focus_running: bool,
+    /// The playing track, to notice when a new one starts.
+    track: String,
+    /// When the robot started dancing to the current track.
+    dance_started: Option<f32>,
 }
 
 thread_local! {
     static CONTEXT: RefCell<Context> = RefCell::new(Context::default());
 }
 
-/// Tells the robot who it is greeting and whether a Focus timer is running. Call each tick.
-pub(crate) fn set_context(name: &str, focus_running: bool) {
+/// Tells the robot who it is greeting, whether a Focus timer is running and which track is
+/// playing, if any. A new track gets a short dance. Call each tick.
+pub(crate) fn set_context(name: &str, focus_running: bool, playing_track: Option<&str>) {
     CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.name != name {
             context.name = name.to_string();
         }
         context.focus_running = focus_running;
+        match playing_track {
+            Some(track) if !track.is_empty() && context.track != track => {
+                context.track = track.to_string();
+                context.dance_started = Some(seconds());
+            }
+            Some(_) => {}
+            None => context.dance_started = None,
+        }
     });
+}
+
+/// Seconds into the current dance, while one is going.
+fn dancing(time: f32) -> Option<f32> {
+    CONTEXT.with(|context| {
+        context
+            .borrow()
+            .dance_started
+            .map(|start| time - start)
+            .filter(|elapsed| (0.0..DANCE_SECONDS).contains(elapsed))
+    })
 }
 
 fn seconds() -> f32 {
@@ -169,7 +199,6 @@ impl Pose {
 struct Hands {
     right: Point,
     left: Point,
-    head: Rect,
 }
 
 /// A blink every few seconds turns open eyes shut for a moment.
@@ -188,9 +217,17 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         let context = context.borrow();
         (context.name.clone(), context.focus_running)
     });
-    let (scene, elapsed) = current_scene(time, hour, focus_running);
-    let fade = scene_fade(scene, elapsed);
-    let unit = (rect.height() / 32.0).clamp(0.6 * scale, 1.4 * scale);
+    let (scene, elapsed) = match dancing(time) {
+        Some(elapsed) => (Scene::Dance, elapsed),
+        None => current_scene(time, hour, focus_running),
+    };
+    let fade = if scene == Scene::Dance {
+        ease(elapsed / FADE_SECONDS) * ease((DANCE_SECONDS - elapsed) / FADE_SECONDS)
+    } else {
+        scene_fade(scene, elapsed)
+    };
+    // The robot stands nearly the full height of the notch.
+    let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
     // Centre each scene by its own width: robot plus props, or the greeting text.
     let reach = match scene {
         Scene::Wave => {
@@ -207,6 +244,8 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::Stretch | Scene::LookAround => 13.0,
         Scene::Nap => 24.0,
         Scene::Night => 49.0,
+        Scene::Paint => 31.0,
+        Scene::Dance => 13.0,
     };
     let left_reach = 10.0;
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
@@ -231,11 +270,22 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::LookAround => stage.look_around(),
         Scene::Nap => stage.sleep(false),
         Scene::Night => stage.sleep(true),
+        Scene::Paint => stage.paint(),
+        Scene::Dance => stage.dance(),
     }
 }
 
-/// The robot awake and waving, fitted to `rect`, for greetings.
-pub(crate) fn draw_waving(painter: Painter<'_>, rect: Rect, alpha: u8) {
+/// What the robot does inside an activity card.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Gesture {
+    /// Waves hello.
+    Wave,
+    /// Holds up a fresh picture, for a saved screenshot.
+    Present,
+}
+
+/// The robot awake in `gesture`, fitted to `rect`, for activity cards.
+pub(crate) fn draw_gesture(painter: Painter<'_>, rect: Rect, alpha: u8, gesture: Gesture) {
     let unit = rect.height() / (ROBOT_HEIGHT + 2.0);
     let time = seconds();
     let stage = Stage {
@@ -249,9 +299,14 @@ pub(crate) fn draw_waving(painter: Painter<'_>, rect: Rect, alpha: u8) {
         elapsed: time,
         fade: 1.0,
     };
-    let mut pose = Pose::new(Eyes::Happy);
-    pose.right_arm = -0.45 + (time / 0.9 * TAU).sin() * 0.45;
-    stage.robot(pose);
+    match gesture {
+        Gesture::Wave => {
+            let mut pose = Pose::new(Eyes::Happy);
+            pose.right_arm = -0.45 + (time / 0.9 * TAU).sin() * 0.45;
+            stage.robot(pose);
+        }
+        Gesture::Present => stage.present(),
+    }
 }
 
 struct Stage<'a> {
@@ -401,7 +456,7 @@ impl Stage<'_> {
             }
         }
         painter.restore_to(save);
-        Hands { right, left, head }
+        Hands { right, left }
     }
 
     fn wave(&self, name: &str) {
@@ -747,6 +802,214 @@ impl Stage<'_> {
                 self.prop(strength, WHITE),
             );
         }
+    }
+
+    fn paint(&self) {
+        // The brush dabs at the canvas while the palette waits in the other hand.
+        let dab = (self.time * 2.2 * TAU).sin();
+        let mut pose = Pose::new(Eyes::Open(1.3, -0.2));
+        pose.right_arm = -0.2 + dab * 0.22;
+        pose.left_arm = 0.75;
+        let hands = self.robot(pose);
+
+        // Easel: two front legs, one behind, and the canvas on top.
+        let wood = (170, 120, 80);
+        self.line(
+            self.at(14.0, -9.0),
+            self.at(12.4, 0.0),
+            1.0,
+            self.prop(1.0, wood),
+        );
+        self.line(
+            self.at(24.0, -9.0),
+            self.at(25.6, 0.0),
+            1.0,
+            self.prop(1.0, wood),
+        );
+        self.line(
+            self.at(19.0, -18.0),
+            self.at(19.0, 0.0),
+            0.8,
+            self.prop(0.7, wood),
+        );
+        let canvas = self.rect(13.0, -19.0, 12.0, 9.5);
+        self.painter.fill_round_rect(
+            canvas,
+            Radius::uniform(0.6 * self.unit),
+            self.prop(1.0, (250, 248, 240)),
+        );
+        // The picture appears a layer at a time: sky, sun, hills, then a little house.
+        let progress = ease(self.elapsed / (SCENE_SECONDS * 0.8));
+        let inner = Rect::from_ltrb(
+            canvas.left + 0.8 * self.unit,
+            canvas.top + 0.8 * self.unit,
+            canvas.right - 0.8 * self.unit,
+            canvas.bottom - 0.8 * self.unit,
+        );
+        let save = self.painter.save();
+        self.painter.clip_rect(inner);
+        let layer = |from: f32| ease((progress - from) / 0.2);
+        self.painter.fill_rect(
+            Rect::from_xywh(
+                inner.left,
+                inner.top,
+                inner.width() * layer(0.0),
+                inner.height(),
+            ),
+            self.prop(1.0, (150, 200, 245)),
+        );
+        self.painter.fill_circle(
+            Point::new(inner.right - 2.4 * self.unit, inner.top + 2.2 * self.unit),
+            1.6 * self.unit * layer(0.25),
+            self.prop(1.0, (255, 205, 90)),
+        );
+        let hills = layer(0.5);
+        self.painter.fill_oval(
+            Rect::from_xywh(
+                inner.left - 2.0 * self.unit,
+                inner.bottom - 3.4 * self.unit * hills,
+                inner.width() * 0.8,
+                6.0 * self.unit,
+            ),
+            self.prop(1.0, (110, 190, 110)),
+        );
+        self.painter.fill_oval(
+            Rect::from_xywh(
+                inner.left + inner.width() * 0.45,
+                inner.bottom - 2.6 * self.unit * hills,
+                inner.width() * 0.8,
+                6.0 * self.unit,
+            ),
+            self.prop(1.0, (80, 165, 95)),
+        );
+        let house = layer(0.75);
+        if house > 0.0 {
+            let base = Rect::from_xywh(
+                inner.left + 3.0 * self.unit,
+                inner.bottom - 4.6 * self.unit,
+                2.6 * self.unit,
+                2.2 * self.unit,
+            );
+            self.painter
+                .fill_rect(base, self.prop(house, (240, 240, 235)));
+            self.line(
+                Point::new(base.left - 0.3 * self.unit, base.top),
+                Point::new(base.center_x(), base.top - 1.4 * self.unit),
+                0.7,
+                self.prop(house, RED),
+            );
+            self.line(
+                Point::new(base.center_x(), base.top - 1.4 * self.unit),
+                Point::new(base.right + 0.3 * self.unit, base.top),
+                0.7,
+                self.prop(house, RED),
+            );
+        }
+        self.painter.restore_to(save);
+
+        // Brush in the right hand, its tip taking a colour from the palette.
+        let tip_colors = [(150, 200, 245), (255, 205, 90), (110, 190, 110), RED];
+        let tip_color = tip_colors[((progress * 4.0) as usize).min(3)];
+        let tip = Point::new(
+            hands.right.x + 3.4 * self.unit,
+            hands.right.y - 1.6 * self.unit,
+        );
+        self.line(hands.right, tip, 0.7, self.prop(1.0, wood));
+        self.painter
+            .fill_circle(tip, 0.7 * self.unit, self.prop(1.0, tip_color));
+        // Palette in the left hand.
+        let palette = Rect::from_xywh(
+            hands.left.x - 3.2 * self.unit,
+            hands.left.y - 1.8 * self.unit,
+            5.0 * self.unit,
+            3.2 * self.unit,
+        );
+        self.painter
+            .fill_oval(palette, self.prop(1.0, (236, 214, 176)));
+        for (index, rgb) in tip_colors.iter().enumerate() {
+            self.painter.fill_circle(
+                Point::new(
+                    palette.left + (1.1 + index as f32 * 0.95) * self.unit,
+                    palette.center_y() + if index % 2 == 0 { -0.5 } else { 0.5 } * self.unit,
+                ),
+                0.45 * self.unit,
+                self.prop(1.0, *rgb),
+            );
+        }
+    }
+
+    fn dance(&self) {
+        // Two beats a second: arms swap, the body bounces and sways.
+        let beat = (self.elapsed * 2.0 * TAU).sin();
+        let mut pose = Pose::new(Eyes::Happy);
+        pose.right_arm = -0.9 + beat * 0.8;
+        pose.left_arm = -0.9 - beat * 0.8;
+        pose.rise = beat.abs() * 1.4;
+        pose.lean = (self.elapsed * TAU).sin() * 8.0;
+        self.robot(pose);
+        // Notes float up on either side.
+        let colors = [(130, 220, 255), (255, 160, 210), (255, 220, 120)];
+        for index in 0..3 {
+            let phase = (self.elapsed / 1.6 + index as f32 / 3.0).fract();
+            let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+            self.text(
+                if index == 1 { "♫" } else { "♪" },
+                self.x + side * (10.0 + phase * 2.0) * self.unit
+                    - if side < 0.0 { 5.0 * self.unit } else { 0.0 },
+                self.floor - (6.0 + phase * 12.0) * self.unit,
+                7.5,
+                self.prop((phase * PI).sin(), colors[index]),
+            );
+        }
+    }
+
+    /// Holds up a small framed picture, proud of it.
+    fn present(&self) {
+        let lift = ease((self.time % 2.4) / 0.4) * 0.4;
+        let mut pose = Pose::new(Eyes::Happy);
+        pose.right_arm = -0.6 - lift;
+        pose.rise = 0.6;
+        let hands = self.robot(pose);
+        let frame = Rect::from_xywh(
+            hands.right.x - 1.0 * self.unit,
+            hands.right.y - 6.4 * self.unit,
+            8.0 * self.unit,
+            6.4 * self.unit,
+        );
+        self.painter.fill_round_rect(
+            frame,
+            Radius::uniform(0.8 * self.unit),
+            self.color(1.0, WHITE),
+        );
+        let inner = Rect::from_ltrb(
+            frame.left + 0.8 * self.unit,
+            frame.top + 0.8 * self.unit,
+            frame.right - 0.8 * self.unit,
+            frame.bottom - 0.8 * self.unit,
+        );
+        self.painter
+            .fill_rect(inner, self.color(1.0, (150, 200, 245)));
+        let save = self.painter.save();
+        self.painter.clip_rect(inner);
+        self.painter.fill_oval(
+            Rect::from_xywh(
+                inner.left - self.unit,
+                inner.bottom - 2.2 * self.unit,
+                inner.width() + 2.0 * self.unit,
+                4.0 * self.unit,
+            ),
+            self.color(1.0, (110, 190, 110)),
+        );
+        self.painter.fill_circle(
+            Point::new(inner.right - 1.6 * self.unit, inner.top + 1.4 * self.unit),
+            1.0 * self.unit,
+            self.color(1.0, (255, 205, 90)),
+        );
+        self.painter.restore_to(save);
+        self.sparkle(
+            Point::new(frame.right + 0.6 * self.unit, frame.top - 0.4 * self.unit),
+            0.6 + 0.4 * (self.time * 3.0).sin(),
+        );
     }
 
     fn sleep(&self, night: bool) {

@@ -12,6 +12,7 @@ pub mod json_store;
 pub mod persistence;
 pub mod safe_mode;
 pub mod screen_time;
+pub mod screenshot_watch;
 pub mod shelf_store;
 pub mod smtc;
 pub mod system_watch;
