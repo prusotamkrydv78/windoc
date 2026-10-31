@@ -29,6 +29,7 @@ pub mod focus;
 pub mod i18n;
 pub mod lyrics;
 pub mod notes;
+pub mod palette;
 pub mod persistence;
 pub mod physics;
 pub mod plugin_settings;
