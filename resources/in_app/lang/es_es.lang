@@ -379,3 +379,7 @@ theme_pure_black=Negro puro
 theme_ember=Brasa oscuro
 theme_vivid=Vívido
 theme_silver=Plata
+edge_light=Luz de borde
+edge_light_off=Desactivada
+edge_light_theme=Color del tema
+edge_light_music=Color del álbum

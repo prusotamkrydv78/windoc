@@ -379,3 +379,7 @@ theme_pure_black=纯黑
 theme_ember=余烬暗色
 theme_vivid=鲜艳
 theme_silver=银色
+edge_light=边缘光
+edge_light_off=关闭
+edge_light_theme=主题色
+edge_light_music=专辑色

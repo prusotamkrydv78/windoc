@@ -107,6 +107,14 @@ pub struct AppConfig {
         "silver" => "theme_silver",
     ), label = "ui_theme")]
     pub ui_theme: String,
+    /// Glow around the island: off, theme (accent colour) or music (album art colour).
+    #[educe(Default = "music")]
+    #[setting(choice(
+        "off" => "edge_light_off",
+        "theme" => "edge_light_theme",
+        "music" => "edge_light_music",
+    ), label = "edge_light")]
+    pub edge_light: String,
     /// Ctrl+Alt+H opens the island with the command palette (true) or hides it (false).
     #[educe(Default = true)]
     #[setting(toggle, label = "hotkey_opens_island")]

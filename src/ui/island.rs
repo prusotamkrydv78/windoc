@@ -148,6 +148,18 @@ pub fn draw_island(
         None
     };
     draw_expanded_shadow(painter, &params, &island_path);
+    let edge_color = edge_light_color(&params);
+    if let Some(color) = edge_color {
+        // Soft glow behind the island; only the part outside its edge stays visible.
+        painter.fill_path_blurred(
+            &island_path,
+            color.with_alpha(110),
+            BlurSpec {
+                sigma: (7.0, 7.0),
+                tile: None,
+            },
+        );
+    }
     draw_background_layer(painter, drawing_context, &params, rect, &island_path);
     painter.save();
     painter.clip_path(&island_path);
@@ -197,6 +209,15 @@ pub fn draw_island(
     }
     painter.restore();
     draw_island_border(painter, &params);
+    if let Some(color) = edge_color {
+        painter.stroke_path(
+            &island_path,
+            1.2,
+            color.with_alpha(210),
+            winisland_render::StrokeCap::Round,
+            winisland_render::StrokeJoin::Round,
+        );
+    }
     draw_pager(painter, drawing_context, &params, rect, expanded_alpha);
     if params.attention_alpha > 0.0 {
         let layout = &params.layout;
@@ -496,4 +517,33 @@ fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
         winisland_render::StrokeCap::Butt,
         winisland_render::StrokeJoin::Miter,
     );
+}
+
+thread_local! {
+    /// Edge light mode: 0 off, 1 theme accent, 2 album art colour.
+    static EDGE_LIGHT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// Applies the configured edge light (`off`, `theme` or `music`).
+pub fn set_edge_light(mode: &str) {
+    EDGE_LIGHT.with(|cell| {
+        cell.set(match mode {
+            "theme" => 1,
+            "music" => 2,
+            _ => 0,
+        });
+    });
+}
+
+fn edge_light_color(params: &DrawIslandParams<'_>) -> Option<Rgba> {
+    let mode = EDGE_LIGHT.with(std::cell::Cell::get);
+    if mode == 0 || params.layout.hide_progress > 0.5 {
+        return None;
+    }
+    if mode == 2 && params.media.music_active {
+        if let Some(color) = get_media_palette(params.media.media).first() {
+            return Some(*color);
+        }
+    }
+    Some(crate::ui::theme::colors().accent_primary)
 }

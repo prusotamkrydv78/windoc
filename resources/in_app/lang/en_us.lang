@@ -379,3 +379,7 @@ theme_pure_black=Pure Black
 theme_ember=Ember Dark
 theme_vivid=Vivid
 theme_silver=Silver
+edge_light=Edge light
+edge_light_off=Off
+edge_light_theme=Theme colour
+edge_light_music=Album colour

@@ -17,6 +17,7 @@ impl SettingsApp {
         page.section(tr("section_appearance"));
         page.group_start();
         page.setting(&self.config, AppConfigField::UiTheme, true);
+        page.setting(&self.config, AppConfigField::EdgeLight, true);
         page.setting(&self.config, AppConfigField::CompactScale, true);
         page.setting(&self.config, AppConfigField::ExpandedScale, true);
         page.setting(&self.config, AppConfigField::BaseWidth, true);
