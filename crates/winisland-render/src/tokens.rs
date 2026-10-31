@@ -386,3 +386,120 @@ mod tests {
         }
     }
 }
+
+/// Product themes. The resting island stays black in every theme.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Theme {
+    /// Monochrome on true black.
+    PureBlack,
+    /// Black with a warm orange accent.
+    EmberDark,
+    /// Dark panel with coloured tiles and charts.
+    Vivid,
+    /// Light panel.
+    Silver,
+}
+
+impl Theme {
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "ember" => Self::EmberDark,
+            "vivid" => Self::Vivid,
+            "silver" => Self::Silver,
+            _ => Self::PureBlack,
+        }
+    }
+
+    /// Accent colours for charts and tiles, in order of use.
+    pub const fn chart_palette(self) -> [Rgba; 4] {
+        match self {
+            Self::PureBlack => [
+                Rgba::from_rgb(236, 236, 240),
+                Rgba::from_rgb(168, 168, 176),
+                Rgba::from_rgb(112, 112, 120),
+                Rgba::from_rgb(72, 72, 80),
+            ],
+            Self::EmberDark => [
+                Rgba::from_rgb(255, 138, 61),
+                Rgba::from_rgb(255, 184, 108),
+                Rgba::from_rgb(214, 96, 52),
+                Rgba::from_rgb(140, 92, 70),
+            ],
+            Self::Vivid => [
+                Rgba::from_rgb(124, 92, 255),
+                Rgba::from_rgb(46, 196, 182),
+                Rgba::from_rgb(255, 99, 146),
+                Rgba::from_rgb(255, 196, 61),
+            ],
+            Self::Silver => [
+                Rgba::from_rgb(40, 40, 48),
+                Rgba::from_rgb(96, 96, 108),
+                Rgba::from_rgb(10, 132, 255),
+                Rgba::from_rgb(160, 160, 170),
+            ],
+        }
+    }
+}
+
+impl SemanticColors {
+    pub const fn for_theme(theme: Theme) -> Self {
+        match theme {
+            Theme::PureBlack => Self {
+                surface_base: Rgba::from_rgb(0, 0, 0),
+                surface_raised: Rgba::from_rgb(18, 18, 20),
+                surface_overlay: Rgba::from_rgb(28, 28, 31),
+                surface_interactive: Rgba::from_rgb(40, 40, 44),
+                text_primary: Rgba::from_rgb(245, 245, 247),
+                text_secondary: Rgba::from_rgb(152, 152, 160),
+                text_disabled: Rgba::from_rgb(92, 92, 98),
+                border_subtle: Rgba::from_argb(22, 255, 255, 255),
+                border_strong: Rgba::from_argb(48, 255, 255, 255),
+                accent_primary: Rgba::from_rgb(236, 236, 240),
+                accent_soft: Rgba::from_argb(30, 255, 255, 255),
+                ..DARK
+            },
+            Theme::EmberDark => Self {
+                surface_base: Rgba::from_rgb(0, 0, 0),
+                surface_raised: Rgba::from_rgb(22, 17, 14),
+                surface_overlay: Rgba::from_rgb(32, 25, 21),
+                surface_interactive: Rgba::from_rgb(46, 35, 28),
+                text_primary: Rgba::from_rgb(250, 244, 238),
+                text_secondary: Rgba::from_rgb(170, 154, 142),
+                text_disabled: Rgba::from_rgb(100, 90, 82),
+                border_subtle: Rgba::from_argb(26, 255, 160, 100),
+                border_strong: Rgba::from_argb(56, 255, 160, 100),
+                accent_primary: Rgba::from_rgb(255, 138, 61),
+                accent_soft: Rgba::from_argb(40, 255, 138, 61),
+                ..DARK
+            },
+            Theme::Vivid => Self {
+                surface_base: Rgba::from_rgb(10, 10, 16),
+                surface_raised: Rgba::from_rgb(22, 21, 34),
+                surface_overlay: Rgba::from_rgb(32, 30, 48),
+                surface_interactive: Rgba::from_rgb(46, 42, 68),
+                text_primary: Rgba::from_rgb(246, 244, 255),
+                text_secondary: Rgba::from_rgb(160, 156, 190),
+                text_disabled: Rgba::from_rgb(98, 94, 124),
+                border_subtle: Rgba::from_argb(28, 160, 140, 255),
+                border_strong: Rgba::from_argb(60, 160, 140, 255),
+                accent_primary: Rgba::from_rgb(124, 92, 255),
+                accent_soft: Rgba::from_argb(46, 124, 92, 255),
+                ..DARK
+            },
+            Theme::Silver => Self {
+                surface_base: Rgba::from_rgb(238, 239, 242),
+                surface_raised: Rgba::from_rgb(252, 252, 253),
+                surface_overlay: Rgba::from_rgb(255, 255, 255),
+                surface_interactive: Rgba::from_rgb(224, 226, 231),
+                text_primary: Rgba::from_rgb(22, 22, 28),
+                text_secondary: Rgba::from_rgb(92, 94, 104),
+                text_disabled: Rgba::from_rgb(160, 162, 170),
+                border_subtle: Rgba::from_argb(22, 0, 0, 0),
+                border_strong: Rgba::from_argb(46, 0, 0, 0),
+                accent_primary: Rgba::from_rgb(10, 132, 255),
+                accent_soft: Rgba::from_argb(30, 10, 132, 255),
+                ..LIGHT
+            },
+        }
+    }
+}

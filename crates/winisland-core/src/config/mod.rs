@@ -98,6 +98,15 @@ pub struct AppConfig {
     pub world_clocks: Vec<String>,
     /// Text shown by the Message compact widget.
     pub status_message: String,
+    /// Panel theme: pure_black, ember, vivid or silver.
+    #[educe(Default = "pure_black")]
+    #[setting(choice(
+        "pure_black" => "theme_pure_black",
+        "ember" => "theme_ember",
+        "vivid" => "theme_vivid",
+        "silver" => "theme_silver",
+    ), label = "ui_theme")]
+    pub ui_theme: String,
     /// Ctrl+Alt+H opens the island with the command palette (true) or hides it (false).
     #[educe(Default = true)]
     #[setting(toggle, label = "hotkey_opens_island")]

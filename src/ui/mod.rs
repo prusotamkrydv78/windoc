@@ -3,4 +3,5 @@ pub mod components;
 pub mod dashboard;
 pub mod expanded;
 pub mod island;
+pub mod theme;
 pub mod widget;

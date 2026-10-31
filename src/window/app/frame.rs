@@ -86,6 +86,7 @@ impl App {
         }
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::widget::compact::message::set(&self.config.status_message);
+        crate::ui::theme::set(&self.config.ui_theme);
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         self.wellness.poll(&self.config, now);

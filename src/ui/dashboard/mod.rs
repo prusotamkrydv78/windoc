@@ -15,7 +15,7 @@ pub mod sample;
 use std::cell::{Cell, RefCell};
 
 use winisland_core::i18n::tr;
-use winisland_render::tokens::{ColorScheme, SemanticColors, SizeClass, radius, space, typography};
+use winisland_render::tokens::{SemanticColors, SizeClass, radius, space, typography};
 use winisland_render::{Painter, Point, Radius, Rect, Vec2};
 
 use crate::ui::components::card::{CardLayout, draw_card};
@@ -748,7 +748,7 @@ pub fn draw_page(
         },
         ..DashboardInteraction::default()
     };
-    let colors = SemanticColors::for_scheme(ColorScheme::Dark);
+    let colors = crate::ui::theme::colors();
     painter.save_alpha(alpha);
     painter.translate(Vec2::new(ox, oy));
     painter.scale(Vec2::new(scale, scale));
