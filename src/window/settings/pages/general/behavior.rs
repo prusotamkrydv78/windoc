@@ -95,6 +95,11 @@ impl SettingsApp {
         }
         page.row_label(tr("screen_time_hint"));
         page.group_end();
+        page.section(tr("section_clipboard"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::ClipboardHistoryEnabled, true);
+        page.row_label(tr("clipboard_history_hint"));
+        page.group_end();
         page.section(tr("section_updates"));
         page.group_start();
         page.setting(&self.config, AppConfigField::CheckForUpdates, true);

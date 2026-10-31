@@ -58,6 +58,16 @@ impl App {
         self.screen_time
             .apply_settings(crate::core::screen_time::settings_for(&self.config), now);
         self.screen_time.poll(now);
+        self.clipboard.apply_settings(
+            crate::core::clipboard_history::settings_for(&self.config),
+            now,
+        );
+        self.clipboard.poll(now);
+        crate::ui::dashboard::sync_clipboard(
+            self.clipboard.enabled(),
+            self.clipboard.revision(),
+            self.clipboard.items(),
+        );
         crate::ui::dashboard::set_screen_time_total(self.config.screen_time_enabled.then(|| {
             self.screen_time
                 .today(now)

@@ -109,7 +109,133 @@ pub fn set_screen_time_total(total: Option<Duration>) {
     SCREEN_TIME_TOTAL.with(|cell| cell.set(total));
 }
 
+/// Rows shown on the Clipboard page; more items stay in history but are not listed.
+const MAX_CLIPBOARD_ROWS: usize = 50;
+const MAX_ROW_CHARS: usize = 120;
+
+#[derive(Default)]
+struct ClipboardView {
+    synced: bool,
+    enabled: bool,
+    revision: u64,
+    count: usize,
+    rows: Vec<(String, String)>,
+}
+
+thread_local! {
+    static CLIPBOARD_VIEW: RefCell<ClipboardView> = RefCell::new(ClipboardView::default());
+}
+
+fn clipboard_row(item: &winisland_core::clipboard::ClipboardItem) -> (String, String) {
+    use winisland_core::clipboard::ClipboardBody;
+    let title = match &item.body {
+        ClipboardBody::Text(text) => text
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or_default()
+            .chars()
+            .take(MAX_ROW_CHARS)
+            .collect(),
+        ClipboardBody::Link(url) => url.chars().take(MAX_ROW_CHARS).collect(),
+        ClipboardBody::Image { width, height, .. } => {
+            winisland_core::i18n::tr_args("clipboard_image", &[&format!("{width}×{height}")])
+        }
+        ClipboardBody::Files(files) => match files.as_slice() {
+            [file] => file
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| file.display().to_string()),
+            _ => winisland_core::i18n::tr_args("clipboard_files", &[&files.len().to_string()]),
+        },
+    };
+    let subtitle = item.source_app.clone().unwrap_or_default();
+    (title, subtitle)
+}
+
+/// Publishes clipboard history for the dashboard. Rebuilds rows only when it changed.
+pub fn sync_clipboard(
+    enabled: bool,
+    revision: u64,
+    items: &[winisland_core::clipboard::ClipboardItem],
+) {
+    CLIPBOARD_VIEW.with(|view| {
+        let mut view = view.borrow_mut();
+        if view.synced && view.enabled == enabled && view.revision == revision {
+            return;
+        }
+        view.synced = true;
+        view.enabled = enabled;
+        view.revision = revision;
+        view.count = items.len();
+        view.rows = items
+            .iter()
+            .take(MAX_CLIPBOARD_ROWS)
+            .map(clipboard_row)
+            .collect();
+    });
+}
+
+fn draw_clipboard_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec, draw_list_row};
+    use winisland_render::tokens::Density;
+    CLIPBOARD_VIEW.with(|view| {
+        let view = view.borrow();
+        let empty = if !view.enabled {
+            Some("clipboard_off_hint")
+        } else if view.rows.is_empty() {
+            Some("clipboard_empty_hint")
+        } else {
+            None
+        };
+        if let Some(key) = empty {
+            draw_text(
+                painter,
+                &tr(key),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        let spec = ListRowSpec {
+            density: Density::Compact,
+            has_leading: false,
+            has_subtitle: true,
+            trailing_width: 0.0,
+        };
+        let mut top = grid.top;
+        for (title, subtitle) in &view.rows {
+            if top >= grid.bottom {
+                break;
+            }
+            let row = ListRowLayout::new(grid.left, top, grid.width(), spec);
+            let subtitle = (!subtitle.is_empty()).then_some(subtitle.as_str());
+            draw_list_row(
+                painter,
+                &row,
+                title,
+                subtitle,
+                colors,
+                InteractionState::default(),
+            );
+            top = row.bounds.bottom;
+        }
+    });
+}
+
 fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
+    if card.kind == CardKind::Clipboard {
+        return CLIPBOARD_VIEW.with(|view| {
+            let view = view.borrow();
+            if view.enabled || view.count > 0 {
+                (view.count.to_string(), tr("card_clipboard_items"))
+            } else {
+                (tr("card_off"), tr("clipboard_turn_on"))
+            }
+        });
+    }
     if card.kind == CardKind::ScreenTime {
         return match SCREEN_TIME_TOTAL.with(Cell::get) {
             Some(total) => {
@@ -372,7 +498,9 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         let (value, detail) = card_text(card, focus.as_ref());
         draw_card_value(painter, &card_layout, &value, &detail, colors);
     }
-    if cards.is_empty() {
+    if active == Destination::Clipboard {
+        draw_clipboard_page(painter, layout.grid, colors);
+    } else if cards.is_empty() {
         draw_text(
             painter,
             &tr("dashboard_not_ready"),

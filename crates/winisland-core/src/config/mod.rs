@@ -75,6 +75,9 @@ pub struct AppConfig {
     /// Also stores window titles for screen time. Off by default.
     #[setting(toggle, label = "screen_time_titles")]
     pub screen_time_titles: bool,
+    /// Keeps a local, encrypted history of copied text and files. Off by default.
+    #[setting(toggle, label = "clipboard_history_enabled")]
+    pub clipboard_history_enabled: bool,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

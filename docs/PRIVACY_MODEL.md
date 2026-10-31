@@ -14,6 +14,7 @@ This document describes what the **current code** stores, observes and sends. It
 | `%LOCALAPPDATA%\WinIsland\PluginMarketplace\` | Marketplace catalog and icon cache | Only if the marketplace is enabled (it is disabled in this build) |
 | `~/.winisland/focus.json` | Focus timer kind, phase, elapsed time and save time | Each timer state change |
 | `~/.winisland/screen_time.json` | Per-day active time by app executable (titles only if enabled), category rules | Every 5 minutes while tracking, on settings change and on exit |
+| `~/.winisland/clipboard.bin` | Clipboard history (text, links, file paths, source app), JSON encrypted with DPAPI for the current Windows user | About 10 seconds after a change while history is on, and on exit |
 
 No clipboard, notes, screen-time, location or credential data is collected by the current code.
 
@@ -26,6 +27,7 @@ No clipboard, notes, screen-time, location or credential data is collected by th
 | Windows notifications (`UserNotificationListener`) | Notification content shown in the island | Off (`notification_display` is false by default) and requires Windows permission | Never |
 | Foreground and fullscreen state | Whether a fullscreen app is active | On, for auto-hide | Never |
 | Screen time (`EVENT_SYSTEM_FOREGROUND` hook, input idle time) | Foreground app executable and active duration per day; window titles only if `screen_time_titles` is on | Off by default (`screen_time_enabled`); stored in `screen_time.json` for 7 days | Never |
+| Clipboard (`WM_CLIPBOARDUPDATE`) | Copied text (up to 1 MiB) and file paths, skipped entirely when password-manager exclusion markers are present | Off by default (`clipboard_history_enabled`); unpinned items kept 7 days, 200 items, 64 MB | Never |
 | System metrics | CPU, memory, disk and network rates for widgets | Only while those widgets are shown | Never |
 
 ## Network access

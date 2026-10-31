@@ -69,6 +69,7 @@ pub struct App {
     smtc: SmtcListener,
     audio: AudioProcessor,
     screen_time: crate::core::screen_time::ScreenTimeService,
+    clipboard: crate::core::clipboard_history::ClipboardService,
     compact_overlay: CompactOverlay,
     config: AppConfig,
     expanded: bool,
@@ -211,6 +212,9 @@ impl Default for App {
             audio: AudioProcessor::new(),
             screen_time: crate::core::screen_time::ScreenTimeService::load(
                 crate::core::screen_time::settings_for(&config),
+            ),
+            clipboard: crate::core::clipboard_history::ClipboardService::load(
+                crate::core::clipboard_history::settings_for(&config),
             ),
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,
