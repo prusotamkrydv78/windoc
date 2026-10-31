@@ -269,12 +269,16 @@ pub struct AppConfig {
 pub struct Workspace {
     pub name: String,
     pub modules: Vec<String>,
+    /// Home cards in order as `(kind, column span)`; empty means the default set.
+    #[serde(default)]
+    pub cards: Vec<(String, usize)>,
 }
 
 fn default_workspaces() -> Vec<Workspace> {
     let space = |name: &str, modules: &[&str]| Workspace {
         name: name.to_string(),
         modules: modules.iter().map(|key| (*key).to_string()).collect(),
+        cards: Vec::new(),
     };
     vec![
         space(

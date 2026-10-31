@@ -46,6 +46,12 @@ pub enum DashboardHit {
     AddWorkspace,
     /// Toggles arrange mode (choose which modules the workspace shows).
     Arrange,
+    /// Arrange mode, on a Home card: move it one place earlier.
+    CardMove(usize),
+    /// Arrange mode, on a Home card: toggle one or two columns wide.
+    CardResize(usize),
+    /// Arrange mode, on a Home card: remove it from this workspace.
+    CardRemove(usize),
     /// Focus page buttons: 0 reset, 1 play or pause, 2 skip.
     FocusButton(u8),
     /// The header's settings button.
@@ -705,13 +711,16 @@ fn page_layout(width: f32, height: f32, scale: f32) -> DashboardLayout {
     } else {
         SizeClass::Compact
     };
-    let spans = HOME_CARDS.map(|card| card.column_span);
+    let spans: Vec<usize> = cards_for(Destination::Home)
+        .iter()
+        .map(|card| card.column_span)
+        .collect();
     DashboardLayout::new(Rect::from_xywh(0.0, 0.0, width, height), size_class, &spans)
 }
 
 fn cards_for(active: Destination) -> &'static [SampleCard] {
     if active == Destination::Home {
-        &HOME_CARDS
+        home_cards()
     } else {
         &[]
     }
@@ -751,6 +760,11 @@ pub fn hit_test(
             return Some(DashboardHit::Close);
         }
         return Some(DashboardHit::Header);
+    }
+    if PAGE.with(|page| page.borrow().active) == Destination::Home
+        && let Some(hit) = hit_card_badge(&layout.cards, local)
+    {
+        return Some(hit);
     }
     let active = PAGE.with(|page| page.borrow().active);
     if active == Destination::More {
@@ -798,6 +812,9 @@ pub fn apply(hit: DashboardHit) {
     }
     PAGE.with(|page| {
         let mut page = page.borrow_mut();
+        if apply_card_badge(hit) {
+            return;
+        }
         if apply_workspace_hit(hit, &mut page) {
             return;
         }
@@ -1244,6 +1261,9 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         colors,
     );
     draw_arrange_badges(painter, &layout.dock.items, &layout.destinations);
+    if active == Destination::Home {
+        draw_card_badges(painter, &layout.cards);
+    }
 }
 
 /// Header button size and the two right-aligned buttons: settings, then close.
@@ -2980,7 +3000,8 @@ fn draw_battery_chip(painter: Painter<'_>, header: Rect, right: f32, colors: &Se
 
 thread_local! {
     /// Workspaces as `(name, module keys)`, mirrored from the config.
-    static WORKSPACES: RefCell<Vec<(String, Vec<String>)>> = const { RefCell::new(Vec::new()) };
+    static WORKSPACES: RefCell<Vec<(String, Vec<String>, Vec<(String, usize)>)>> =
+        const { RefCell::new(Vec::new()) };
     static ACTIVE_WORKSPACE: Cell<usize> = const { Cell::new(0) };
     static ARRANGING: Cell<bool> = const { Cell::new(false) };
     /// Set when the user changed workspaces here and the app should save them.
@@ -2993,9 +3014,15 @@ pub fn set_workspaces(workspaces: &[winisland_core::config::Workspace], active: 
         return;
     }
     WORKSPACES.with(|cell| {
-        let incoming: Vec<(String, Vec<String>)> = workspaces
+        let incoming: Vec<(String, Vec<String>, Vec<(String, usize)>)> = workspaces
             .iter()
-            .map(|space| (space.name.clone(), space.modules.clone()))
+            .map(|space| {
+                (
+                    space.name.clone(),
+                    space.modules.clone(),
+                    space.cards.clone(),
+                )
+            })
             .collect();
         if *cell.borrow() != incoming {
             *cell.borrow_mut() = incoming;
@@ -3012,9 +3039,10 @@ pub fn take_workspace_change() -> Option<(Vec<winisland_core::config::Workspace>
     let spaces = WORKSPACES.with(|cell| {
         cell.borrow()
             .iter()
-            .map(|(name, modules)| winisland_core::config::Workspace {
+            .map(|(name, modules, cards)| winisland_core::config::Workspace {
                 name: name.clone(),
                 modules: modules.clone(),
+                cards: cards.clone(),
             })
             .collect()
     });
@@ -3027,7 +3055,7 @@ fn workspace_has(key: &str) -> bool {
         let active = ACTIVE_WORKSPACE.with(Cell::get);
         spaces
             .get(active)
-            .is_none_or(|(_, modules)| modules.iter().any(|module| module == key))
+            .is_none_or(|(_, modules, _)| modules.iter().any(|module| module == key))
     })
 }
 
@@ -3043,8 +3071,12 @@ fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)
     );
     let mut x = header.left + icon_size + space::S2 + title_width + space::S3 * 2.0 + 1.0;
     let mut tabs = Vec::new();
-    let names: Vec<String> =
-        WORKSPACES.with(|cell| cell.borrow().iter().map(|(name, _)| name.clone()).collect());
+    let names: Vec<String> = WORKSPACES.with(|cell| {
+        cell.borrow()
+            .iter()
+            .map(|(name, ..)| name.clone())
+            .collect()
+    });
     for (index, name) in names.iter().enumerate() {
         let width = fonts.measure_text_cached(
             name,
@@ -3088,8 +3120,12 @@ fn draw_workspace_tabs(
     hovered: Option<DashboardHit>,
     colors: &SemanticColors,
 ) {
-    let names: Vec<String> =
-        WORKSPACES.with(|cell| cell.borrow().iter().map(|(name, _)| name.clone()).collect());
+    let names: Vec<String> = WORKSPACES.with(|cell| {
+        cell.borrow()
+            .iter()
+            .map(|(name, ..)| name.clone())
+            .collect()
+    });
     let current = ACTIVE_WORKSPACE.with(Cell::get);
     let arranging = ARRANGING.with(Cell::get);
     for (rect, hit) in workspace_tabs(header, active) {
@@ -3218,6 +3254,7 @@ fn apply_workspace_hit(hit: DashboardHit, page: &mut PageState) -> bool {
                 spaces.push((
                     name,
                     vec!["dashboard_agenda".into(), "dashboard_notes".into()],
+                    Vec::new(),
                 ));
                 ACTIVE_WORKSPACE.with(|active| active.set(spaces.len() - 1));
             });
@@ -3235,7 +3272,7 @@ fn apply_workspace_hit(hit: DashboardHit, page: &mut PageState) -> bool {
             WORKSPACES.with(|cell| {
                 let mut spaces = cell.borrow_mut();
                 let active = ACTIVE_WORKSPACE.with(Cell::get);
-                if let Some((_, modules)) = spaces.get_mut(active) {
+                if let Some((_, modules, _)) = spaces.get_mut(active) {
                     if let Some(at) = modules.iter().position(|module| module == key) {
                         modules.remove(at);
                     } else {
@@ -3246,6 +3283,172 @@ fn apply_workspace_hit(hit: DashboardHit, page: &mut PageState) -> bool {
         }
         _ => return false,
     }
+    WORKSPACES_DIRTY.with(|cell| cell.set(true));
+    true
+}
+
+thread_local! {
+    /// The Home cards for the active workspace. Leaked once per layout change so callers can
+    /// keep borrowing a `'static` slice; layouts change only on user edits.
+    static HOME_LAYOUT: RefCell<(Vec<(String, usize)>, &'static [SampleCard])> =
+        const { RefCell::new((Vec::new(), &HOME_CARDS)) };
+}
+
+fn card_key(kind: CardKind) -> &'static str {
+    match kind {
+        CardKind::ScreenTime => "screen_time",
+        CardKind::Weather => "weather",
+        CardKind::Focus => "focus",
+        CardKind::Clipboard => "clipboard",
+        CardKind::Notes => "notes",
+        CardKind::System => "system",
+    }
+}
+
+/// The active workspace's card spec, or the default cards when it has none.
+fn active_card_spec() -> Vec<(String, usize)> {
+    let spec = WORKSPACES.with(|cell| {
+        let spaces = cell.borrow();
+        spaces
+            .get(ACTIVE_WORKSPACE.with(Cell::get))
+            .map(|(_, _, cards)| cards.clone())
+            .unwrap_or_default()
+    });
+    if spec.is_empty() {
+        HOME_CARDS
+            .iter()
+            .map(|card| (card_key(card.kind).to_string(), card.column_span))
+            .collect()
+    } else {
+        spec
+    }
+}
+
+fn home_cards() -> &'static [SampleCard] {
+    let spec = active_card_spec();
+    HOME_LAYOUT.with(|cell| {
+        let mut layout = cell.borrow_mut();
+        if layout.0 != spec {
+            let cards: Vec<SampleCard> = spec
+                .iter()
+                .filter_map(|(key, span)| {
+                    HOME_CARDS
+                        .iter()
+                        .find(|card| card_key(card.kind) == key)
+                        .map(|card| SampleCard {
+                            column_span: (*span).clamp(1, 2),
+                            ..*card
+                        })
+                })
+                .collect();
+            layout.1 = Box::leak(cards.into_boxed_slice());
+            layout.0 = spec;
+        }
+        layout.1
+    })
+}
+
+/// Badge rectangles on a card in arrange mode: move (top left), resize and remove (top right).
+fn card_badges(card: Rect) -> [(Rect, u8); 3] {
+    let size = 20.0;
+    [
+        (
+            Rect::from_xywh(card.left + 6.0, card.top + 6.0, size, size),
+            0,
+        ),
+        (
+            Rect::from_xywh(card.right - 2.0 * size - 10.0, card.top + 6.0, size, size),
+            1,
+        ),
+        (
+            Rect::from_xywh(card.right - size - 6.0, card.top + 6.0, size, size),
+            2,
+        ),
+    ]
+}
+
+fn hit_card_badge(cards: &[Rect], point: Point) -> Option<DashboardHit> {
+    if !ARRANGING.with(Cell::get) {
+        return None;
+    }
+    for (index, card) in cards.iter().enumerate() {
+        for (rect, kind) in card_badges(*card) {
+            if rect.contains(point) {
+                return Some(match kind {
+                    0 => DashboardHit::CardMove(index),
+                    1 => DashboardHit::CardResize(index),
+                    _ => DashboardHit::CardRemove(index),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn draw_card_badges(painter: Painter<'_>, cards: &[Rect]) {
+    if !ARRANGING.with(Cell::get) {
+        return;
+    }
+    for card in cards {
+        painter.stroke_round_rect(
+            *card,
+            Radius::uniform(16.0),
+            1.5,
+            WORKSPACE_ACCENT.with_alpha(160),
+        );
+        for (rect, kind) in card_badges(*card) {
+            let fill = if kind == 2 {
+                winisland_render::Rgba::from_rgb(255, 69, 58)
+            } else {
+                winisland_render::Rgba::from_rgb(58, 58, 60)
+            };
+            painter.fill_circle(
+                Point::new(rect.center_x(), rect.center_y()),
+                rect.width() / 2.0,
+                fill,
+            );
+            let label = match kind {
+                0 => "←",
+                1 => "↔",
+                _ => "✕",
+            };
+            draw_text(
+                painter,
+                label,
+                typography::LABEL,
+                rect,
+                Align::Center,
+                winisland_render::Rgba::WHITE,
+            );
+        }
+    }
+}
+
+/// Applies a card badge: edits the active workspace's card list and marks it for saving.
+fn apply_card_badge(hit: DashboardHit) -> bool {
+    let (index, op) = match hit {
+        DashboardHit::CardMove(index) => (index, 0),
+        DashboardHit::CardResize(index) => (index, 1),
+        DashboardHit::CardRemove(index) => (index, 2),
+        _ => return false,
+    };
+    let mut spec = active_card_spec();
+    if index >= spec.len() {
+        return true;
+    }
+    match op {
+        0 if index > 0 => spec.swap(index, index - 1),
+        1 => spec[index].1 = if spec[index].1 >= 2 { 1 } else { 2 },
+        2 if spec.len() > 1 => {
+            spec.remove(index);
+        }
+        _ => {}
+    }
+    WORKSPACES.with(|cell| {
+        if let Some((_, _, cards)) = cell.borrow_mut().get_mut(ACTIVE_WORKSPACE.with(Cell::get)) {
+            *cards = spec;
+        }
+    });
     WORKSPACES_DIRTY.with(|cell| cell.set(true));
     true
 }
