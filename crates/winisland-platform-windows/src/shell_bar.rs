@@ -251,3 +251,155 @@ pub fn taskbar_created_message() -> u32 {
     // SAFETY: registering a well-known message name.
     unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) }
 }
+
+/// A top-level window that belongs in a taskbar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppWindow {
+    /// Raw HWND value; stable for the window's lifetime.
+    pub handle: isize,
+    pub title: String,
+    /// Executable file name, such as `Code.exe`, used to group and label windows.
+    pub executable: String,
+    pub foreground: bool,
+    pub minimized: bool,
+}
+
+/// Windows a taskbar would show: visible, unowned, not tool windows and not cloaked
+/// (cloaked windows are UWP frames on other virtual desktops or suspended apps).
+pub fn app_windows() -> Vec<AppWindow> {
+    use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GW_OWNER, GWL_EXSTYLE, GetForegroundWindow, GetWindow, GetWindowLongW,
+        GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic, WS_EX_APPWINDOW,
+    };
+    use windows::core::BOOL;
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        // SAFETY: lparam is the Vec passed by app_windows for the duration of EnumWindows.
+        let found = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
+        found.push(hwnd);
+        true.into()
+    }
+
+    let mut handles: Vec<HWND> = Vec::new();
+    // SAFETY: the callback only pushes into `handles`, which outlives the call.
+    unsafe {
+        let _ = EnumWindows(Some(collect), LPARAM(&mut handles as *mut _ as isize));
+    }
+    // SAFETY: read-only queries on windows returned by EnumWindows.
+    let foreground = unsafe { GetForegroundWindow() };
+    let mut windows = Vec::new();
+    for hwnd in handles {
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                continue;
+            }
+            let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+            let owned = GetWindow(hwnd, GW_OWNER).is_ok_and(|owner| !owner.is_invalid());
+            let app_window = ex_style & WS_EX_APPWINDOW.0 != 0;
+            if (ex_style & WS_EX_TOOLWINDOW.0 != 0 || owned) && !app_window {
+                continue;
+            }
+            let mut cloaked = 0u32;
+            if DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_CLOAKED,
+                &mut cloaked as *mut u32 as *mut _,
+                std::mem::size_of::<u32>() as u32,
+            )
+            .is_ok()
+                && cloaked != 0
+            {
+                continue;
+            }
+            let length = GetWindowTextLengthW(hwnd);
+            if length <= 0 {
+                continue;
+            }
+            let mut buffer = vec![0u16; length as usize + 1];
+            let copied = GetWindowTextW(hwnd, &mut buffer);
+            let title = String::from_utf16_lossy(&buffer[..copied.max(0) as usize]);
+            let mut process_id = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+            let executable = crate::process::open(process_id)
+                .and_then(|process| crate::process::executable_name(*process))
+                .unwrap_or_default();
+            // Our own windows are not apps on the bar.
+            if process_id == std::process::id()
+                || executable.eq_ignore_ascii_case("explorer.exe") && title == "Program Manager"
+            {
+                continue;
+            }
+            windows.push(AppWindow {
+                handle: hwnd.0 as isize,
+                title,
+                executable,
+                foreground: hwnd == foreground,
+                minimized: IsIconic(hwnd).as_bool(),
+            });
+        }
+    }
+    windows
+}
+
+/// Brings a window to the front, restoring it if minimised. Clicking the window that already
+/// has focus minimises it, like the taskbar does.
+pub fn activate_window(handle: isize) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_MENU,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, IsIconic, SW_MINIMIZE, SW_RESTORE, SetForegroundWindow,
+    };
+    let hwnd = HWND(handle as *mut _);
+    // SAFETY: window queries and focus calls on a handle from app_windows; a stale handle
+    // simply makes the calls fail.
+    unsafe {
+        if GetForegroundWindow() == hwnd && !IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            return;
+        }
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        // Windows only lets the foreground process change focus; a synthetic Alt press marks
+        // this process as having received input so SetForegroundWindow is honoured.
+        let key = |flags| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_MENU,
+                    dwFlags: flags,
+                    ..Default::default()
+                },
+            },
+        };
+        let inputs = [key(Default::default()), key(KEYEVENTF_KEYUP)];
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+/// Opens the real Start menu by sending the Windows key.
+pub fn open_start_menu() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_LWIN,
+    };
+    let key = |flags| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VK_LWIN,
+                dwFlags: flags,
+                ..Default::default()
+            },
+        },
+    };
+    // SAFETY: two well-formed keyboard inputs.
+    unsafe {
+        SendInput(
+            &[key(Default::default()), key(KEYEVENTF_KEYUP)],
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+}

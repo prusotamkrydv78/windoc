@@ -4,4 +4,5 @@ pub mod dashboard;
 pub mod expanded;
 pub mod island;
 pub mod theme;
+pub mod top_bar;
 pub mod widget;

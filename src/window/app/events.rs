@@ -407,9 +407,30 @@ impl App {
                                 extras: pager_backdrop,
                             },
                         );
+                        let top_bar_scale = self.window.map_or(1.0, |window| {
+                            crate::platform::window().scale_factor(window.id()) as f32
+                        });
+                        let top_bar_height = if crate::ui::top_bar::is_active() {
+                            crate::core::top_bar::BAR_HEIGHT * top_bar_scale
+                        } else {
+                            0.0
+                        };
+                        let top_bar_notch = (
+                            island_layout.current_island_x as f32,
+                            island_layout.current_island_x as f32 + self.springs.w.value,
+                        );
                         let main_target = renderer.main_target();
                         let render_result =
                             renderer.frame(main_target, |drawing_context, painter| {
+                                if top_bar_height > 0.0 {
+                                    crate::ui::top_bar::draw(
+                                        painter,
+                                        self.geom.os_w as f32,
+                                        top_bar_height,
+                                        top_bar_scale,
+                                        top_bar_notch,
+                                    );
+                                }
                                 draw_island(
                                     drawing_context,
                                     painter,
@@ -494,6 +515,7 @@ impl App {
                                             pages: &expanded_pages,
                                             attached: self.config.notch_shape
                                                 && !island_layout.dock_bottom,
+                                            bar_height: top_bar_height,
                                         },
                                         mini_content,
                                         compact_overlay: &self.compact_overlay,

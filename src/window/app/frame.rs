@@ -310,11 +310,25 @@ impl App {
             log::info!("Island revealed by fullscreen edge double-click");
         }
 
+        // The top bar strip is always clickable; its items highlight under the pointer.
+        let over_top_bar = crate::ui::top_bar::is_active()
+            && rel_x >= 0
+            && (rel_x as u32) < self.geom.os_w
+            && rel_y >= 0
+            && (rel_y as f32)
+                < crate::core::top_bar::BAR_HEIGHT
+                    * crate::platform::window().scale_factor(window.id()) as f32;
+        if crate::ui::top_bar::set_hover(
+            over_top_bar.then(|| winisland_render::Point::new(rel_x as f32, rel_y as f32)),
+        ) {
+            window.request_redraw();
+        }
         if interaction_suppressed {
             window.set_cursor_hittest(false);
         } else {
             window.set_cursor_hittest(
                 is_hovering_visible
+                    || over_top_bar
                     || is_on_hidden_reveal
                     || self.compact_overlay.is_volume_dragging()
                     || self.compact_overlay.is_brightness_dragging(),
@@ -1488,7 +1502,7 @@ impl App {
     fn sync_top_bar(&mut self, now: Instant) {
         use winisland_platform_windows::shell_bar::ScreenRect;
         let wanted = self.config.top_bar && !crate::core::safe_mode::active();
-        let Some(window_ref) = &self.window else {
+        let Some(window_ref) = self.window else {
             return;
         };
         let scale = crate::platform::window().scale_factor(window_ref.id()) as f32;
@@ -1500,6 +1514,7 @@ impl App {
             right: x + width as i32,
             bottom: y + height as i32,
         };
+        let was_active = self.top_bar.is_some();
         match (&mut self.top_bar, wanted) {
             (Some(session), true) => session.poll(monitor, scale, now),
             (None, true) if width > 0 && height > 0 => {
@@ -1511,5 +1526,43 @@ impl App {
             (Some(_), false) => self.top_bar = None,
             _ => {}
         }
+        let active = self.top_bar.is_some();
+        crate::ui::top_bar::set_active(active);
+        if active {
+            self.refresh_top_bar_apps();
+            crate::ui::top_bar::set_battery(crate::platform::battery());
+        }
+        if active != was_active {
+            // The window grows to the monitor width (or back) and is re-anchored.
+            let _ = window_ref.request_inner_size(self.required_window_size());
+            let (x, y) = self.compute_window_position(
+                winisland_platform::WindowPosition::new(
+                    self.geom.monitor_pos.0,
+                    self.geom.monitor_pos.1,
+                ),
+                winisland_platform::WindowSize::new(
+                    self.geom.monitor_size.0,
+                    self.geom.monitor_size.1,
+                ),
+            );
+            self.set_configured_window_position(&window_ref, x, y);
+            window_ref.request_redraw();
+        }
+    }
+}
+
+impl App {
+    /// Publishes the running app windows to the top bar.
+    pub(super) fn refresh_top_bar_apps(&mut self) {
+        let apps = winisland_platform_windows::shell_bar::app_windows()
+            .into_iter()
+            .map(|window| crate::ui::top_bar::BarApp {
+                handle: window.handle,
+                label: crate::ui::top_bar::app_label(&window.executable, &window.title),
+                title: window.title,
+                foreground: window.foreground,
+            })
+            .collect();
+        crate::ui::top_bar::set_apps(apps);
     }
 }

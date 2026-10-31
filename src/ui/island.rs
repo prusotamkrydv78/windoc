@@ -83,6 +83,9 @@ pub struct StyleParams<'a> {
     pub pages: &'a [ExpandedPage],
     /// Draw the island attached to the top screen edge with concave shoulders.
     pub attached: bool,
+    /// Height of the top bar in window pixels, or 0. When set, the notch hangs from the bar's
+    /// lower edge instead of the top of the screen.
+    pub bar_height: f32,
 }
 
 use winisland_core::context::MiniContent;
@@ -581,7 +584,12 @@ fn island_shape(params: &DrawIslandParams<'_>, rect: Rect) -> Path {
     }
     let scale = layout.compact_scale.max(0.5);
     let shoulder = (layout.current_r * 0.6).clamp(6.0 * scale, 14.0 * scale);
-    let top = rect.top.min(0.0);
+    let bar = params.style.bar_height;
+    let top = if bar > 0.0 && rect.bottom > bar + 2.0 {
+        bar
+    } else {
+        rect.top.min(0.0)
+    };
     Path::notch(rect, top, layout.current_r, shoulder)
 }
 

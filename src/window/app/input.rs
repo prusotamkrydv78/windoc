@@ -35,6 +35,25 @@ impl App {
         }
         let rel_x = px - self.geom.win_x;
         let rel_y = py - self.geom.win_y;
+        // Top bar items act on release-free press, like the taskbar.
+        if state == InputState::Pressed
+            && let Some(hit) =
+                crate::ui::top_bar::hit(winisland_render::Point::new(rel_x as f32, rel_y as f32))
+        {
+            use winisland_platform_windows::shell_bar;
+            match hit {
+                crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
+                crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
+                crate::ui::top_bar::BarHit::Clock => {
+                    let _ = crate::platform::shell().open_url("ms-actioncenter:");
+                }
+            }
+            self.refresh_top_bar_apps();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
         let layout = self.compute_island_layout();
 
         if state == InputState::Pressed {
