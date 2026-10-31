@@ -407,35 +407,13 @@ impl App {
                                 extras: pager_backdrop,
                             },
                         );
-                        let top_bar_scale = self.window.map_or(1.0, |window| {
-                            crate::platform::window().scale_factor(window.id()) as f32
-                        });
-                        // Like the classic taskbar, the bar steps aside for full-screen apps.
-                        let top_bar_height =
-                            if crate::ui::top_bar::is_active() && !self.is_fullscreen_suppressed {
-                                crate::core::top_bar::BAR_HEIGHT * top_bar_scale
-                            } else {
-                                0.0
-                            };
-                        // The edge light runs while something is happening (an activity or the open
-                        // panel), when frames are already being drawn; at rest the bar stays still.
-                        let top_bar_edge_live = self.expanded || self.compact_overlay.is_visible();
-                        let top_bar_notch = (
-                            island_layout.current_island_x as f32,
-                            island_layout.current_island_x as f32 + self.springs.w.value,
-                        );
+                        // The edge light traces the notch while something is happening (an activity
+                        // or the open panel), when frames are already being drawn.
+                        let edge_light_live = crate::ui::top_bar::is_active()
+                            && (self.expanded || self.compact_overlay.is_visible());
                         let main_target = renderer.main_target();
                         let render_result =
                             renderer.frame(main_target, |drawing_context, painter| {
-                                if top_bar_height > 0.0 {
-                                    crate::ui::top_bar::draw(
-                                        painter,
-                                        self.geom.os_w as f32,
-                                        top_bar_height,
-                                        top_bar_scale,
-                                        top_bar_notch,
-                                    );
-                                }
                                 let island_result = draw_island(
                                     drawing_context,
                                     painter,
@@ -520,47 +498,30 @@ impl App {
                                             pages: &expanded_pages,
                                             attached: self.config.notch_shape
                                                 && !island_layout.dock_bottom,
-                                            bar_height: top_bar_height,
+                                            bar_height: 0.0,
                                         },
                                         mini_content,
                                         compact_overlay: &self.compact_overlay,
                                         attention_alpha,
                                     },
                                 );
-                                if top_bar_height > 0.0 {
-                                    crate::ui::top_bar::draw_preview_card(painter, top_bar_scale);
-                                    crate::ui::top_bar::popover::draw(
-                                        painter,
-                                        top_bar_height,
-                                        self.geom.os_w as f32,
-                                        top_bar_scale,
-                                    );
-                                }
-                                if top_bar_height > 0.0 && top_bar_edge_live {
+                                if edge_light_live {
                                     let notch = winisland_render::Rect::from_xywh(
                                         island_layout.current_island_x as f32,
                                         island_layout.current_island_y as f32,
                                         self.springs.w.value,
                                         self.springs.h.value,
                                     );
-                                    // Same minimum dip below the bar as the notch shape.
-                                    let compact_scale = self.config.compact_scale.max(0.5);
-                                    let notch = winisland_render::Rect::from_ltrb(
-                                        notch.left,
-                                        notch.top,
-                                        notch.right,
-                                        notch.bottom.max(top_bar_height + 12.0 * compact_scale),
-                                    );
-                                    let compact = self.config.compact_scale.max(0.5);
                                     let radius = self.springs.r.value;
                                     crate::ui::top_bar::draw_edge_light(
                                         painter,
-                                        self.geom.os_w as f32,
-                                        top_bar_height,
                                         notch,
                                         radius,
-                                        (radius * 0.6).clamp(6.0 * compact, 14.0 * compact),
-                                        top_bar_scale,
+                                        crate::ui::island::notch_shoulder(
+                                            radius,
+                                            self.config.compact_scale.max(0.5),
+                                        ),
+                                        self.config.compact_scale.max(0.5),
                                         crate::ui::top_bar::animation_seconds(),
                                     );
                                 }
@@ -638,6 +599,10 @@ impl AppHandler for App {
             }
             return;
         }
+        if self.is_bar_window(id) {
+            self.on_bar_window_event(event);
+            return;
+        }
         self.on_window_event(id, event);
     }
 
@@ -656,6 +621,7 @@ impl AppHandler for App {
     }
 
     fn on_exit(&mut self) {
+        self.destroy_bar_window();
         // Dropping the session restores the Windows taskbar.
         self.top_bar = None;
         self.shell_listener = None;

@@ -49,12 +49,7 @@ impl App {
             (self.config.expanded_height + crate::ui::expanded::pager::PAGER_EXTENT)
                 * expanded_scale,
         );
-        let mut width = width + PADDING;
-        if crate::ui::top_bar::is_active() && self.geom.monitor_size.0 > 0 {
-            // The top bar is drawn by this window, so it spans the whole monitor.
-            width = width.max(self.geom.monitor_size.0 as f32);
-        }
-        WindowSize::new(width as u32, (height + PADDING) as u32)
+        WindowSize::new((width + PADDING) as u32, (height + PADDING) as u32)
     }
 
     pub(super) fn get_target_monitor(window: &WindowRef, monitor_index: i32) -> Option<MonitorRef> {

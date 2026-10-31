@@ -35,9 +35,6 @@ impl App {
         }
         let rel_x = px - self.geom.win_x;
         let rel_y = py - self.geom.win_y;
-        if state == InputState::Pressed && self.handle_popover_click(rel_x, rel_y) {
-            return;
-        }
         // An activity's action button (Open, Settings…) acts on press.
         if state == InputState::Pressed
             && !self.expanded
@@ -56,54 +53,6 @@ impl App {
             }
             return;
         }
-        // Top bar items act on release-free press, like the taskbar.
-        if state == InputState::Pressed
-            && let Some(hit) =
-                crate::ui::top_bar::hit(winisland_render::Point::new(rel_x as f32, rel_y as f32))
-        {
-            use winisland_platform_windows::shell_bar;
-            match hit {
-                crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
-                crate::ui::top_bar::BarHit::ShowDesktop => shell_bar::toggle_desktop(),
-                crate::ui::top_bar::BarHit::Search => {
-                    if self.is_hidden() {
-                        self.reveal_island();
-                    }
-                    self.expanded = true;
-                    crate::ui::dashboard::show(crate::ui::dashboard::Destination::Home);
-                    self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
-                    self.snap_to_current_page();
-                    crate::ui::dashboard::palette::open();
-                }
-                crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
-                crate::ui::top_bar::BarHit::Clock => {
-                    toggle_popover(crate::ui::top_bar::popover::Popover::Calendar, hit)
-                }
-                crate::ui::top_bar::BarHit::Tray => {
-                    // Briefly show the taskbar so its overflow can open, then hide it again
-                    // on the next watchdog pass.
-                    shell_bar::show_taskbar_windows();
-                    if let Some(session) = self.top_bar.as_mut() {
-                        session.pause_watchdog(std::time::Duration::from_secs(8));
-                    }
-                    std::thread::spawn(shell_bar::open_tray_overflow);
-                }
-                crate::ui::top_bar::BarHit::Status => {
-                    toggle_popover(crate::ui::top_bar::popover::Popover::ControlCentre, hit)
-                }
-                crate::ui::top_bar::BarHit::Notifications => {
-                    toggle_popover(crate::ui::top_bar::popover::Popover::Notifications, hit)
-                }
-            }
-            self.refresh_top_bar_apps();
-            if crate::ui::top_bar::popover::is_open() {
-                self.refresh_popover_data(None);
-            }
-            if let Some(window) = &self.window {
-                window.request_redraw();
-            }
-            return;
-        }
         let layout = self.compute_island_layout();
 
         if state == InputState::Pressed {
@@ -116,9 +65,6 @@ impl App {
     }
 
     pub(super) fn handle_right_input(&mut self, state: InputState, px: i32, py: i32) {
-        if state == InputState::Pressed && self.show_top_bar_menu(px, py) {
-            return;
-        }
         if !self.config.right_click_drag
             || self.expanded
             || self.is_cursor_suppressed
@@ -635,17 +581,13 @@ impl App {
     /// Handles a press while a bar panel is open: acts on its controls, keeps it open for
     /// clicks inside, and closes it for clicks anywhere else except the bar itself (whose
     /// buttons toggle panels). Returns `true` when the click was consumed.
-    fn handle_popover_click(&mut self, rel_x: i32, rel_y: i32) -> bool {
+    pub(super) fn handle_popover_click(&mut self, rel_x: i32, rel_y: i32) -> bool {
         use crate::ui::top_bar::popover::{self, PopHit};
         if !popover::is_open() {
             return false;
         }
         let point = winisland_render::Point::new(rel_x as f32, rel_y as f32);
-        let redraw = |app: &Self| {
-            if let Some(window) = &app.window {
-                window.request_redraw();
-            }
-        };
+        let redraw = |app: &Self| app.request_bar_redraw();
         match popover::hit(point) {
             Some(PopHit::Settings(uri)) => {
                 let _ = crate::platform::shell().open_url(uri);
@@ -665,7 +607,7 @@ impl App {
             }
             Some(PopHit::Panel) => {}
             None => {
-                if crate::ui::top_bar::hit(point).is_some() {
+                if rel_y as f32 >= self.bar_top() {
                     return false; // let the bar button toggle panels
                 }
                 popover::close();
@@ -680,19 +622,11 @@ impl App {
     /// Right-clicking the top bar opens its context menu (Task Manager, Taskbar settings,
     /// Show desktop, WinIsland settings), like the classic taskbar. Returns `true` when the
     /// click was on the bar.
-    fn show_top_bar_menu(&mut self, px: i32, py: i32) -> bool {
+    pub(super) fn show_top_bar_menu(&mut self, px: i32, py: i32) -> bool {
         use winisland_platform_windows::shell_bar::{self, BarMenuCommand};
-        if !crate::ui::top_bar::is_active() {
-            return false;
-        }
-        let Some(window) = self.window else {
+        let Some(window) = self.bar_window else {
             return false;
         };
-        let scale = crate::platform::window().scale_factor(window.id()) as f32;
-        let rel_y = (py - self.geom.win_y) as f32;
-        if rel_y < 0.0 || rel_y >= crate::core::top_bar::BAR_HEIGHT * scale {
-            return false;
-        }
         let Some(surface) = crate::platform::window().native_surface(window.id()) else {
             return false;
         };
@@ -724,5 +658,53 @@ impl App {
             None => {}
         }
         true
+    }
+}
+
+impl App {
+    /// Acts on a press on a top bar item, like the taskbar (on press, not release).
+    pub(super) fn press_top_bar_item(&mut self, hit: crate::ui::top_bar::BarHit) {
+        use winisland_platform_windows::shell_bar;
+        match hit {
+            crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
+            crate::ui::top_bar::BarHit::ShowDesktop => shell_bar::toggle_desktop(),
+            crate::ui::top_bar::BarHit::Search => {
+                if self.is_hidden() {
+                    self.reveal_island();
+                }
+                self.expanded = true;
+                crate::ui::dashboard::show(crate::ui::dashboard::Destination::Home);
+                self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
+                self.snap_to_current_page();
+                crate::ui::dashboard::palette::open();
+            }
+            crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
+            crate::ui::top_bar::BarHit::Clock => {
+                toggle_popover(crate::ui::top_bar::popover::Popover::Calendar, hit)
+            }
+            crate::ui::top_bar::BarHit::Tray => {
+                // Briefly show the taskbar so its overflow can open, then hide it again
+                // on the next watchdog pass.
+                shell_bar::show_taskbar_windows();
+                if let Some(session) = self.top_bar.as_mut() {
+                    session.pause_watchdog(std::time::Duration::from_secs(8));
+                }
+                std::thread::spawn(shell_bar::open_tray_overflow);
+            }
+            crate::ui::top_bar::BarHit::Status => {
+                toggle_popover(crate::ui::top_bar::popover::Popover::ControlCentre, hit)
+            }
+            crate::ui::top_bar::BarHit::Notifications => {
+                toggle_popover(crate::ui::top_bar::popover::Popover::Notifications, hit)
+            }
+        }
+        self.refresh_top_bar_apps();
+        if crate::ui::top_bar::popover::is_open() {
+            self.refresh_popover_data(None);
+        }
+        self.request_bar_redraw();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 }

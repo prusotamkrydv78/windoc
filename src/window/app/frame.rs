@@ -332,40 +332,12 @@ impl App {
             log::info!("Island revealed by fullscreen edge double-click");
         }
 
-        // The top bar strip is always clickable; its items highlight under the pointer.
-        let over_popover = crate::ui::top_bar::popover::rect().is_some_and(|rect| {
-            rect.contains(winisland_render::Point::new(rel_x as f32, rel_y as f32))
-        });
-        let over_top_bar = crate::ui::top_bar::is_active()
-            && !self.is_fullscreen_suppressed
-            && rel_x >= 0
-            && (rel_x as u32) < self.geom.os_w
-            && rel_y >= 0
-            && (rel_y as f32)
-                < crate::core::top_bar::BAR_HEIGHT
-                    * crate::platform::window().scale_factor(window.id()) as f32;
-        if crate::ui::top_bar::set_hover(
-            over_top_bar.then(|| winisland_render::Point::new(rel_x as f32, rel_y as f32)),
-        ) {
-            window.request_redraw();
-        }
-        let hovered_app = over_top_bar
-            .then(|| {
-                crate::ui::top_bar::hit(winisland_render::Point::new(rel_x as f32, rel_y as f32))
-            })
-            .flatten()
-            .and_then(|hit| match hit {
-                crate::ui::top_bar::BarHit::App(handle) => Some(handle),
-                _ => None,
-            });
-        self.update_bar_preview(&window, hovered_app, now);
+        self.update_bar_hover(now);
         if interaction_suppressed {
             window.set_cursor_hittest(false);
         } else {
             window.set_cursor_hittest(
                 is_hovering_visible
-                    || over_top_bar
-                    || over_popover
                     || is_on_hidden_reveal
                     || self.compact_overlay.is_volume_dragging()
                     || self.compact_overlay.is_brightness_dragging(),
@@ -1586,29 +1558,16 @@ impl App {
         }
         let active = self.top_bar.is_some();
         crate::ui::top_bar::set_active(active);
+        let _ = was_active;
+        // The bar has its own window docked at the bottom of the monitor.
+        self.sync_bar_window(active, monitor, scale);
         if active {
             self.publish_top_bar_apps(system.apps.clone());
             crate::ui::top_bar::set_battery(system.battery);
             if crate::ui::top_bar::popover::is_open() {
                 self.refresh_popover_data(None);
             }
-            window_ref.request_redraw();
-        }
-        if active != was_active {
-            // The window grows to the monitor width (or back) and is re-anchored.
-            let _ = window_ref.request_inner_size(self.required_window_size());
-            let (x, y) = self.compute_window_position(
-                winisland_platform::WindowPosition::new(
-                    self.geom.monitor_pos.0,
-                    self.geom.monitor_pos.1,
-                ),
-                winisland_platform::WindowSize::new(
-                    self.geom.monitor_size.0,
-                    self.geom.monitor_size.1,
-                ),
-            );
-            self.set_configured_window_position(&window_ref, x, y);
-            window_ref.request_redraw();
+            self.request_bar_redraw();
         }
     }
 }
@@ -1649,6 +1608,7 @@ impl App {
     /// 450 ms, and removes it when the pointer moves on.
     fn update_bar_preview(&mut self, window: &WindowRef, hovered: Option<isize>, now: Instant) {
         const DELAY: Duration = Duration::from_millis(450);
+        let (bar_top, bar_width) = (self.bar_top(), self.bar_geometry.width as f32);
         let current = self.bar_preview.as_ref().map(|(handle, ..)| *handle);
         if current != hovered {
             self.bar_preview = hovered.map(|handle| (handle, now, None));
@@ -1681,10 +1641,9 @@ impl App {
         let fit = (max_w / source_w.max(1) as f32).min(max_h / source_h.max(1) as f32);
         let (w, h) = (source_w as f32 * fit, source_h as f32 * fit);
         let pad = 8.0 * scale;
-        let top = crate::core::top_bar::BAR_HEIGHT * scale + 6.0 * scale;
-        let left = button
-            .left
-            .clamp(pad, (self.geom.os_w as f32 - w - pad * 3.0).max(pad));
+        // The preview card sits just above the bottom bar.
+        let top = bar_top - h - pad * 2.0 - 8.0 * scale;
+        let left = button.left.clamp(pad, (bar_width - w - pad * 3.0).max(pad));
         let card = winisland_render::Rect::from_xywh(left, top, w + pad * 2.0, h + pad * 2.0);
         preview.place(
             winisland_platform_windows::shell_bar::ScreenRect {

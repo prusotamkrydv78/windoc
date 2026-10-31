@@ -139,7 +139,8 @@ fn text(painter: Painter<'_>, value: &str, x: f32, y: f32, size: f32, bold: bool
     });
 }
 
-/// Draws the open popover under the bar. `top` is the bar's height and `width` the window's.
+/// Draws the open popover just above the bar. `top` is the bar's top edge in window pixels and
+/// `width` the window's.
 pub fn draw(painter: Painter<'_>, top: f32, width: f32, scale: f32) {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
@@ -156,7 +157,7 @@ pub fn draw(painter: Painter<'_>, top: f32, width: f32, scale: f32) {
             Popover::Notifications => 76.0 + 46.0 * state.history.len().max(1) as f32,
         } * s;
         let left = (anchor - w).clamp(8.0 * s, width - w - 8.0 * s);
-        let panel = Rect::from_xywh(left, top + 6.0 * s, w, height);
+        let panel = Rect::from_xywh(left, top - 8.0 * s - height, w, height);
         draw_glass(painter, panel, s);
         painter.stroke_round_rect(
             panel,

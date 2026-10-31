@@ -582,7 +582,8 @@ fn island_shape(params: &DrawIslandParams<'_>, rect: Rect) -> Path {
         return Path::continuous_rounded_rect(rect, layout.current_r);
     }
     let scale = layout.compact_scale.max(0.5);
-    let shoulder = (layout.current_r * 0.6).clamp(6.0 * scale, 14.0 * scale);
+    // Small, tight shoulders where the notch meets the screen edge.
+    let shoulder = notch_shoulder(layout.current_r, scale);
     let bar = params.style.bar_height;
     if bar > 0.0 {
         // Under the top bar the notch always dips visibly below it, so it never collapses
@@ -700,4 +701,9 @@ fn draw_album_glow(painter: Painter<'_>, params: &DrawIslandParams<'_>, rect: Re
             tile: None,
         },
     );
+}
+
+/// Radius of the concave fillet where the notch meets the top screen edge.
+pub fn notch_shoulder(radius: f32, scale: f32) -> f32 {
+    (radius * 0.4).clamp(5.0 * scale, 9.0 * scale)
 }

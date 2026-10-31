@@ -196,6 +196,45 @@ impl Path {
         builder.detach()
     }
 
+    /// The open outline of a notch hanging from `top`: from the left shoulder, down, around
+    /// the bottom corners and up to the right shoulder (for lights that trace the notch).
+    pub fn notch_outline(rect: Rect, top: f32, radius: f32, shoulder: f32) -> Self {
+        const ARC: f32 = std::f32::consts::FRAC_1_SQRT_2;
+        let mut builder = PathBuilder::new();
+        if !rect.is_finite() || rect.bottom <= top + 1.0 {
+            return builder.detach();
+        }
+        let (left, right, bottom) = (rect.left, rect.right, rect.bottom);
+        let height = bottom - top;
+        let shoulder = shoulder.max(0.0).min(height / 2.0);
+        let radius = radius
+            .max(0.0)
+            .min(rect.width() / 2.0)
+            .min(height - shoulder);
+        builder
+            .move_to(Point::new(left - shoulder, top))
+            .conic_to(Point::new(left, top), Point::new(left, top + shoulder), ARC)
+            .line_to(Point::new(left, bottom - radius))
+            .conic_to(
+                Point::new(left, bottom),
+                Point::new(left + radius, bottom),
+                ARC,
+            )
+            .line_to(Point::new(right - radius, bottom))
+            .conic_to(
+                Point::new(right, bottom),
+                Point::new(right, bottom - radius),
+                ARC,
+            )
+            .line_to(Point::new(right, top + shoulder))
+            .conic_to(
+                Point::new(right, top),
+                Point::new(right + shoulder, top),
+                ARC,
+            );
+        builder.detach()
+    }
+
     /// Total length of the path's first contour.
     pub fn length(&self) -> f32 {
         skia_safe::ContourMeasureIter::new(&self.inner, false, None)

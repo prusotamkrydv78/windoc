@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Shell::{
-    ABE_TOP, ABM_GETSTATE, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, ABM_SETSTATE,
+    ABE_BOTTOM, ABM_GETSTATE, ABM_NEW, ABM_QUERYPOS, ABM_REMOVE, ABM_SETPOS, ABM_SETSTATE,
     ABS_AUTOHIDE, APPBARDATA, SHAppBarMessage,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -39,7 +39,8 @@ pub struct AppBarReservation {
 }
 
 impl AppBarReservation {
-    /// Reserves `height` physical pixels along the top of `monitor`. Returns the strip Windows
+    /// Reserves `height` physical pixels along the bottom of `monitor`, where the classic
+    /// taskbar lives. Returns the strip Windows
     /// actually granted, which can differ when another AppBar already sits there.
     pub fn new(monitor: ScreenRect, height: i32) -> Option<Self> {
         let hwnd = create_host_window()?;
@@ -64,17 +65,17 @@ impl AppBarReservation {
     /// Moves or resizes the reserved strip, for example after a display change.
     pub fn set_position(&mut self, monitor: ScreenRect, height: i32) {
         let mut data = app_bar_data(self.hwnd);
-        data.uEdge = ABE_TOP;
+        data.uEdge = ABE_BOTTOM;
         data.rc = RECT {
             left: monitor.left,
-            top: monitor.top,
+            top: monitor.bottom - height,
             right: monitor.right,
-            bottom: monitor.top + height,
+            bottom: monitor.bottom,
         };
         // SAFETY: `data` is valid for both calls; Windows adjusts `rc` in place.
         unsafe {
             SHAppBarMessage(ABM_QUERYPOS, &mut data);
-            data.rc.bottom = data.rc.top + height;
+            data.rc.top = data.rc.bottom - height;
             SHAppBarMessage(ABM_SETPOS, &mut data);
         }
         self.reserved = ScreenRect {

@@ -507,19 +507,18 @@ const EDGE_PASS_SECONDS: f32 = 6.0;
 /// Length of the travelling light in logical pixels.
 const EDGE_COMET: f32 = 260.0;
 
-/// The light that travels along the bar's lower edge and around the notch, left to right, at
-/// a constant speed measured along the line itself, looping with no gap.
+/// The light that travels around the notch outline, shoulder to shoulder, at a constant speed
+/// measured along the line itself, looping with no gap.
 pub fn draw_edge_light(
     painter: Painter<'_>,
-    width: f32,
-    bar: f32,
     notch: Rect,
     radius: f32,
     shoulder: f32,
     scale: f32,
     seconds: f32,
 ) {
-    let edge = winisland_render::Path::bar_edge(width, bar, notch, radius, shoulder);
+    let top = notch.top.min(0.0);
+    let edge = winisland_render::Path::notch_outline(notch, top, radius, shoulder);
     let total = edge.length();
     if total <= 1.0 {
         return;

@@ -70,7 +70,7 @@ impl TopBarSession {
         shell_bar::keep_taskbar_hidden(monitor);
         let height = (BAR_HEIGHT * scale).round() as i32;
         let wanted = ScreenRect {
-            bottom: monitor.top + height,
+            top: monitor.bottom - height,
             ..monitor
         };
         if self.reservation.reserved() != wanted {
