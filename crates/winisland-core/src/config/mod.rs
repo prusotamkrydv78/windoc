@@ -92,6 +92,8 @@ pub struct AppConfig {
     pub world_clocks: Vec<String>,
     /// Text shown by the Message compact widget.
     pub status_message: String,
+    /// Quick links as `(name, url)`.
+    pub links: Vec<(String, String)>,
     /// Minutes between water reminders; 0 turns them off.
     #[setting(
         number(min = 0.0, max = 240.0, step = 15.0),

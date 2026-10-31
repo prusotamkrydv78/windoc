@@ -18,6 +18,8 @@ pub(super) enum BehaviorAction {
     ClearData(crate::core::data_inventory::DataKind),
     AddWorldClock,
     StatusMessage,
+    AddLink,
+    RemoveLink(usize),
     ExportBackup,
     RestoreBackup,
     RemoveWorldClock(usize),
@@ -147,6 +149,24 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::WaterReminderMinutes, true);
         page.setting(&self.config, AppConfigField::StretchReminderMinutes, true);
         page.row_label(tr("wellness_hint"));
+        page.group_end();
+        page.section(tr("section_links"));
+        page.group_start();
+        for (index, (name, url)) in self.config.links.iter().enumerate() {
+            page.row_button(
+                format!("{name} · {url}"),
+                tr("world_clock_remove"),
+                true,
+                BehaviorAction::RemoveLink(index),
+            );
+        }
+        page.row_text_field(
+            tr("links_add"),
+            String::new(),
+            tr("links_placeholder"),
+            self.config.links.len() < 12,
+            BehaviorAction::AddLink,
+        );
         page.group_end();
         page.section(tr("section_status_message"));
         page.group_start();
@@ -314,6 +334,17 @@ impl SettingsApp {
             (BehaviorAction::RestoreBackup, ClickResult::TextField(index)) => {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 self.begin_text_input(rect, "", 128, commit_restore_backup);
+                false
+            }
+            (BehaviorAction::RemoveLink(index), ClickResult::RowButton(_)) => {
+                if index < self.config.links.len() {
+                    self.config.links.remove(index);
+                }
+                true
+            }
+            (BehaviorAction::AddLink, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.begin_text_input(rect, "", 200, commit_add_link);
                 false
             }
             (BehaviorAction::StatusMessage, ClickResult::TextField(index)) => {
@@ -563,5 +594,28 @@ fn commit_restore_backup(app: &mut SettingsApp, passphrase: &str) {
 
 fn commit_status_message(app: &mut SettingsApp, text: &str) {
     app.config.status_message = text.trim().to_string();
+    app.mark_items_dirty();
+}
+
+/// Accepts `Name https://example.com`, or just a URL (its domain becomes the name).
+fn commit_add_link(app: &mut SettingsApp, text: &str) {
+    let text = text.trim();
+    let (name, url) = match text.rsplit_once(char::is_whitespace) {
+        Some((name, url)) => (name.trim().to_string(), url.trim().to_string()),
+        None => (String::new(), text.to_string()),
+    };
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return;
+    }
+    let name = if name.is_empty() {
+        url.split("://")
+            .nth(1)
+            .and_then(|rest| rest.split('/').next())
+            .unwrap_or(&url)
+            .to_string()
+    } else {
+        name
+    };
+    app.config.links.push((name, url));
     app.mark_items_dirty();
 }

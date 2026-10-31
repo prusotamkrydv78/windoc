@@ -40,6 +40,8 @@ pub enum DashboardHit {
     Header,
     /// Row on the Notes page: 0 is "New note".
     NoteRow(usize),
+    /// Row on the Links page.
+    LinkRow(usize),
 }
 
 struct PageState {
@@ -650,6 +652,9 @@ pub fn hit_test(
     if active == Destination::Notes {
         return hit_note_row(&layout, local).map(DashboardHit::NoteRow);
     }
+    if active == Destination::Links {
+        return hit_link_row(&layout, local).map(DashboardHit::LinkRow);
+    }
     layout
         .hit_card(local)
         .filter(|index| *index < cards_for(active).len())
@@ -676,6 +681,7 @@ pub fn apply(hit: DashboardHit) {
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
             DashboardHit::Header => palette::open(),
             DashboardHit::NoteRow(index) => open_note_row(index),
+            DashboardHit::LinkRow(index) => open_link(index),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -724,6 +730,7 @@ pub fn draw_page(
         hovered_row: match hover {
             Some(DashboardHit::ShelfEntry(index)) => Some(index),
             Some(DashboardHit::NoteRow(index)) => Some(index),
+            Some(DashboardHit::LinkRow(index)) => Some(index),
             Some(DashboardHit::Destination(destination)) if active == Destination::More => {
                 more_entries(&layout)
                     .iter()
@@ -770,6 +777,8 @@ pub enum Destination {
     Clock,
     /// AI coding usage report; reached from More.
     AiUsage,
+    /// Quick links; reached from More.
+    Links,
 }
 
 impl Destination {
@@ -784,7 +793,7 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 7] = [
+    pub const MORE_ITEMS: [Self; 8] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -792,6 +801,7 @@ impl Destination {
         Self::Notes,
         Self::Clock,
         Self::AiUsage,
+        Self::Links,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -805,6 +815,7 @@ impl Destination {
             Self::Notes => "dashboard_notes",
             Self::Clock => "dashboard_clock",
             Self::AiUsage => "dashboard_ai_usage",
+            Self::Links => "dashboard_links",
         }
     }
 }
@@ -871,6 +882,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_clock_page(painter, layout.grid, colors);
     } else if active == Destination::AiUsage {
         draw_ai_usage_page(painter, layout.grid, colors);
+    } else if active == Destination::Links {
+        draw_links_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Shelf {
         draw_shelf_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if cards.is_empty() {
@@ -1344,4 +1357,81 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
 /// Whether a palette or editor needs the island to take keyboard focus.
 pub fn wants_keyboard() -> bool {
     palette::is_open() || editor::is_open()
+}
+
+thread_local! {
+    static LINKS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the configured quick links.
+pub fn set_links(links: &[(String, String)]) {
+    LINKS.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if current.as_slice() != links {
+            *current = links.to_vec();
+        }
+    });
+}
+
+fn hit_link_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
+    if !layout.grid.contains(point) {
+        return None;
+    }
+    let count = LINKS.with(|cell| cell.borrow().len());
+    (0..count).find(|index| list_row(layout.grid, *index, true).bounds.contains(point))
+}
+
+fn open_link(index: usize) {
+    let url = LINKS.with(|cell| cell.borrow().get(index).map(|link| link.1.clone()));
+    if let Some(url) = url
+        && let Err(error) = crate::platform::shell().open_url(&url)
+    {
+        log::warn!("Cannot open link: {error}");
+    }
+}
+
+fn draw_links_page(
+    painter: Painter<'_>,
+    grid: Rect,
+    hovered_row: Option<usize>,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::list_row::draw_list_row;
+    LINKS.with(|cell| {
+        let links = cell.borrow();
+        if links.is_empty() {
+            draw_text(
+                painter,
+                &tr("links_empty_hint"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (name, url)) in links.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            // Show the destination domain before anything is opened.
+            let domain = url
+                .split("://")
+                .nth(1)
+                .and_then(|rest| rest.split('/').next())
+                .unwrap_or(url);
+            draw_list_row(
+                painter,
+                &row,
+                name,
+                Some(domain),
+                colors,
+                InteractionState {
+                    hovered: hovered_row == Some(index),
+                    ..InteractionState::default()
+                },
+            );
+        }
+    });
 }

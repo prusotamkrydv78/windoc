@@ -55,6 +55,8 @@ pub enum Command {
     SearchClipboard(String),
     /// A module name such as `weather` or `shelf`.
     OpenModule(&'static str),
+    /// `g rust lifetimes`: search a provider. Carries the full URL to open.
+    WebSearch { provider: &'static str, url: String },
 }
 
 const MODULES: &[(&str, &[&str])] = &[
@@ -135,6 +137,9 @@ pub fn parse(query: &str) -> Option<Command> {
                 return Some(Command::OpenFolder(folder));
             }
         }
+        "g" | "yt" | "gh" | "so" if !original_rest.is_empty() => {
+            return search_url(word, original_rest);
+        }
         "clip" | "clips" if !original_rest.is_empty() => {
             return Some(Command::SearchClipboard(original_rest.to_string()));
         }
@@ -168,4 +173,40 @@ pub fn suggest_modules(prefix: &str) -> Vec<&'static str> {
         .filter(|(_, names)| names.iter().any(|name| name.starts_with(&prefix)))
         .map(|(module, _)| *module)
         .collect()
+}
+
+/// Search providers: palette prefix, display name and URL template (`{}` is the query).
+pub const SEARCH_PROVIDERS: [(&str, &str, &str); 4] = [
+    ("g", "Google", "https://www.google.com/search?q={}"),
+    (
+        "yt",
+        "YouTube",
+        "https://www.youtube.com/results?search_query={}",
+    ),
+    ("gh", "GitHub", "https://github.com/search?q={}"),
+    (
+        "so",
+        "Stack Overflow",
+        "https://stackoverflow.com/search?q={}",
+    ),
+];
+
+fn search_url(prefix: &str, query: &str) -> Option<Command> {
+    let (_, name, template) = SEARCH_PROVIDERS
+        .iter()
+        .find(|(candidate, _, _)| *candidate == prefix)?;
+    let encoded: String = query
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (byte as char).to_string()
+            }
+            b' ' => "+".to_string(),
+            _ => format!("%{byte:02X}"),
+        })
+        .collect();
+    Some(Command::WebSearch {
+        provider: name,
+        url: template.replace("{}", &encoded),
+    })
 }

@@ -44,6 +44,11 @@ impl App {
                 }
             }
             Command::SearchClipboard(_) => dashboard::show(Destination::Clipboard),
+            Command::WebSearch { url, .. } => {
+                if let Err(error) = crate::platform::shell().open_url(&url) {
+                    log::warn!("Cannot open search: {error}");
+                }
+            }
             Command::OpenModule(module) => match module {
                 "settings" => self.open_settings(),
                 "home" => dashboard::show(Destination::Home),

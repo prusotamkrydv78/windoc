@@ -78,6 +78,7 @@ impl App {
         crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::widget::compact::message::set(&self.config.status_message);
+        crate::ui::dashboard::set_links(&self.config.links);
         self.wellness.poll(&self.config, now);
         crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
         self.ai_usage.poll(
