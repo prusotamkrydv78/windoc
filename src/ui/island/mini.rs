@@ -605,10 +605,7 @@ fn draw_playing_indicator(params: &MiniContentParams<'_>, alpha: u8) {
         .duration_since(UNIX_EPOCH)
         .map(|time| (time.as_millis() % 600_000) as f32 / 1000.0)
         .unwrap_or_default();
-    let color = params
-        .palette
-        .first()
-        .copied()
+    let color = crate::ui::expanded::music_view::readable_accent(params.palette)
         .unwrap_or(params.text_color)
         .with_alpha(alpha);
     for (index, (speed, phase)) in BARS.iter().enumerate() {

@@ -264,6 +264,7 @@ pub fn draw_music_page(params: DrawMusicPageParams<'_>) {
         scale,
         text_color,
         text_color_sec,
+        accent: music_active.then(|| readable_accent(palette)).flatten(),
     });
 
     if music_active {
@@ -695,6 +696,8 @@ struct TrackTextParams<'a> {
     scale: f32,
     text_color: Rgba,
     text_color_sec: Rgba,
+    /// Album accent for the artist line, when one is known.
+    accent: Option<Rgba>,
 }
 
 fn draw_track_text(params: TrackTextParams) {
@@ -710,6 +713,7 @@ fn draw_track_text(params: TrackTextParams) {
         scale,
         text_color,
         text_color_sec,
+        accent,
     } = params;
 
     let title = if !music_active || media.title.is_empty() {
@@ -765,7 +769,10 @@ fn draw_track_text(params: TrackTextParams) {
             max_w: max_text_w,
             size: artist_font_size,
             style: artist_style,
-            color: text_color_sec.with_alpha((alpha as f32 * 0.6) as u8),
+            color: match accent {
+                Some(accent) => accent.with_alpha(alpha),
+                None => text_color_sec.with_alpha((alpha as f32 * 0.6) as u8),
+            },
             blur: None,
             scale,
             render_as_paths: true,
@@ -912,4 +919,32 @@ fn draw_placeholder(
     let cx = x + size / 2.0;
     let cy = y + size / 2.0;
     crate::icons::music::draw_music_icon(painter, cx, cy, alpha, scale * 1.8, text_color);
+}
+
+/// The most colourful palette entry, lightened until it reads clearly on black, as on the
+/// macOS notch players. `None` for greyscale artwork.
+pub(crate) fn readable_accent(palette: &[Rgba]) -> Option<Rgba> {
+    let chroma = |color: &Rgba| {
+        let (r, g, b) = (color.r(), color.g(), color.b());
+        r.max(g).max(b) - r.min(g).min(b)
+    };
+    let color = *palette.iter().max_by_key(|color| chroma(color))?;
+    if chroma(&color) < 40 {
+        return None;
+    }
+    let luminance = |r: f32, g: f32, b: f32| (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+    let (mut r, mut g, mut b) = (
+        f32::from(color.r()),
+        f32::from(color.g()),
+        f32::from(color.b()),
+    );
+    for _ in 0..8 {
+        if luminance(r, g, b) >= 0.55 {
+            break;
+        }
+        r += (255.0 - r) * 0.2;
+        g += (255.0 - g) * 0.2;
+        b += (255.0 - b) * 0.2;
+    }
+    Some(Rgba::from_rgb(r as u8, g as u8, b as u8))
 }
