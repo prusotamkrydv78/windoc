@@ -14,7 +14,8 @@ pub const COLOR_DISABLED: Rgba = Rgba::from_rgb(99, 99, 102);
 pub const COLOR_WIN_BG: Rgba = Rgba::from_rgb(28, 28, 30);
 pub const COLOR_SIDEBAR_BG: Rgba = Rgba::from_rgb(36, 36, 38);
 pub const COLOR_GROUP_BG: Rgba = Rgba::from_rgb(44, 44, 46);
-pub const COLOR_TOGGLE_ON: Rgba = Rgba::from_rgb(48, 209, 88);
+/// The amber accent, the one colour the chrome uses.
+pub const COLOR_TOGGLE_ON: Rgba = Rgba::from_rgb(255, 176, 32);
 pub const COLOR_TOGGLE_OFF: Rgba = Rgba::from_rgb(99, 99, 102);
 
 pub fn color_sidebar_hover() -> Rgba {

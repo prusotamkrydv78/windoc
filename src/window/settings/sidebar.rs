@@ -17,7 +17,6 @@ use super::{
     WINDOW_CONTROL_CENTERS, WINDOW_CONTROL_RADIUS,
 };
 
-const ABOUT_ICON_INDEX: usize = 4;
 const SIDEBAR_ICON_BYTES: [&[u8]; 5] = [
     include_bytes!("../../../resources/in_app/settings/settings.png"),
     include_bytes!("../../../resources/in_app/settings/music.png"),
@@ -273,13 +272,27 @@ impl SettingsApp {
             tr("tab_widgets"),
             tr("tab_plugins"),
         ];
-        // Icon per page: the notch pages reuse the general icon until they get their own.
-        const PAGE_ICONS: [usize; 7] = [0, 0, 0, 0, 1, 2, 3];
+        // One line icon per page, in the row's text colour.
+        use crate::ui::components::icon::Icon;
+        const PAGE_ICONS: [Icon; 7] = [
+            Icon::Settings,
+            Icon::Home,
+            Icon::More,
+            Icon::Bolt,
+            Icon::Music,
+            Icon::Grid,
+            Icon::Link,
+        ];
         for (index, label) in pages.iter().enumerate() {
             let row_y = SIDEBAR_START_Y + index as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
             let text_color = draw_sidebar_row_background(self, painter, theme, index, row_y);
             let icon_rect = Rect::from_xywh(SIDEBAR_PAD + 7.0, row_y + 6.0, 22.0, 22.0);
-            draw_sidebar_icon(drawing_context, painter, PAGE_ICONS[index], icon_rect);
+            crate::ui::components::icon::draw_icon(
+                painter,
+                PAGE_ICONS[index],
+                icon_rect.inset(2.0),
+                text_color,
+            );
             SettingsPainter::new(painter).text(
                 label,
                 (SIDEBAR_PAD + 36.0, row_y + 22.0),
@@ -344,7 +357,12 @@ impl SettingsApp {
         let row_y = self.sidebar_about_y();
         let text_color = draw_sidebar_row_background(self, painter, theme, index, row_y);
         let icon_rect = Rect::from_xywh(SIDEBAR_PAD + 7.0, row_y + 6.0, 22.0, 22.0);
-        draw_sidebar_icon(drawing_context, painter, ABOUT_ICON_INDEX, icon_rect);
+        crate::ui::components::icon::draw_icon(
+            painter,
+            crate::ui::components::icon::Icon::Notes,
+            icon_rect.inset(2.0),
+            text_color,
+        );
         SettingsPainter::new(painter).text(
             &tr("tab_about"),
             (SIDEBAR_PAD + 36.0, row_y + 22.0),
