@@ -107,6 +107,68 @@ pub(crate) fn set_context(name: &str, focus_running: bool, playing_track: Option
     });
 }
 
+/// A short animation for something that just happened, played over the robot's day.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum Reaction {
+    /// A mouse was plugged in: a real little mouse scares the robot off.
+    MouseArrived,
+    /// The charger went in: a lightning bolt drops into its hands.
+    Charging,
+    /// The charger came out: it jumps in surprise.
+    Surprised,
+    /// Something was copied: it holds up a note.
+    Copied,
+    /// A drive was plugged in: it catches a falling USB stick.
+    Drive,
+    /// A Focus session finished: confetti and a happy jump.
+    Celebrate,
+}
+
+impl Reaction {
+    fn seconds(self) -> f32 {
+        match self {
+            Self::MouseArrived => 6.0,
+            Self::Celebrate => 4.5,
+            Self::Charging | Self::Drive => 4.0,
+            Self::Copied => 3.0,
+            Self::Surprised => 2.6,
+        }
+    }
+}
+
+thread_local! {
+    /// The reaction waiting or playing, and when it started once it could be seen.
+    static REACTION: std::cell::Cell<Option<(Reaction, Option<f32>)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Plays `reaction` the next time the robot is on screen, replacing any earlier one.
+pub(crate) fn react(reaction: Reaction) {
+    REACTION.with(|cell| cell.set(Some((reaction, None))));
+}
+
+/// The reaction to draw now and how far into it we are. The clock starts once the robot is
+/// visible, so a reaction waits behind an activity card instead of playing unseen.
+fn active_reaction(time: f32, alpha: u8) -> Option<(Reaction, f32)> {
+    REACTION.with(|cell| {
+        let (reaction, started) = cell.get()?;
+        let started = match started {
+            Some(started) => started,
+            None if alpha > 200 => {
+                cell.set(Some((reaction, Some(time))));
+                time
+            }
+            None => return None,
+        };
+        let elapsed = time - started;
+        if elapsed >= reaction.seconds() {
+            cell.set(None);
+            return None;
+        }
+        Some((reaction, elapsed))
+    })
+}
+
 /// Seconds into the current dance, while one is going.
 fn dancing(time: f32) -> Option<f32> {
     CONTEXT.with(|context| {
@@ -228,6 +290,22 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     };
     // The robot stands nearly the full height of the notch.
     let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
+    if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
+        let stage = Stage {
+            painter,
+            unit,
+            alpha,
+            x: rect.center_x() - 4.0 * unit,
+            floor: rect.center_y() + 11.0 * unit,
+            mid: rect.center_y(),
+            time,
+            elapsed,
+            fade: ease(elapsed / FADE_SECONDS)
+                * ease((reaction.seconds() - elapsed) / FADE_SECONDS),
+        };
+        stage.react(reaction, rect);
+        return;
+    }
     // Centre each scene by its own width: robot plus props, or the greeting text.
     let reach = match scene {
         Scene::Wave => {
@@ -312,6 +390,7 @@ pub(crate) fn draw_gesture(painter: Painter<'_>, rect: Rect, alpha: u8, gesture:
     }
 }
 
+#[derive(Clone, Copy)]
 struct Stage<'a> {
     painter: Painter<'a>,
     unit: f32,
@@ -964,6 +1043,277 @@ impl Stage<'_> {
                 self.prop((phase * PI).sin(), colors[index]),
             );
         }
+    }
+
+    /// The robot `dx` units to the side, for running about.
+    fn shifted(&self, dx: f32) -> Self {
+        Self {
+            x: self.x + dx * self.unit,
+            ..*self
+        }
+    }
+
+    fn exclaim(&self, at: Point, strength: f32) {
+        self.text("!", at.x, at.y, 12.0, self.prop(strength, (255, 214, 90)));
+    }
+
+    fn react(&self, reaction: Reaction, rect: Rect) {
+        let t = self.elapsed;
+        let u = self.unit;
+        match reaction {
+            Reaction::MouseArrived => self.mouse_chase(rect),
+            Reaction::Charging => {
+                // A bolt drops from the top into raised hands, then glows there.
+                let caught = t > 0.8;
+                let mut pose = Pose::new(if caught {
+                    Eyes::Happy
+                } else {
+                    Eyes::Open(0.0, -1.0)
+                });
+                pose.right_arm = -1.3;
+                pose.left_arm = -1.3;
+                pose.rise = if caught {
+                    (t * 6.0).sin().abs() * 0.8
+                } else {
+                    0.0
+                };
+                let hands = self.robot(pose);
+                let top = rect.top - 6.0 * u;
+                let held = hands.right.y.min(hands.left.y) - 3.0 * u;
+                self.bolt(Point::new(self.x, top + (held - top) * ease(t / 0.8)));
+                if caught {
+                    self.sparkle(self.at(-9.0, -18.0), 0.6 + 0.4 * (t * 5.0).sin());
+                    self.sparkle(self.at(9.5, -17.0), 0.6 + 0.4 * (t * 4.0).cos());
+                }
+            }
+            Reaction::Surprised => {
+                let mut pose = Pose::new(Eyes::Open(0.0, -0.6));
+                pose.rise = ((t / 0.5).min(1.0) * PI).sin() * 3.0;
+                pose.right_arm = -1.1;
+                pose.left_arm = -1.1;
+                self.robot(pose);
+                self.exclaim(self.at(9.0, -17.0), 1.0);
+            }
+            Reaction::Copied => {
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = 1.0 - 1.6 * ease(t / 0.4);
+                let hands = self.robot(pose);
+                let note = Rect::from_xywh(
+                    hands.right.x - 1.0 * u,
+                    hands.right.y - 6.0 * u,
+                    9.2 * u,
+                    6.0 * u,
+                );
+                self.painter.fill_round_rect(
+                    note,
+                    Radius::uniform(0.8 * u),
+                    self.prop(1.0, (255, 250, 235)),
+                );
+                for row in 0..2 {
+                    let y = note.top + (1.8 + row as f32 * 1.6) * u;
+                    self.line(
+                        Point::new(note.left + 1.2 * u, y),
+                        Point::new(note.right - 3.4 * u, y),
+                        0.5,
+                        self.prop(0.7, (150, 150, 160)),
+                    );
+                }
+                let check = Point::new(note.right - 2.2 * u, note.bottom - 2.0 * u);
+                let bottom = Point::new(check.x - 0.2 * u, check.y + 0.8 * u);
+                let green = self.prop(1.0, (60, 190, 100));
+                self.line(Point::new(check.x - 1.0 * u, check.y), bottom, 0.7, green);
+                self.line(
+                    bottom,
+                    Point::new(check.x + 1.2 * u, check.y - 1.0 * u),
+                    0.7,
+                    green,
+                );
+            }
+            Reaction::Drive => {
+                // A USB stick drops in and is caught.
+                let caught = t > 0.9;
+                let mut pose = Pose::new(if caught {
+                    Eyes::Happy
+                } else {
+                    Eyes::Open(0.0, -1.2)
+                });
+                pose.right_arm = 0.1;
+                pose.left_arm = 0.1;
+                let hands = self.robot(pose);
+                let start = rect.top - 6.0 * u;
+                let y = start + (hands.right.y - 3.0 * u - start) * ease(t / 0.9);
+                let stick = Rect::from_xywh(self.x - 1.4 * u, y, 2.8 * u, 4.2 * u);
+                self.painter.fill_round_rect(
+                    stick,
+                    Radius::uniform(0.6 * u),
+                    self.prop(1.0, (90, 120, 220)),
+                );
+                self.painter.fill_rect(
+                    Rect::from_xywh(stick.left + 0.5 * u, stick.top - 1.4 * u, 1.8 * u, 1.6 * u),
+                    self.prop(1.0, (200, 200, 210)),
+                );
+                if caught {
+                    self.sparkle(self.at(8.0, -15.0), 0.5 + 0.5 * (t * 5.0).sin());
+                }
+            }
+            Reaction::Celebrate => {
+                let hop = (t * 1.5 * TAU).sin();
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.rise = hop.abs() * 2.6;
+                pose.right_arm = -1.5 + hop * 0.3;
+                pose.left_arm = -1.5 - hop * 0.3;
+                self.robot(pose);
+                let colors = [
+                    (255, 120, 120),
+                    (255, 210, 90),
+                    (120, 210, 140),
+                    (120, 180, 255),
+                    (220, 140, 255),
+                ];
+                for index in 0..18 {
+                    let seed = index as f32 * 12.9898;
+                    let column = (seed.sin() * 43758.547).fract().abs();
+                    let speed = 0.6 + (seed.cos() * 1234.5).fract().abs() * 0.6;
+                    let fall = ((t * speed + column) % 1.4) / 1.4;
+                    let x = rect.left + column * rect.width();
+                    let y = rect.top + fall * rect.height();
+                    let spin = (t * 6.0 + seed).sin() * 0.8 * u;
+                    self.line(
+                        Point::new(x - spin, y),
+                        Point::new(x + spin, y + 0.6 * u),
+                        0.9,
+                        self.prop(1.0, colors[index % colors.len()]),
+                    );
+                }
+            }
+        }
+    }
+
+    /// A lightning bolt centred on `at`.
+    fn bolt(&self, at: Point) {
+        let u = self.unit;
+        let points = [(1.2, -3.0), (-1.0, 0.2), (0.6, 0.2), (-1.2, 3.2)];
+        for pair in points.windows(2) {
+            self.line(
+                Point::new(at.x + pair[0].0 * u, at.y + pair[0].1 * u),
+                Point::new(at.x + pair[1].0 * u, at.y + pair[1].1 * u),
+                1.3,
+                self.prop(1.0, (255, 214, 90)),
+            );
+        }
+    }
+
+    /// A little grey mouse standing at `at`, facing left when `left`, legs scurrying when
+    /// `running`.
+    fn critter(&self, at: Point, left: bool, running: bool) {
+        let u = self.unit;
+        let facing = if left { -1.0 } else { 1.0 };
+        let grey = self.prop(1.0, (168, 168, 178));
+        let pink = self.prop(1.0, (240, 160, 170));
+        let tail_wave = (self.time * 10.0).sin() * 0.8 * u;
+        self.line(
+            Point::new(at.x - facing * 3.0 * u, at.y - 1.0 * u),
+            Point::new(at.x - facing * 6.0 * u, at.y - 2.4 * u + tail_wave),
+            0.5,
+            pink,
+        );
+        let step = if running {
+            (self.time * 30.0).sin() * 0.8 * u
+        } else {
+            0.0
+        };
+        for (dx, phase) in [(-1.6, 1.0), (1.4, -1.0)] {
+            self.line(
+                Point::new(at.x + dx * u, at.y - 0.8 * u),
+                Point::new(at.x + dx * u + step * phase, at.y),
+                0.5,
+                grey,
+            );
+        }
+        self.painter.fill_oval(
+            Rect::from_xywh(at.x - 3.2 * u, at.y - 3.6 * u, 6.4 * u, 3.2 * u),
+            grey,
+        );
+        let head = Point::new(at.x + facing * 3.2 * u, at.y - 2.4 * u);
+        self.painter.fill_circle(head, 1.6 * u, grey);
+        let ear = Point::new(head.x - facing * 0.6 * u, head.y - 1.6 * u);
+        self.painter.fill_circle(ear, 1.0 * u, grey);
+        self.painter.fill_circle(ear, 0.55 * u, pink);
+        self.painter.fill_circle(
+            Point::new(head.x + facing * 0.6 * u, head.y - 0.3 * u),
+            0.3 * u,
+            self.prop(1.0, (20, 20, 24)),
+        );
+        self.painter.fill_circle(
+            Point::new(head.x + facing * 1.6 * u, head.y + 0.2 * u),
+            0.35 * u,
+            pink,
+        );
+    }
+
+    /// A mouse wanders in; the robot spots it, panics and runs off; the mouse leaves; the
+    /// robot creeps back, relieved.
+    fn mouse_chase(&self, rect: Rect) {
+        let t = self.elapsed;
+        let u = self.unit;
+        let off_left = (rect.left - self.x) / u - 14.0;
+        let enter_x = (rect.right - self.x) / u + 8.0;
+        let near = 15.0;
+        let mouse_x = if t < 0.9 {
+            enter_x + (near - enter_x) * ease(t / 0.9)
+        } else if t < 3.0 {
+            near - 6.0 * ease((t - 1.4) / 1.4)
+        } else if t < 3.6 {
+            near - 6.0
+        } else {
+            near - 6.0 + (enter_x - near + 6.0) * ease((t - 3.6) / 0.9)
+        };
+        let leaving = t >= 3.6;
+        let mouse_running = !(0.9..1.4).contains(&t) && !(3.0..3.6).contains(&t);
+        // The robot freezes, jumps, flees, then creeps back.
+        let (dx, pose) = if t < 0.9 {
+            (0.0, Pose::new(Eyes::Open(1.2, 0.4)))
+        } else if t < 1.4 {
+            let mut pose = Pose::new(Eyes::Open(1.6, -0.4));
+            pose.rise = ((t - 0.9) / 0.5 * PI).sin() * 3.0;
+            pose.right_arm = -1.4;
+            pose.left_arm = -1.4;
+            (0.0, pose)
+        } else if t < 4.2 {
+            let stride = (t * 22.0).sin();
+            let mut pose = Pose::new(Eyes::Open(-1.4, -0.4));
+            pose.lean = -12.0;
+            pose.rise = stride.abs() * 1.2;
+            pose.right_arm = -1.6 + stride * 0.3;
+            pose.left_arm = -1.6 - stride * 0.3;
+            (off_left * ease((t - 1.4) / 1.2), pose)
+        } else {
+            let back = ease((t - 4.2) / 1.4);
+            let relieved = back > 0.9;
+            let mut pose = Pose::new(if relieved {
+                Eyes::Happy
+            } else {
+                Eyes::Open(1.0, 0.0)
+            });
+            pose.right_arm = if relieved { -2.0 } else { Pose::REST };
+            (off_left * (1.0 - back), pose)
+        };
+        let robot = self.shifted(dx);
+        robot.robot(pose);
+        if (0.9..1.8).contains(&t) {
+            robot.exclaim(robot.at(8.0, -18.0), 1.0);
+        }
+        if t > 5.2 {
+            // A relieved bead of sweat by its head.
+            let drop = robot.at(8.4, -15.0 + (t - 5.2) * 3.0);
+            self.painter
+                .fill_circle(drop, 0.8 * u, self.prop(0.9, (130, 190, 255)));
+        }
+        self.critter(
+            Point::new(self.x + mouse_x * u, self.floor),
+            !leaving,
+            mouse_running,
+        );
     }
 
     fn tired(&self) {

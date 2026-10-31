@@ -60,6 +60,9 @@ impl App {
             return;
         }
         if let Some(event) = crate::ui::dashboard::poll(now) {
+            crate::ui::widget::compact::mascot::react(
+                crate::ui::widget::compact::mascot::Reaction::Celebrate,
+            );
             if !self.expanded && !self.is_hidden() {
                 self.compact_overlay
                     .push_activity(crate::ui::compact::Activity {
@@ -1391,6 +1394,13 @@ impl App {
             return;
         };
         let green = Rgba::from_argb(255, 52, 199, 89);
+        if plugged != was_plugged {
+            crate::ui::widget::compact::mascot::react(if plugged {
+                crate::ui::widget::compact::mascot::Reaction::Charging
+            } else {
+                crate::ui::widget::compact::mascot::Reaction::Surprised
+            });
+        }
         let activity = if plugged && !was_plugged {
             Some((Icon::Bolt, green, tr("activity_charging")))
         } else if !plugged && was_plugged {
@@ -1438,6 +1448,9 @@ impl App {
 
     /// Confirms a clipboard capture with a "Copied · Text" activity.
     fn push_copied_activity(&mut self) {
+        crate::ui::widget::compact::mascot::react(
+            crate::ui::widget::compact::mascot::Reaction::Copied,
+        );
         use crate::ui::compact::Activity;
         use crate::ui::components::icon::Icon;
         use winisland_core::clipboard::ClipboardBody;
@@ -1850,6 +1863,11 @@ impl App {
             crate::ui::dashboard::focus_running(),
             playing_track.as_deref(),
         );
+        if crate::core::device_watch::mouse_arrived(std::time::Instant::now()) {
+            crate::ui::widget::compact::mascot::react(
+                crate::ui::widget::compact::mascot::Reaction::MouseArrived,
+            );
+        }
         if let Some(path) = crate::core::screenshot_watch::poll(std::time::Instant::now())
             && !self.expanded
             && !self.is_hidden()
@@ -1926,6 +1944,9 @@ impl App {
             // Drives open in Explorer; display changes open display settings.
             let action = match event {
                 ShellEvent::DriveAdded(letter) => {
+                    crate::ui::widget::compact::mascot::react(
+                        crate::ui::widget::compact::mascot::Reaction::Drive,
+                    );
                     Some((tr("activity_open"), format!("{letter}:\\")))
                 }
                 ShellEvent::DisplayChanged => {
