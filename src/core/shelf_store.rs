@@ -92,15 +92,6 @@ impl ShelfService {
 }
 
 impl ShelfService {
-    /// `(id, name)` of every shelf, in creation order.
-    pub fn shelves(&self) -> Vec<(u64, String)> {
-        self.store
-            .shelves()
-            .iter()
-            .map(|shelf| (shelf.id, shelf.name.clone()))
-            .collect()
-    }
-
     pub fn active_name(&self) -> String {
         self.store
             .shelf(self.active_shelf)
