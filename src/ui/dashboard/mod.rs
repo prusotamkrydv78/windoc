@@ -727,7 +727,24 @@ fn page_layout(width: f32, height: f32, scale: f32) -> DashboardLayout {
         .iter()
         .map(|card| card.column_span)
         .collect();
-    DashboardLayout::new(Rect::from_xywh(0.0, 0.0, width, height), size_class, &spans)
+    let mut layout =
+        DashboardLayout::new(Rect::from_xywh(0.0, 0.0, width, height), size_class, &spans);
+    // List pages sit inside one card with even padding, so nothing touches the panel edge.
+    if PAGE.with(|page| in_card(page.borrow().active)) {
+        layout.grid = layout.grid.inset(PAGE_PAD);
+    }
+    layout
+}
+
+/// Padding between a page's card and its content.
+const PAGE_PAD: f32 = 16.0;
+
+/// Pages drawn inside a single card: everything but Home and the pages with their own cards.
+fn in_card(destination: Destination) -> bool {
+    !matches!(
+        destination,
+        Destination::Home | Destination::Media | Destination::ScreenTime | Destination::Clipboard
+    )
 }
 
 fn cards_for(active: Destination) -> &'static [SampleCard] {
@@ -1219,6 +1236,9 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             draw_mini_week(painter, card_layout.content, colors);
         }
         painter.restore_to(card_save);
+    }
+    if in_card(active) {
+        page_card(painter, layout.grid.inset(-PAGE_PAD), colors);
     }
     if active == Destination::Clipboard {
         draw_clipboard_page(painter, layout.grid, interaction.hovered_row, colors);
@@ -3188,17 +3208,19 @@ fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)
             .map(|(name, ..)| name.clone())
             .collect()
     });
-    for (index, name) in names.iter().enumerate() {
+    // One chip for the current mode; a click moves on to the next one.
+    if !names.is_empty() {
+        let current = ACTIVE_WORKSPACE.with(Cell::get).min(names.len() - 1);
         let width = fonts.measure_text_cached(
-            name,
+            &names[current],
             typography::SECTION_TITLE.size,
             winisland_render::FontStyle::bold(),
-        ) + 16.0;
+        ) + 40.0;
         tabs.push((
-            Rect::from_xywh(x, header.top + 3.0, width, header.height() - 6.0),
-            DashboardHit::Workspace(index as u8),
+            Rect::from_xywh(x + 8.0, header.top + 4.0, width, header.height() - 8.0),
+            DashboardHit::Workspace(((current + 1) % names.len()) as u8),
         ));
-        x += width + 2.0;
+        x += width + 12.0;
     }
     tabs.push((
         Rect::from_xywh(x, header.top + 3.0, 24.0, header.height() - 6.0),
@@ -3242,33 +3264,40 @@ fn draw_workspace_tabs(
     for (rect, hit) in workspace_tabs(header, active) {
         let hover = hovered == Some(hit);
         match hit {
-            DashboardHit::Workspace(index) => {
-                let on = usize::from(index) == current;
-                let color = if on {
-                    colors.text_primary
-                } else if hover {
-                    colors.text_secondary
-                } else {
-                    colors.text_disabled
-                };
+            DashboardHit::Workspace(_) => {
+                // The mode chip: the current mode and a small chevron, on a raised pill.
+                let name = names.get(current).map_or("", String::as_str);
+                painter.fill_round_rect(
+                    rect,
+                    Radius::uniform(rect.height() / 2.0),
+                    if hover {
+                        colors.surface_overlay
+                    } else {
+                        colors.surface_raised
+                    },
+                );
+                painter.stroke_round_rect(
+                    rect,
+                    Radius::uniform(rect.height() / 2.0),
+                    1.0,
+                    colors.border_subtle,
+                );
                 draw_text(
                     painter,
-                    &names[usize::from(index)],
+                    name,
                     typography::SECTION_TITLE,
-                    rect.inset(8.0),
+                    Rect::from_ltrb(rect.left + 12.0, rect.top, rect.right - 24.0, rect.bottom),
                     Align::Start,
-                    color,
+                    colors.text_primary,
                 );
-                if on {
-                    painter.fill_round_rect(
-                        Rect::from_xywh(
-                            rect.left + 8.0,
-                            rect.bottom - 1.0,
-                            rect.width() - 16.0,
-                            2.0,
-                        ),
-                        Radius::uniform(1.0),
-                        WORKSPACE_ACCENT,
+                let chevron = Point::new(rect.right - 15.0, rect.center_y());
+                for side in [-1.0f32, 1.0] {
+                    painter.stroke_line(
+                        Point::new(chevron.x + side * 3.5, chevron.y - 1.8),
+                        Point::new(chevron.x, chevron.y + 1.8),
+                        1.5,
+                        colors.text_secondary,
+                        winisland_render::StrokeCap::Round,
                     );
                 }
             }
