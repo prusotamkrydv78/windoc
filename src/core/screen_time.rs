@@ -27,6 +27,8 @@ pub struct ScreenTimeService {
     next_poll: Instant,
     next_save: Instant,
     dirty: bool,
+    /// Day on which the daily limit notification was already shown.
+    limit_notified: Option<LocalDate>,
 }
 
 /// Screen time settings from the app configuration.
@@ -80,6 +82,7 @@ impl ScreenTimeService {
             next_poll: now,
             next_save: now + SAVE_INTERVAL,
             dirty: false,
+            limit_notified: None,
         };
         service.sync_hook();
         service
@@ -186,5 +189,52 @@ impl ScreenTimeService {
         if let Err(error) = json_store::remove(FILE_NAME) {
             log::warn!("Cannot delete screen time history: {error}");
         }
+    }
+}
+
+impl ScreenTimeService {
+    /// Notifies once per day when today's active time passes `limit_minutes`.
+    pub fn check_limit(&mut self, limit_minutes: f32, now: Instant) {
+        if limit_minutes < 1.0 || self.limit_notified == Some(self.today) {
+            return;
+        }
+        let total = self.today(now).map_or(Duration::ZERO, |day| day.total);
+        if total >= Duration::from_secs_f32(limit_minutes * 60.0) {
+            self.limit_notified = Some(self.today);
+            crate::platform::notify().show_toast(
+                &winisland_core::i18n::tr("screen_time_limit_title"),
+                &winisland_core::i18n::tr("screen_time_limit_body"),
+            );
+        }
+    }
+
+    /// `(title, detail)` rows: today's top apps, then the last seven days.
+    pub fn report_rows(&self, now: Instant) -> Vec<(String, String)> {
+        fn clock(duration: Duration) -> String {
+            let minutes = duration.as_secs() / 60;
+            format!("{}:{:02}", minutes / 60, minutes % 60)
+        }
+        let mut rows = Vec::new();
+        if let Some(today) = self.today(now) {
+            rows.push((
+                winisland_core::i18n::tr_args("screen_time_today", &[&clock(today.total)]),
+                String::new(),
+            ));
+            for usage in today.apps.iter().take(5) {
+                rows.push((usage.app.name.clone(), clock(usage.active)));
+            }
+        }
+        for date in self.tracker.dates().into_iter().rev().take(7) {
+            if date == self.today {
+                continue;
+            }
+            if let Some(day) = self.tracker.day(date, now) {
+                rows.push((
+                    format!("{}-{:02}-{:02}", date.year, date.month, date.day),
+                    clock(day.total),
+                ));
+            }
+        }
+        rows
     }
 }

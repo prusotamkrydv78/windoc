@@ -101,6 +101,7 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::ScreenTimeEnabled, true);
         if self.config.screen_time_enabled {
             page.setting(&self.config, AppConfigField::ScreenTimeTitles, true);
+            page.setting(&self.config, AppConfigField::ScreenTimeLimitMinutes, true);
         }
         page.row_label(tr("screen_time_hint"));
         page.group_end();

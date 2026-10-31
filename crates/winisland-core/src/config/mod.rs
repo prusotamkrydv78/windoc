@@ -75,6 +75,12 @@ pub struct AppConfig {
     /// Also stores window titles for screen time. Off by default.
     #[setting(toggle, label = "screen_time_titles")]
     pub screen_time_titles: bool,
+    /// Daily screen time limit in minutes; 0 turns the reminder off.
+    #[setting(
+        number(min = 0.0, max = 960.0, step = 30.0),
+        label = "screen_time_limit_minutes"
+    )]
+    pub screen_time_limit_minutes: f32,
     /// Keeps a local, encrypted history of copied text and files. Off by default.
     #[setting(toggle, label = "clipboard_history_enabled")]
     pub clipboard_history_enabled: bool,

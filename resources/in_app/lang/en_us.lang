@@ -344,3 +344,8 @@ weather_humidity=Humidity {}%
 weather_wind=Wind {} km/h
 weather_uv=UV {}
 weather_rain_chance={}% chance of rain
+screen_time_limit_minutes=Daily limit (minutes, 0 = off)
+screen_time_limit_title=Daily screen time reached
+screen_time_limit_body=You have reached the daily screen time you set. Consider a break.
+screen_time_today=Today {}
+dashboard_screen_time=Screen time

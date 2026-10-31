@@ -344,3 +344,8 @@ weather_humidity=Humedad {}%
 weather_wind=Viento {} km/h
 weather_uv=UV {}
 weather_rain_chance={}% de lluvia
+screen_time_limit_minutes=Límite diario (minutos, 0 = no)
+screen_time_limit_title=Tiempo de pantalla diario alcanzado
+screen_time_limit_body=Has alcanzado el tiempo de pantalla diario que configuraste. Considera un descanso.
+screen_time_today=Hoy {}
+dashboard_screen_time=Tiempo de pantalla

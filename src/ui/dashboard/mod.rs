@@ -781,6 +781,8 @@ pub enum Destination {
     Links,
     /// Forecast details; reached from More.
     Weather,
+    /// Screen time report; reached from More.
+    ScreenTime,
 }
 
 impl Destination {
@@ -795,7 +797,7 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 9] = [
+    pub const MORE_ITEMS: [Self; 10] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -805,6 +807,7 @@ impl Destination {
         Self::AiUsage,
         Self::Links,
         Self::Weather,
+        Self::ScreenTime,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -820,6 +823,7 @@ impl Destination {
             Self::AiUsage => "dashboard_ai_usage",
             Self::Links => "dashboard_links",
             Self::Weather => "dashboard_weather",
+            Self::ScreenTime => "dashboard_screen_time",
         }
     }
 }
@@ -888,6 +892,14 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_ai_usage_page(painter, layout.grid, colors);
     } else if active == Destination::Weather {
         draw_weather_page(painter, layout.grid, colors);
+    } else if active == Destination::ScreenTime {
+        draw_rows_page(
+            &SCREEN_TIME_ROWS,
+            "screen_time_turn_on",
+            painter,
+            layout.grid,
+            colors,
+        );
     } else if active == Destination::Links {
         draw_links_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Shelf {
@@ -1503,4 +1515,58 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
 /// Whether `destination` is the active dashboard page.
 pub fn showing(destination: Destination) -> bool {
     PAGE.with(|page| page.borrow().active == destination)
+}
+
+thread_local! {
+    static SCREEN_TIME_ROWS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the Screen Time page rows.
+pub fn set_screen_time_rows(rows: Vec<(String, String)>) {
+    SCREEN_TIME_ROWS.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != rows {
+            *current = rows;
+        }
+    });
+}
+
+/// Draws a simple `(title, detail)` list, or `empty_key` when it is empty.
+fn draw_rows_page(
+    rows: &'static std::thread::LocalKey<RefCell<Vec<(String, String)>>>,
+    empty_key: &str,
+    painter: Painter<'_>,
+    grid: Rect,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::list_row::draw_list_row;
+    rows.with(|cell| {
+        let rows = cell.borrow();
+        if rows.is_empty() {
+            draw_text(
+                painter,
+                &tr(empty_key),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (title, detail)) in rows.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            let detail = (!detail.is_empty()).then_some(detail.as_str());
+            draw_list_row(
+                painter,
+                &row,
+                title,
+                detail,
+                colors,
+                InteractionState::default(),
+            );
+        }
+    });
 }
