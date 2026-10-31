@@ -83,6 +83,7 @@ impl App {
             .check_limit(self.config.screen_time_limit_minutes, now);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::ScreenTime) {
             crate::ui::dashboard::set_screen_time_rows(self.screen_time.report_rows(now));
+            crate::ui::dashboard::set_screen_time_apps(self.screen_time.today_minutes(now));
         }
         if self.expanded {
             crate::ui::dashboard::set_screen_time_week(self.screen_time.week_minutes(now));
@@ -167,7 +168,11 @@ impl App {
         let media = self.current_media_info();
         let has_track = self.media_active() && !media.title.is_empty();
         crate::ui::dashboard::set_now_playing(has_track.then(|| media.title.clone()));
-        crate::ui::dashboard::set_now_detail(media.artist.clone(), media.is_playing);
+        crate::ui::dashboard::set_media(has_track.then_some(&media));
+        if let Some(fraction) = crate::ui::dashboard::take_media_seek() {
+            self.smtc
+                .request_seek(media.duration_ms * u64::from(fraction) / 1000);
+        }
         match crate::ui::dashboard::take_media_request() {
             Some(0) => self.smtc.request_prev(),
             Some(1) => self.smtc.request_toggle_play(),

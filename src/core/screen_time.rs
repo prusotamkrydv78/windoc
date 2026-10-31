@@ -208,6 +208,23 @@ impl ScreenTimeService {
         }
     }
 
+    /// Today's total and its apps in minutes, most used first, with readable names.
+    pub fn today_minutes(&self, now: Instant) -> Option<(u64, Vec<(String, u64)>)> {
+        let today = self.today(now)?;
+        let apps = today
+            .apps
+            .iter()
+            .map(|usage| {
+                (
+                    friendly_app_name(&usage.app.name),
+                    usage.active.as_secs() / 60,
+                )
+            })
+            .filter(|(_, minutes)| *minutes > 0)
+            .collect();
+        Some((today.total.as_secs() / 60, apps))
+    }
+
     /// `(title, detail)` rows: today's top apps, then the last seven days.
     pub fn report_rows(&self, now: Instant) -> Vec<(String, String)> {
         fn clock(duration: Duration) -> String {

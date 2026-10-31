@@ -36,6 +36,8 @@ pub enum DashboardHit {
     Destination(Destination),
     /// Now playing controls: 0 previous, 1 play or pause, 2 next.
     MediaButton(u8),
+    /// A click on the progress bar, as thousandths of the track.
+    MediaSeek(u16),
     /// Index of a row on the Shelf page.
     ShelfEntry(usize),
     /// The header outside its buttons (the search field while the palette is open).
@@ -168,8 +170,9 @@ struct ClipboardView {
 thread_local! {
     static CLIPBOARD_COPY: Cell<Option<usize>> = const { Cell::new(None) };
     static MEDIA_REQUEST: Cell<Option<u8>> = const { Cell::new(None) };
-    /// Artist of the current track and whether it is playing, for the Now playing page.
-    static NOW_DETAIL: RefCell<(String, bool)> = RefCell::new((String::new(), false));
+    static MEDIA_SEEK: Cell<Option<u16>> = const { Cell::new(None) };
+    /// The current track, for the Now playing page.
+    static MEDIA: RefCell<Option<crate::core::smtc::MediaInfo>> = const { RefCell::new(None) };
     static CLIPBOARD_VIEW: RefCell<ClipboardView> = RefCell::new(ClipboardView::default());
 }
 
@@ -792,7 +795,13 @@ pub fn hit_test(
             .map(|index| DashboardHit::FocusButton(index as u8));
     }
     if active == Destination::Media {
-        return media_buttons(layout.grid)
+        let media = media_layout(layout.grid);
+        if media.bar.inset(-6.0).contains(local) {
+            let fraction = ((local.x - media.bar.left) / media.bar.width()).clamp(0.0, 1.0);
+            return Some(DashboardHit::MediaSeek((fraction * 1000.0) as u16));
+        }
+        return media
+            .buttons
             .iter()
             .position(|button| button.contains(local))
             .map(|index| DashboardHit::MediaButton(index as u8));
@@ -862,6 +871,7 @@ pub fn apply(hit: DashboardHit) {
             DashboardHit::LinkRow(index) => open_link(index),
             DashboardHit::ClipRow(index) => CLIPBOARD_COPY.with(|cell| cell.set(Some(index))),
             DashboardHit::MediaButton(button) => MEDIA_REQUEST.with(|cell| cell.set(Some(button))),
+            DashboardHit::MediaSeek(fraction) => MEDIA_SEEK.with(|cell| cell.set(Some(fraction))),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -1015,8 +1025,8 @@ impl Destination {
         Self::More,
     ];
     /// The icon dock, in order: every module, like a launcher.
-    /// The pages people use every day; the rest wait on More.
-    pub const DOCK: [Self; 8] = [
+    /// Every page, as an icon row; each mode can hide the ones it does not need.
+    pub const DOCK: [Self; 13] = [
         Self::Home,
         Self::Media,
         Self::Clipboard,
@@ -1024,7 +1034,12 @@ impl Destination {
         Self::Focus,
         Self::Shelf,
         Self::ScreenTime,
-        Self::More,
+        Self::Weather,
+        Self::Clock,
+        Self::Agenda,
+        Self::AiUsage,
+        Self::Links,
+        Self::Drop,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
@@ -1043,6 +1058,25 @@ impl Destination {
         Self::Agenda,
         Self::Drop,
     ];
+
+    /// The context line shown after the page title.
+    pub const fn subtitle_key(self) -> &'static str {
+        match self {
+            Self::Home | Self::More => "subtitle_home",
+            Self::Media => "subtitle_media",
+            Self::Clipboard => "subtitle_clipboard",
+            Self::Shelf => "subtitle_shelf",
+            Self::Focus => "subtitle_focus",
+            Self::Notes => "subtitle_notes",
+            Self::Clock => "subtitle_clock",
+            Self::AiUsage => "subtitle_ai_usage",
+            Self::Links => "subtitle_links",
+            Self::Weather => "subtitle_weather",
+            Self::ScreenTime => "subtitle_screen_time",
+            Self::Agenda => "subtitle_agenda",
+            Self::Drop => "subtitle_drop",
+        }
+    }
 
     pub const fn icon(self) -> crate::ui::components::icon::Icon {
         use crate::ui::components::icon::Icon;
@@ -1209,31 +1243,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             colors,
         );
     } else if active == Destination::ScreenTime {
-        let week = SCREEN_TIME_WEEK.with(|cell| cell.borrow().clone());
-        let grid = if week.iter().any(|(_, minutes)| *minutes > 0.0) {
-            let chart = Rect::from_ltrb(
-                layout.grid.left,
-                layout.grid.top,
-                layout.grid.right,
-                layout.grid.top + WEEK_CHART_HEIGHT,
-            );
-            draw_week_chart(painter, chart, &week, colors);
-            Rect::from_ltrb(
-                layout.grid.left,
-                chart.bottom + space::S2,
-                layout.grid.right,
-                layout.grid.bottom,
-            )
-        } else {
-            layout.grid
-        };
-        draw_rows_page(
-            &SCREEN_TIME_ROWS,
-            "screen_time_turn_on",
-            painter,
-            grid,
-            colors,
-        );
+        draw_screen_time_page(painter, layout.grid, colors);
     } else if active == Destination::Focus {
         draw_focus_page(
             painter,
@@ -1399,6 +1409,22 @@ fn draw_header(
     };
     let (settings, close) = header_buttons(header);
     let date_left = divider_x + space::S3;
+    if active != Destination::Home {
+        // A quiet line of context after the title, kept clear of the centred music pill.
+        draw_text(
+            painter,
+            &tr(active.subtitle_key()),
+            typography::BODY,
+            Rect::from_ltrb(
+                date_left,
+                header.top,
+                header.center_x() - 124.0,
+                header.bottom,
+            ),
+            Align::Start,
+            colors.text_secondary,
+        );
+    }
     draw_workspace_tabs(painter, header, active, hovered, colors);
     // Centre: what is playing, as a pill.
     if let Some(title) = NOW_PLAYING.with(|cell| cell.borrow().clone()) {
@@ -3551,107 +3577,6 @@ fn thousands(value: f64) -> String {
     format!("{grouped}.{cents}")
 }
 
-/// Artist and playing state of the current track, for the Now playing page.
-pub fn set_now_detail(artist: String, playing: bool) {
-    NOW_DETAIL.with(|cell| {
-        let mut detail = cell.borrow_mut();
-        if detail.0 != artist || detail.1 != playing {
-            *detail = (artist, playing);
-        }
-    });
-}
-
-/// A Now playing button press: 0 previous, 1 play or pause, 2 next.
-pub fn take_media_request() -> Option<u8> {
-    MEDIA_REQUEST.with(Cell::take)
-}
-
-/// Previous, play or pause, and next, centred under the track.
-fn media_buttons(grid: Rect) -> [Rect; 3] {
-    const SIZE: f32 = 44.0;
-    const GAP: f32 = 24.0;
-    let top = grid.center_y() + 12.0;
-    let left = grid.center_x() - SIZE * 1.5 - GAP;
-    [0.0, 1.0, 2.0].map(|index| Rect::from_xywh(left + index * (SIZE + GAP), top, SIZE, SIZE))
-}
-
-/// The track title and artist, large, over three round controls.
-fn draw_media_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
-    let title = NOW_PLAYING.with(|cell| cell.borrow().clone());
-    let (artist, playing) = NOW_DETAIL.with(|cell| cell.borrow().clone());
-    let Some(title) = title else {
-        draw_text(
-            painter,
-            &tr("media_nothing_playing"),
-            typography::BODY,
-            grid,
-            Align::Center,
-            colors.text_secondary,
-        );
-        return;
-    };
-    draw_text(
-        painter,
-        &title,
-        typography::PAGE_TITLE,
-        Rect::from_xywh(grid.left, grid.center_y() - 52.0, grid.width(), 28.0),
-        Align::Center,
-        colors.text_primary,
-    );
-    draw_text(
-        painter,
-        &artist,
-        typography::BODY,
-        Rect::from_xywh(grid.left, grid.center_y() - 22.0, grid.width(), 20.0),
-        Align::Center,
-        colors.text_secondary,
-    );
-    let svgs = [
-        "M7 6v12M18 6l-8 6 8 6z",
-        if playing {
-            "M9 6v12M15 6v12"
-        } else {
-            "M9 6l9 6-9 6z"
-        },
-        "M17 6v12M6 6l8 6-8 6z",
-    ];
-    for (index, (rect, svg)) in media_buttons(grid).iter().zip(svgs).enumerate() {
-        let main = index == 1;
-        painter.fill_circle(
-            Point::new(rect.center_x(), rect.center_y()),
-            rect.width() / 2.0,
-            if main {
-                colors.text_primary
-            } else {
-                colors.surface_raised
-            },
-        );
-        let ink = if main {
-            colors.surface_base
-        } else {
-            colors.text_primary
-        };
-        if let Some(path) = winisland_render::Path::from_svg(svg) {
-            let size = 18.0;
-            painter.save();
-            painter.translate(Vec2::new(
-                rect.center_x() - size / 2.0,
-                rect.center_y() - size / 2.0,
-            ));
-            painter.scale(Vec2::new(size / 24.0, size / 24.0));
-            painter.fill_path(&path, ink);
-            painter.stroke_path(
-                &path,
-                2.2,
-                ink,
-                winisland_render::StrokeCap::Round,
-                winisland_render::StrokeJoin::Round,
-            );
-            painter.restore();
-        }
-    }
-}
-
 /// The mode that fits now: Code while an editor or terminal is in front, Work on
 /// weekdays from 9 to 6 or while a meeting or mail app is in front, Home otherwise.
 pub fn mode_for(foreground_executable: &str, weekday: u16, hour: u16) -> &'static str {
@@ -3678,5 +3603,491 @@ pub fn mode_for(foreground_executable: &str, weekday: u16, hour: u16) -> &'stati
         "work"
     } else {
         "home"
+    }
+}
+
+/// The current track for the Now playing page, or `None` when nothing is loaded.
+pub fn set_media(media: Option<&crate::core::smtc::MediaInfo>) {
+    MEDIA.with(|cell| *cell.borrow_mut() = media.cloned());
+}
+
+/// A Now playing button press: 0 previous, 1 play or pause, 2 next.
+pub fn take_media_request() -> Option<u8> {
+    MEDIA_REQUEST.with(Cell::take)
+}
+
+/// A click on the progress bar, as thousandths of the track.
+pub fn take_media_seek() -> Option<u16> {
+    MEDIA_SEEK.with(Cell::take)
+}
+
+/// Where everything on the Now playing page sits.
+struct MediaLayout {
+    /// The music card and the week card beside it.
+    player: Rect,
+    week: Rect,
+    art: Rect,
+    /// Title, artist and controls sit right of the art.
+    text_left: f32,
+    bar: Rect,
+    buttons: [Rect; 3],
+}
+
+fn media_layout(grid: Rect) -> MediaLayout {
+    const PAD: f32 = 16.0;
+    let split = grid.left + grid.width() * 0.64;
+    let player = Rect::from_ltrb(grid.left, grid.top, split - space::S2, grid.bottom);
+    let week = Rect::from_ltrb(split + space::S2, grid.top, grid.right, grid.bottom);
+    let side = (player.height() - PAD * 2.0).clamp(64.0, 132.0);
+    let art = Rect::from_xywh(
+        player.left + PAD,
+        player.center_y() - side / 2.0,
+        side,
+        side,
+    );
+    let text_left = art.right + PAD + 4.0;
+    let text_right = player.right - PAD - 4.0;
+    let bar = Rect::from_ltrb(text_left, art.top + 64.0, text_right, art.top + 68.0);
+    const BUTTON: f32 = 36.0;
+    let row_center = (text_left + text_right) / 2.0;
+    let row_top = (bar.bottom + 28.0).min(player.bottom - PAD - BUTTON);
+    let buttons = [-1.0f32, 0.0, 1.0].map(|step| {
+        let size = if step == 0.0 { BUTTON + 4.0 } else { BUTTON };
+        Rect::from_xywh(
+            row_center + step * 56.0 - size / 2.0,
+            row_top + (BUTTON - size) / 2.0,
+            size,
+            size,
+        )
+    });
+    MediaLayout {
+        player,
+        week,
+        art,
+        text_left,
+        bar,
+        buttons,
+    }
+}
+
+/// `m:ss` for a position in milliseconds.
+fn track_time(ms: u64) -> String {
+    let seconds = ms / 1000;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+/// A plain card surface: raised fill and a hairline.
+fn page_card(painter: Painter<'_>, rect: Rect, colors: &SemanticColors) {
+    let shape = Radius::uniform(radius::CARD);
+    painter.fill_round_rect(rect, shape, colors.surface_raised);
+    painter.stroke_round_rect(rect, shape, 1.0, colors.border_subtle);
+}
+
+/// Artwork, title, artist in the accent, a progress bar with times and the controls, with
+/// this week and what is next beside it.
+fn draw_media_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    let layout = media_layout(grid);
+    let media = MEDIA.with(|cell| cell.borrow().clone());
+    page_card(painter, layout.player, colors);
+    page_card(painter, layout.week, colors);
+    draw_week_card(painter, layout.week, colors);
+    let Some(media) = media.filter(|media| !media.title.is_empty()) else {
+        draw_text(
+            painter,
+            &tr("media_nothing_playing"),
+            typography::BODY,
+            layout.player,
+            Align::Center,
+            colors.text_secondary,
+        );
+        return;
+    };
+
+    // Artwork, centre-cropped into a rounded square; a quiet tile when there is none.
+    let art_shape = Radius::uniform(radius::CARD - 2.0);
+    match crate::ui::expanded::music_view::get_cached_media_image(&media) {
+        Some(image) => {
+            let edge = (image.width() as f32).min(image.height() as f32);
+            let source = Rect::from_xywh(
+                (image.width() as f32 - edge) / 2.0,
+                (image.height() as f32 - edge) / 2.0,
+                edge,
+                edge,
+            );
+            painter.save();
+            painter.clip_round_rect(layout.art, art_shape);
+            painter.draw_image(
+                &image,
+                layout.art,
+                &winisland_render::ImageOptions::default()
+                    .with_sampling(winisland_render::Sampling::LinearLinear)
+                    .with_src(source),
+            );
+            painter.restore();
+        }
+        None => {
+            painter.fill_round_rect(layout.art, art_shape, colors.surface_interactive);
+            crate::ui::components::icon::draw_icon(
+                painter,
+                crate::ui::components::icon::Icon::Music,
+                layout.art.inset(layout.art.width() * 0.34),
+                colors.text_secondary,
+            );
+        }
+    }
+
+    let text_width = layout.bar.right - layout.text_left;
+    draw_text(
+        painter,
+        &media.title,
+        typography::SECTION_TITLE,
+        Rect::from_xywh(layout.text_left, layout.art.top + 4.0, text_width, 22.0),
+        Align::Start,
+        colors.text_primary,
+    );
+    draw_text(
+        painter,
+        &media.artist,
+        typography::BODY,
+        Rect::from_xywh(layout.text_left, layout.art.top + 28.0, text_width, 20.0),
+        Align::Start,
+        colors.accent_primary,
+    );
+
+    // Progress, moving on between updates while playing.
+    let duration = media.duration_ms.max(1);
+    let position = if media.is_playing {
+        media.position_ms + media.last_update.elapsed().as_millis() as u64
+    } else {
+        media.position_ms
+    }
+    .min(duration);
+    let fraction = position as f32 / duration as f32;
+    let track = Radius::uniform(layout.bar.height() / 2.0);
+    painter.fill_round_rect(layout.bar, track, colors.surface_interactive);
+    painter.fill_round_rect(
+        Rect::from_xywh(
+            layout.bar.left,
+            layout.bar.top,
+            layout.bar.width() * fraction,
+            layout.bar.height(),
+        ),
+        track,
+        colors.text_primary,
+    );
+    let times_top = layout.bar.bottom + 4.0;
+    draw_text(
+        painter,
+        &track_time(position),
+        typography::CAPTION,
+        Rect::from_xywh(layout.bar.left, times_top, layout.bar.width(), 16.0),
+        Align::Start,
+        colors.text_secondary,
+    );
+    let total = track_time(duration);
+    let total_width = winisland_render::text::FontManager::global().measure_text_cached(
+        &total,
+        typography::CAPTION.size,
+        winisland_render::FontStyle::normal(),
+    );
+    draw_text(
+        painter,
+        &total,
+        typography::CAPTION,
+        Rect::from_xywh(
+            layout.bar.right - total_width - 2.0,
+            times_top,
+            total_width + 4.0,
+            16.0,
+        ),
+        Align::Start,
+        colors.text_secondary,
+    );
+
+    // Previous, play or pause, next: the middle one is the solid primary.
+    let glyphs = [
+        "M7 6v12M18 6l-8 6 8 6z",
+        if media.is_playing {
+            "M9 6v12M15 6v12"
+        } else {
+            "M9 6l9 6-9 6z"
+        },
+        "M17 6v12M6 6l8 6-8 6z",
+    ];
+    for (index, (rect, svg)) in layout.buttons.iter().zip(glyphs).enumerate() {
+        let main = index == 1;
+        if main {
+            painter.fill_circle(
+                Point::new(rect.center_x(), rect.center_y()),
+                rect.width() / 2.0,
+                colors.text_primary,
+            );
+        }
+        let ink = if main {
+            colors.surface_base
+        } else {
+            colors.text_primary
+        };
+        if let Some(path) = winisland_render::Path::from_svg(svg) {
+            let size = 16.0;
+            painter.save();
+            painter.translate(Vec2::new(
+                rect.center_x() - size / 2.0,
+                rect.center_y() - size / 2.0,
+            ));
+            painter.scale(Vec2::new(size / 24.0, size / 24.0));
+            painter.fill_path(&path, ink);
+            painter.stroke_path(
+                &path,
+                2.2,
+                ink,
+                winisland_render::StrokeCap::Round,
+                winisland_render::StrokeJoin::Round,
+            );
+            painter.restore();
+        }
+    }
+}
+
+/// Days since 1970-01-01 back to `(year, month, day)`.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    (year, month, day)
+}
+
+fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month = i64::from(month);
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// This week, Monday to Sunday, with today circled in the accent, and the next event or a
+/// calm empty line.
+fn draw_week_card(painter: Painter<'_>, card: Rect, colors: &SemanticColors) {
+    const PAD: f32 = 16.0;
+    let now = crate::platform::shell().local_datetime();
+    let today = days_from_civil(
+        i64::from(now.year),
+        u32::from(now.month),
+        u32::from(now.day),
+    );
+    let from_monday = (i64::from(now.day_of_week) + 6) % 7;
+    draw_text(
+        painter,
+        &tr("media_this_week"),
+        typography::LABEL,
+        Rect::from_xywh(
+            card.left + PAD,
+            card.top + PAD - 4.0,
+            card.width() - PAD * 2.0,
+            18.0,
+        ),
+        Align::Start,
+        colors.text_secondary,
+    );
+    const INITIALS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
+    let cell = (card.width() - PAD * 2.0) / 7.0;
+    let row = card.top + PAD + 22.0;
+    for index in 0..7 {
+        let (_, _, day) = civil_from_days(today - from_monday + index);
+        let center = card.left + PAD + cell * (index as f32 + 0.5);
+        let is_today = index == from_monday;
+        draw_text(
+            painter,
+            INITIALS[index as usize],
+            typography::CAPTION,
+            Rect::from_xywh(center - cell / 2.0, row, cell, 14.0),
+            Align::Center,
+            colors.text_secondary,
+        );
+        if is_today {
+            painter.fill_circle(Point::new(center, row + 29.0), 12.0, colors.accent_primary);
+        }
+        draw_text(
+            painter,
+            &day.to_string(),
+            typography::LABEL,
+            Rect::from_xywh(center - cell / 2.0, row + 20.0, cell, 18.0),
+            Align::Center,
+            if is_today {
+                colors.surface_base
+            } else {
+                colors.text_primary
+            },
+        );
+    }
+    let next = AGENDA_ROWS.with(|cell| cell.borrow().first().cloned());
+    let (title, detail) = next.unwrap_or_else(|| (tr("agenda_free_day"), String::new()));
+    let lines = Rect::from_xywh(card.left + PAD, row + 52.0, card.width() - PAD * 2.0, 20.0);
+    draw_text(
+        painter,
+        &title,
+        typography::BODY,
+        lines,
+        Align::Start,
+        colors.text_primary,
+    );
+    draw_text(
+        painter,
+        &detail,
+        typography::CAPTION,
+        Rect::from_xywh(lines.left, lines.bottom + 2.0, lines.width(), 16.0),
+        Align::Start,
+        colors.text_secondary,
+    );
+}
+
+thread_local! {
+    /// Today's total and the apps behind it, in minutes, most used first.
+    static SCREEN_TIME_APPS: RefCell<Option<(u64, Vec<(String, u64)>)>> = const { RefCell::new(None) };
+}
+
+/// Today's screen time for the Screen time page; `None` while tracking is off.
+pub fn set_screen_time_apps(today: Option<(u64, Vec<(String, u64)>)>) {
+    SCREEN_TIME_APPS.with(|cell| *cell.borrow_mut() = today);
+}
+
+/// `2h 31m`, or `45m` under an hour.
+fn hours_minutes(minutes: u64) -> String {
+    if minutes >= 60 {
+        format!("{}h {}m", minutes / 60, minutes % 60)
+    } else {
+        format!("{minutes}m")
+    }
+}
+
+/// Today's total and the week on the left, the apps behind it on the right.
+fn draw_screen_time_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    const PAD: f32 = 16.0;
+    let Some((total, apps)) = SCREEN_TIME_APPS.with(|cell| cell.borrow().clone()) else {
+        draw_text(
+            painter,
+            &tr("screen_time_turn_on"),
+            typography::BODY,
+            grid,
+            Align::Center,
+            colors.text_secondary,
+        );
+        return;
+    };
+    let split = grid.left + grid.width() * 0.56;
+    let today = Rect::from_ltrb(grid.left, grid.top, split - space::S2, grid.bottom);
+    let by_app = Rect::from_ltrb(split + space::S2, grid.top, grid.right, grid.bottom);
+    page_card(painter, today, colors);
+    page_card(painter, by_app, colors);
+
+    draw_text(
+        painter,
+        &hours_minutes(total),
+        typography::DISPLAY,
+        Rect::from_xywh(
+            today.left + PAD,
+            today.top + PAD - 2.0,
+            today.width() / 2.0,
+            34.0,
+        ),
+        Align::Start,
+        colors.text_primary,
+    );
+    draw_text(
+        painter,
+        &winisland_core::i18n::tr_args("screen_time_apps_used", &[&apps.len().to_string()]),
+        typography::CAPTION,
+        Rect::from_xywh(
+            today.left + PAD,
+            today.top + PAD + 32.0,
+            today.width() - PAD * 2.0,
+            16.0,
+        ),
+        Align::Start,
+        colors.text_secondary,
+    );
+    let week = SCREEN_TIME_WEEK.with(|cell| cell.borrow().clone());
+    if week.iter().any(|(_, minutes)| *minutes > 0.0) {
+        let chart = Rect::from_ltrb(
+            today.left + PAD,
+            (today.bottom - PAD - WEEK_CHART_HEIGHT).max(today.top + PAD + 56.0),
+            today.right - PAD,
+            today.bottom - PAD,
+        );
+        draw_week_chart(painter, chart, &week, colors);
+    }
+
+    draw_text(
+        painter,
+        &tr("media_by_app"),
+        typography::LABEL,
+        Rect::from_xywh(
+            by_app.left + PAD,
+            by_app.top + PAD - 4.0,
+            by_app.width() - PAD * 2.0,
+            18.0,
+        ),
+        Align::Start,
+        colors.text_secondary,
+    );
+    // Each app: its name and time, then a thin bar for its share of the day.
+    const ROW: f32 = 34.0;
+    let rows_top = by_app.top + PAD + 22.0;
+    let fits = ((by_app.bottom - PAD - rows_top) / ROW).floor().max(0.0) as usize;
+    let width = by_app.width() - PAD * 2.0;
+    for (index, (name, minutes)) in apps.iter().take(fits).enumerate() {
+        let top = rows_top + index as f32 * ROW;
+        let time = hours_minutes(*minutes);
+        let time_width = winisland_render::text::FontManager::global().measure_text_cached(
+            &time,
+            typography::LABEL.size,
+            winisland_render::FontStyle::normal(),
+        );
+        draw_text(
+            painter,
+            name,
+            typography::LABEL,
+            Rect::from_xywh(by_app.left + PAD, top, width - time_width - space::S2, 18.0),
+            Align::Start,
+            colors.text_primary,
+        );
+        draw_text(
+            painter,
+            &time,
+            typography::LABEL,
+            Rect::from_xywh(
+                by_app.right - PAD - time_width - 2.0,
+                top,
+                time_width + 4.0,
+                18.0,
+            ),
+            Align::Start,
+            colors.text_secondary,
+        );
+        let share = if total == 0 {
+            0.0
+        } else {
+            (*minutes as f32 / total as f32).clamp(0.0, 1.0)
+        };
+        let bar = Rect::from_xywh(by_app.left + PAD, top + 21.0, width, 3.0);
+        painter.fill_round_rect(bar, Radius::uniform(1.5), colors.surface_interactive);
+        painter.fill_round_rect(
+            Rect::from_xywh(bar.left, bar.top, bar.width() * share, bar.height()),
+            Radius::uniform(1.5),
+            if index == 0 {
+                colors.accent_primary
+            } else {
+                colors.text_secondary
+            },
+        );
     }
 }

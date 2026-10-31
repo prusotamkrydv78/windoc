@@ -1,6 +1,6 @@
 //! Bottom navigation dock: equal-width destinations with an active indicator.
 
-use winisland_render::tokens::{SemanticColors, radius, space, typography};
+use winisland_render::tokens::{SemanticColors, space, typography};
 use winisland_render::{Painter, Point, Radius, Rect};
 
 use super::semantics::{InteractionState, Role, SemanticNode};
@@ -76,8 +76,9 @@ pub fn draw_dock(
     focused: Option<usize>,
     colors: &SemanticColors,
 ) {
-    // A flat row under a hairline, like a launcher strip: no bar background. Narrow cells
-    // show icons only; the active one is bright with a small accent dot underneath.
+    // A flat row of icons under a hairline, like a launcher strip. The active page sits in a
+    // soft round bubble with a small accent dot underneath; hovering shows the same bubble.
+    // Labels stay for accessibility.
     painter.fill_rect(
         Rect::from_xywh(
             layout.bounds.left,
@@ -90,7 +91,7 @@ pub fn draw_dock(
     for (index, (rect, label)) in layout.items.iter().zip(labels).enumerate() {
         let is_active = index == active;
         let is_hovered = hovered == Some(index);
-        let icon_only = rect.width() < 72.0;
+        let icon_only = true;
         let diameter = (rect.height() - space::S2).min(rect.width() - space::S1);
         let bubble = Rect::from_xywh(
             rect.center_x() - diameter / 2.0,
@@ -98,14 +99,10 @@ pub fn draw_dock(
             diameter,
             diameter,
         );
-        if (is_active && !icon_only) || is_hovered {
+        if is_active || is_hovered {
             painter.fill_round_rect(
-                if icon_only {
-                    Rect::from_xywh(rect.center_x() - 18.0, rect.center_y() - 17.0, 36.0, 34.0)
-                } else {
-                    rect.inset(space::S1)
-                },
-                Radius::uniform(if icon_only { 9.0 } else { radius::CONTROL }),
+                Rect::from_xywh(rect.center_x() - 17.0, rect.center_y() - 17.0, 34.0, 34.0),
+                Radius::uniform(17.0),
                 if is_active {
                     colors.surface_interactive
                 } else {
