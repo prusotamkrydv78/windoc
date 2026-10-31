@@ -13,7 +13,7 @@ use winisland_platform_windows::{ClipboardChange, ClipboardContent, ClipboardMon
 
 use super::json_store;
 
-const FILE_NAME: &str = "clipboard.bin";
+pub(crate) const FILE_NAME: &str = "clipboard.bin";
 const MAX_FILE_BYTES: u64 = 96 * 1024 * 1024;
 /// Binds the encrypted file to this app; it is not a secret on its own.
 const ENTROPY: &[u8] = b"winisland-next/clipboard/v1";
@@ -165,6 +165,19 @@ impl ClipboardService {
     /// Newest first.
     pub fn items(&self) -> &[ClipboardItem] {
         self.history.items()
+    }
+
+    /// Deletes every item, pinned ones included, in memory and on disk.
+    pub fn clear(&mut self) {
+        let ids: Vec<u64> = self.history.items().iter().map(|item| item.id).collect();
+        for id in ids {
+            self.history.delete(id);
+        }
+        self.save_due = None;
+        self.revision = self.revision.wrapping_add(1);
+        if let Err(error) = json_store::remove(FILE_NAME) {
+            log::warn!("Cannot delete clipboard history: {error}");
+        }
     }
 
     /// Increases whenever history changes, so views can refresh cheaply.

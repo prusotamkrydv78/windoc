@@ -56,3 +56,19 @@ pub fn write<T: Serialize>(file_name: &str, value: &T) -> Result<(), String> {
     let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
     write_bytes(file_name, &bytes)
 }
+
+/// Deletes `file_name` if it exists.
+pub fn remove(file_name: &str) -> Result<(), String> {
+    match fs::remove_file(path(file_name)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Size of `file_name` in bytes, or `None` when it does not exist.
+pub fn file_size(file_name: &str) -> Option<u64> {
+    fs::metadata(path(file_name))
+        .ok()
+        .map(|metadata| metadata.len())
+}

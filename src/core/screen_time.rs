@@ -11,7 +11,7 @@ use winisland_platform_windows::{ForegroundTracker, input_idle_duration};
 
 use super::json_store;
 
-const FILE_NAME: &str = "screen_time.json";
+pub(crate) const FILE_NAME: &str = "screen_time.json";
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 /// No input for this long counts as away; a locked session also stops input.
 const IDLE_THRESHOLD: Duration = Duration::from_secs(5 * 60);
@@ -177,5 +177,14 @@ impl ScreenTimeService {
 
     pub fn today(&self, now: Instant) -> Option<DaySummary> {
         self.tracker.day(self.today, now)
+    }
+
+    /// Deletes all recorded history, in memory and on disk. Tracking continues if on.
+    pub fn clear(&mut self) {
+        self.tracker.clear();
+        self.dirty = false;
+        if let Err(error) = json_store::remove(FILE_NAME) {
+            log::warn!("Cannot delete screen time history: {error}");
+        }
     }
 }

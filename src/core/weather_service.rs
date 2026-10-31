@@ -10,7 +10,7 @@ use winisland_core::weather::{FRESH_FOR, Forecast, Freshness, Place, Units, fetc
 
 use super::json_store;
 
-const FILE_NAME: &str = "weather.json";
+pub(crate) const FILE_NAME: &str = "weather.json";
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const RETRY_AFTER: Duration = Duration::from_secs(5 * 60);
 
@@ -131,5 +131,16 @@ impl WeatherService {
             place: forecast.place.name.clone(),
             stale: freshness == Freshness::Stale,
         })
+    }
+}
+
+impl WeatherService {
+    /// Deletes the cached forecast. A new one is fetched only if weather is still on.
+    pub fn clear(&mut self) {
+        self.forecast = None;
+        self.next_fetch = Instant::now();
+        if let Err(error) = json_store::remove(FILE_NAME) {
+            log::warn!("Cannot delete cached weather: {error}");
+        }
     }
 }

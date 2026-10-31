@@ -457,6 +457,14 @@ fn toggle_focus(timer: &mut FocusTimer, now: Instant) {
 }
 
 /// `true` while a live value changes every second and the page must keep redrawing.
+/// Stops and resets the Focus timer and deletes its saved state.
+pub fn reset_focus() {
+    PAGE.with(|page| page.borrow_mut().focus.reset());
+    if let Err(error) = crate::core::json_store::remove(crate::core::focus_store::FILE_NAME) {
+        log::warn!("Cannot delete saved Focus timer: {error}");
+    }
+}
+
 pub fn is_animating() -> bool {
     PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
 }

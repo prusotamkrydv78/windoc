@@ -48,4 +48,4 @@ No telemetry, analytics or crash reports are sent.
 - **Plugins are unrestricted.** A native plugin can read files and use the network. Capability prompts and a network policy are planned (workflow §23).
 - **Logs** may contain media titles and app IDs. Add redaction before stable release.
 - **Paths are split** between `~/.winisland` and `%APPDATA%\WinIsland`. Both move to `%LOCALAPPDATA%/<Product>` at rebrand, with a one-time migration (workflow Phase 3).
-- **No data controls yet.** Export, clear and retention controls are planned with the privacy dashboard (workflow §22).
+- **Data controls are partial.** Settings, General, "Data on this PC" shows the size of screen time, clipboard, weather and Focus data and clears each immediately. Export, backups and a full privacy dashboard with network history are still planned (workflow §22).

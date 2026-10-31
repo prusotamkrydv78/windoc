@@ -130,6 +130,22 @@ impl App {
                 }
                 window().exit();
             }
+            Some(crate::window::settings::PluginSettingsRequest::ClearData(kind)) => {
+                use crate::core::data_inventory::DataKind;
+                match kind {
+                    DataKind::ScreenTime => self.screen_time.clear(),
+                    DataKind::Clipboard => self.clipboard.clear(),
+                    DataKind::Weather => self.weather.clear(),
+                    DataKind::Focus => crate::ui::dashboard::reset_focus(),
+                }
+                log::info!("Cleared local data: {kind:?}");
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.mark_items_dirty();
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             None => {}
         }
     }

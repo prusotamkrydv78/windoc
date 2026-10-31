@@ -15,6 +15,7 @@ pub(super) enum BehaviorAction {
     CheckUpdatesNow,
     ResetDefaults,
     WeatherLocation,
+    ClearData(crate::core::data_inventory::DataKind),
     HideIsland,
     Exit,
 }
@@ -131,6 +132,27 @@ impl SettingsApp {
         }
         page.row_label(tr("weather_hint"));
         page.group_end();
+        page.section(tr("section_local_data"));
+        page.group_start();
+        for kind in crate::core::data_inventory::DataKind::ALL {
+            let stored = kind.stored_bytes();
+            let label = match stored {
+                Some(bytes) => format!(
+                    "{} · {}",
+                    tr(kind.label_key()),
+                    crate::core::data_inventory::format_bytes(bytes)
+                ),
+                None => format!("{} · {}", tr(kind.label_key()), tr("data_none")),
+            };
+            page.row_button(
+                label,
+                tr("data_clear"),
+                stored.is_some(),
+                BehaviorAction::ClearData(kind),
+            );
+        }
+        page.row_label(tr("local_data_hint"));
+        page.group_end();
         page.section(tr("section_updates"));
         page.group_start();
         page.setting(&self.config, AppConfigField::CheckForUpdates, true);
@@ -209,6 +231,12 @@ impl SettingsApp {
                     &current,
                     WEATHER_QUERY_MAX_CHARS,
                     commit_weather_search,
+                );
+                false
+            }
+            (BehaviorAction::ClearData(kind), ClickResult::RowButton(_)) => {
+                self.plugin_request = Some(
+                    crate::window::settings::PluginSettingsRequest::ClearData(kind),
                 );
                 false
             }

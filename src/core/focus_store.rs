@@ -6,7 +6,7 @@ use winisland_core::focus::{FocusEvent, FocusSnapshot, FocusTimer, TimerKind};
 
 use super::json_store;
 
-const FILE_NAME: &str = "focus.json";
+pub(crate) const FILE_NAME: &str = "focus.json";
 const MAX_FILE_BYTES: u64 = 16 * 1024;
 
 /// Loads the saved timer, or a fresh `default_kind` timer when nothing usable is stored.

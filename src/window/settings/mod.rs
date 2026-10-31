@@ -173,9 +173,16 @@ pub(crate) enum PluginSettingsRequest {
     Install(std::path::PathBuf),
     LoadMarketplace,
     InstallMarketplace(Box<MarketplacePlugin>),
-    SetEnabled { id: String, enabled: bool },
-    Uninstall { id: String },
+    SetEnabled {
+        id: String,
+        enabled: bool,
+    },
+    Uninstall {
+        id: String,
+    },
     Restart,
+    /// Deletes one kind of locally stored data.
+    ClearData(crate::core::data_inventory::DataKind),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
