@@ -354,3 +354,50 @@ fn read_files() -> Option<Vec<PathBuf>> {
     }
     (!files.is_empty()).then_some(files)
 }
+
+/// Puts `text` on the clipboard as Unicode text.
+pub fn set_text(text: &str) -> Result<(), PlatformError> {
+    use windows::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
+    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc};
+
+    let mut units: Vec<u16> = text.encode_utf16().collect();
+    units.push(0);
+    let bytes = units.len() * 2;
+    let mut opened = false;
+    for _ in 0..OPEN_ATTEMPTS {
+        // SAFETY: No owner window is needed to set data; the clipboard is closed below.
+        if unsafe { OpenClipboard(None) }.is_ok() {
+            opened = true;
+            break;
+        }
+        std::thread::sleep(OPEN_RETRY_DELAY);
+    }
+    if !opened {
+        return Err(PlatformError::backend("clipboard is busy"));
+    }
+    let result = (|| {
+        // SAFETY: The clipboard is open on this thread.
+        unsafe { EmptyClipboard() }.map_err(PlatformError::backend)?;
+        // SAFETY: Allocating movable global memory has no preconditions.
+        let memory =
+            unsafe { GlobalAlloc(GMEM_MOVEABLE, bytes) }.map_err(PlatformError::backend)?;
+        // SAFETY: The allocation is `bytes` long and locked until GlobalUnlock.
+        let pointer = unsafe { GlobalLock(memory) };
+        if pointer.is_null() {
+            return Err(PlatformError::backend("cannot lock clipboard memory"));
+        }
+        // SAFETY: Source and destination are valid for `bytes` bytes and do not overlap.
+        unsafe {
+            std::ptr::copy_nonoverlapping(units.as_ptr().cast::<u8>(), pointer.cast::<u8>(), bytes);
+        }
+        // SAFETY: Balances the lock above.
+        let _ = unsafe { GlobalUnlock(memory) };
+        // SAFETY: Ownership of the memory passes to the clipboard on success.
+        unsafe { SetClipboardData(CF_UNICODETEXT, Some(HANDLE(memory.0))) }
+            .map(|_| ())
+            .map_err(PlatformError::backend)
+    })();
+    // SAFETY: The clipboard was opened above by this thread.
+    let _ = unsafe { CloseClipboard() };
+    result
+}

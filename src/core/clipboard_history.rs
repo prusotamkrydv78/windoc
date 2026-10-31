@@ -199,3 +199,29 @@ impl ClipboardService {
         self.revision
     }
 }
+
+impl ClipboardService {
+    /// Puts item `index` (newest first) back on the clipboard as text.
+    pub fn copy_again(&self, index: usize) -> bool {
+        use winisland_core::clipboard::ClipboardBody;
+        let Some(item) = self.history.items().get(index) else {
+            return false;
+        };
+        let text = match &item.body {
+            ClipboardBody::Text(text) | ClipboardBody::Link(text) => text.clone(),
+            ClipboardBody::Files(files) => files
+                .iter()
+                .map(|file| file.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\r\n"),
+            ClipboardBody::Image { .. } => return false,
+        };
+        match winisland_platform_windows::set_clipboard_text(&text) {
+            Ok(()) => true,
+            Err(error) => {
+                log::warn!("Cannot copy clipboard item: {error}");
+                false
+            }
+        }
+    }
+}

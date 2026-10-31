@@ -69,6 +69,11 @@ impl App {
             now,
         );
         self.clipboard.poll(now);
+        if let Some(index) = crate::ui::dashboard::take_clipboard_copy()
+            && self.clipboard.copy_again(index)
+        {
+            self.attention_pulse_started = Some(now);
+        }
         if self.clipboard.take_captured() {
             self.attention_pulse_started = Some(now);
             window.request_redraw();

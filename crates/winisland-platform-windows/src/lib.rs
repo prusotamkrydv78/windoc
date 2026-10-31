@@ -21,7 +21,10 @@ mod timezone;
 pub mod window;
 
 pub use audio::WindowsAudio;
-pub use clipboard::{ClipboardChange, ClipboardContent, ClipboardFormat, ClipboardMonitor};
+pub use clipboard::{
+    ClipboardChange, ClipboardContent, ClipboardFormat, ClipboardMonitor,
+    set_text as set_clipboard_text,
+};
 pub use display::WindowsDisplay;
 pub use file::replace_file;
 pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};

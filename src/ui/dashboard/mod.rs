@@ -42,6 +42,8 @@ pub enum DashboardHit {
     NoteRow(usize),
     /// Row on the Links page.
     LinkRow(usize),
+    /// Row on the Clipboard page; clicking copies it again.
+    ClipRow(usize),
 }
 
 struct PageState {
@@ -133,9 +135,12 @@ struct ClipboardView {
     revision: u64,
     count: usize,
     rows: Vec<(String, String)>,
+    /// Longer text for the preview pane, aligned with `rows`.
+    previews: Vec<String>,
 }
 
 thread_local! {
+    static CLIPBOARD_COPY: Cell<Option<usize>> = const { Cell::new(None) };
     static CLIPBOARD_VIEW: RefCell<ClipboardView> = RefCell::new(ClipboardView::default());
 }
 
@@ -186,10 +191,20 @@ pub fn sync_clipboard(
             .take(MAX_CLIPBOARD_ROWS)
             .map(clipboard_row)
             .collect();
+        view.previews = items
+            .iter()
+            .take(MAX_CLIPBOARD_ROWS)
+            .map(clipboard_preview)
+            .collect();
     });
 }
 
-fn draw_clipboard_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+fn draw_clipboard_page(
+    painter: Painter<'_>,
+    grid: Rect,
+    hovered_row: Option<usize>,
+    colors: &SemanticColors,
+) {
     use crate::ui::components::list_row::{ListRowLayout, ListRowSpec, draw_list_row};
     use winisland_render::tokens::Density;
     CLIPBOARD_VIEW.with(|view| {
@@ -218,12 +233,13 @@ fn draw_clipboard_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors
             has_subtitle: true,
             trailing_width: 0.0,
         };
-        let mut top = grid.top;
-        for (title, subtitle) in &view.rows {
-            if top >= grid.bottom {
+        let (list, preview) = clipboard_split(grid);
+        let mut top = list.top;
+        for (index, (title, subtitle)) in view.rows.iter().enumerate() {
+            if top >= list.bottom {
                 break;
             }
-            let row = ListRowLayout::new(grid.left, top, grid.width(), spec);
+            let row = ListRowLayout::new(list.left, top, list.width(), spec);
             let subtitle = (!subtitle.is_empty()).then_some(subtitle.as_str());
             draw_list_row(
                 painter,
@@ -231,9 +247,21 @@ fn draw_clipboard_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors
                 title,
                 subtitle,
                 colors,
-                InteractionState::default(),
+                InteractionState {
+                    hovered: hovered_row == Some(index),
+                    selected: preview.is_some() && hovered_row.unwrap_or(0) == index,
+                    ..InteractionState::default()
+                },
             );
             top = row.bounds.bottom;
+        }
+        if let Some(pane) = preview {
+            let index = hovered_row
+                .unwrap_or(0)
+                .min(view.previews.len().saturating_sub(1));
+            if let Some(text) = view.previews.get(index) {
+                draw_clipboard_preview(painter, pane, text, colors);
+            }
         }
     });
 }
@@ -702,6 +730,9 @@ pub fn hit_test(
     if active == Destination::Links {
         return hit_link_row(&layout, local).map(DashboardHit::LinkRow);
     }
+    if active == Destination::Clipboard {
+        return hit_clip_row(&layout, local).map(DashboardHit::ClipRow);
+    }
     layout
         .hit_card(local)
         .filter(|index| *index < cards_for(active).len())
@@ -734,6 +765,7 @@ pub fn apply(hit: DashboardHit) {
             DashboardHit::Header => palette::open(),
             DashboardHit::NoteRow(index) => open_note_row(index),
             DashboardHit::LinkRow(index) => open_link(index),
+            DashboardHit::ClipRow(index) => CLIPBOARD_COPY.with(|cell| cell.set(Some(index))),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -788,6 +820,7 @@ pub fn draw_page(
             Some(DashboardHit::ShelfEntry(index)) => Some(index),
             Some(DashboardHit::NoteRow(index)) => Some(index),
             Some(DashboardHit::LinkRow(index)) => Some(index),
+            Some(DashboardHit::ClipRow(index)) => Some(index),
             Some(DashboardHit::Destination(destination)) if active == Destination::More => {
                 more_entries(&layout)
                     .iter()
@@ -1005,7 +1038,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         painter.restore_to(card_save);
     }
     if active == Destination::Clipboard {
-        draw_clipboard_page(painter, layout.grid, colors);
+        draw_clipboard_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::More {
         draw_more_page(painter, layout, interaction.hovered_row, colors);
     } else if active == Destination::Notes {
@@ -2179,4 +2212,128 @@ fn draw_week_chart(
             },
         );
     }
+}
+
+/// Splits the clipboard grid into a list and, when wide enough, a preview pane.
+fn clipboard_split(grid: Rect) -> (Rect, Option<Rect>) {
+    if grid.width() < 440.0 {
+        return (grid, None);
+    }
+    let list_width = (grid.width() * 0.48).round();
+    (
+        Rect::from_ltrb(grid.left, grid.top, grid.left + list_width, grid.bottom),
+        Some(Rect::from_ltrb(
+            grid.left + list_width + space::S3,
+            grid.top,
+            grid.right,
+            grid.bottom,
+        )),
+    )
+}
+
+fn clipboard_preview(item: &winisland_core::clipboard::ClipboardItem) -> String {
+    use winisland_core::clipboard::ClipboardBody;
+    const MAX_PREVIEW_CHARS: usize = 1_200;
+    match &item.body {
+        ClipboardBody::Text(text) | ClipboardBody::Link(text) => {
+            text.chars().take(MAX_PREVIEW_CHARS).collect()
+        }
+        ClipboardBody::Files(files) => files
+            .iter()
+            .map(|file| file.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        ClipboardBody::Image { width, height, .. } => format!("{width} × {height}"),
+    }
+}
+
+/// A raised pane showing the item's text, wrapped by line, with a copy hint.
+fn draw_clipboard_preview(painter: Painter<'_>, pane: Rect, text: &str, colors: &SemanticColors) {
+    painter.fill_round_rect(pane, Radius::uniform(radius::CARD), colors.surface_raised);
+    painter.stroke_round_rect(
+        pane,
+        Radius::uniform(radius::CARD),
+        1.0,
+        colors.border_subtle,
+    );
+    let inner = pane.inset(space::S3);
+    let line_height = typography::BODY.size * 1.45;
+    let hint_top = inner.bottom - typography::CAPTION.size;
+    let save = painter.save();
+    painter.clip_rect(Rect::from_ltrb(
+        inner.left,
+        inner.top,
+        inner.right,
+        hint_top - space::S1,
+    ));
+    let fonts = winisland_render::text::FontManager::global();
+    let mut top = inner.top;
+    'lines: for paragraph in text.lines() {
+        // Greedy word wrap to the pane width.
+        let mut line = String::new();
+        for word in paragraph.split(' ') {
+            let candidate = if line.is_empty() {
+                word.to_string()
+            } else {
+                format!("{line} {word}")
+            };
+            let width = fonts.measure_text_cached(
+                &candidate,
+                typography::BODY.size,
+                winisland_render::FontStyle::normal(),
+            );
+            if width > inner.width() && !line.is_empty() {
+                draw_text(
+                    painter,
+                    &line,
+                    typography::BODY,
+                    Rect::from_xywh(inner.left, top, inner.width(), line_height),
+                    Align::Start,
+                    colors.text_primary,
+                );
+                top += line_height;
+                if top > hint_top {
+                    break 'lines;
+                }
+                line = word.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+        draw_text(
+            painter,
+            &line,
+            typography::BODY,
+            Rect::from_xywh(inner.left, top, inner.width(), line_height),
+            Align::Start,
+            colors.text_primary,
+        );
+        top += line_height;
+        if top > hint_top {
+            break;
+        }
+    }
+    painter.restore_to(save);
+    draw_text(
+        painter,
+        &tr("clipboard_click_to_copy"),
+        typography::CAPTION,
+        Rect::from_ltrb(inner.left, hint_top, inner.right, inner.bottom),
+        Align::Start,
+        colors.text_secondary,
+    );
+}
+
+fn hit_clip_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
+    let (list, _) = clipboard_split(layout.grid);
+    if !list.contains(point) {
+        return None;
+    }
+    let count = CLIPBOARD_VIEW.with(|cell| cell.borrow().rows.len());
+    (0..count).find(|index| list_row(list, *index, true).bounds.contains(point))
+}
+
+/// A clipboard row the user clicked, to copy again.
+pub fn take_clipboard_copy() -> Option<usize> {
+    CLIPBOARD_COPY.with(Cell::take)
 }
