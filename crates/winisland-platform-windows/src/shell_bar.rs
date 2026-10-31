@@ -115,10 +115,86 @@ unsafe extern "system" fn host_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    // AppBar notifications (position changes, full-screen apps) arrive as CALLBACK_MESSAGE;
-    // the app polls state instead, so they only need the default handling here.
+    // System broadcasts this top-level window receives become shell events for the app.
+    const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
+    const WTS_SESSION_UNLOCK: usize = 0x8;
+    const WM_DEVICECHANGE: u32 = 0x0219;
+    const DBT_DEVICEARRIVAL: usize = 0x8000;
+    const DBT_DEVICEREMOVECOMPLETE: usize = 0x8004;
+    const DBT_DEVTYP_VOLUME: u32 = 2;
+    const WM_DISPLAYCHANGE: u32 = 0x007E;
+    const WM_POWERBROADCAST: u32 = 0x0218;
+    const PBT_APMRESUMEAUTOMATIC: usize = 0x12;
+    #[repr(C)]
+    struct BroadcastVolume {
+        size: u32,
+        device_type: u32,
+        reserved: u32,
+        unit_mask: u32,
+        flags: u16,
+    }
+    let event = match (msg, wparam.0) {
+        (WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK) => Some(ShellEvent::Unlocked),
+        (WM_POWERBROADCAST, PBT_APMRESUMEAUTOMATIC) => Some(ShellEvent::Resumed),
+        (WM_DISPLAYCHANGE, _) => Some(ShellEvent::DisplayChanged),
+        (WM_DEVICECHANGE, change @ (DBT_DEVICEARRIVAL | DBT_DEVICEREMOVECOMPLETE))
+            if lparam.0 != 0 =>
+        {
+            // SAFETY: for these notifications lparam points to a DEV_BROADCAST header, and
+            // the volume layout is only read after checking its type.
+            let header = unsafe { &*(lparam.0 as *const BroadcastVolume) };
+            (header.device_type == DBT_DEVTYP_VOLUME && header.unit_mask != 0).then(|| {
+                let letter = (b'A' + header.unit_mask.trailing_zeros() as u8) as char;
+                if change == DBT_DEVICEARRIVAL {
+                    ShellEvent::DriveAdded(letter)
+                } else {
+                    ShellEvent::DriveRemoved(letter)
+                }
+            })
+        }
+        _ => None,
+    };
+    if let Some(event) = event
+        && let Ok(mut events) = SHELL_EVENTS.lock()
+        && events.len() < 32
+    {
+        events.push(event);
+    }
     // SAFETY: forwarding the unmodified message to the default procedure.
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// A system event observed by the top bar's host window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellEvent {
+    Unlocked,
+    Resumed,
+    DisplayChanged,
+    DriveAdded(char),
+    DriveRemoved(char),
+}
+
+static SHELL_EVENTS: std::sync::Mutex<Vec<ShellEvent>> = std::sync::Mutex::new(Vec::new());
+
+/// Events received since the last call, oldest first.
+pub fn take_shell_events() -> Vec<ShellEvent> {
+    SHELL_EVENTS
+        .lock()
+        .map(|mut events| std::mem::take(&mut *events))
+        .unwrap_or_default()
+}
+
+/// Asks Windows to send session lock/unlock notifications to `hwnd`.
+fn register_session_notifications(hwnd: HWND) {
+    #[link(name = "wtsapi32")]
+    unsafe extern "system" {
+        fn WTSRegisterSessionNotification(hwnd: HWND, flags: u32) -> i32;
+    }
+    const NOTIFY_FOR_THIS_SESSION: u32 = 0;
+    // SAFETY: registers a window this process owns; failure only loses unlock events.
+    unsafe {
+        WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+    }
 }
 
 /// An invisible, never-activated top-level window that owns the AppBar registration.
@@ -150,6 +226,7 @@ fn create_host_window() -> Option<HWND> {
             None,
         )
         .ok()
+        .inspect(|hwnd| register_session_notifications(*hwnd))
     }
 }
 

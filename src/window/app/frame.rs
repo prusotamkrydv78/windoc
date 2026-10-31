@@ -1352,6 +1352,7 @@ impl App {
         }
         self.battery_checked_at = Some(now);
         self.sync_top_bar(now);
+        self.show_shell_events();
         self.compact_overlay
             .set_quiet(crate::platform::do_not_disturb());
         self.compact_overlay
@@ -1737,4 +1738,62 @@ impl App {
 fn format_call_time(elapsed: Duration) -> String {
     let seconds = elapsed.as_secs();
     format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+impl App {
+    /// Turns system events from the top bar's host window into notch activities.
+    fn show_shell_events(&mut self) {
+        use crate::ui::compact::Activity;
+        use crate::ui::components::icon::Icon;
+        use winisland_core::i18n::tr;
+        use winisland_platform_windows::shell_bar::ShellEvent;
+        use winisland_render::Rgba;
+        for event in winisland_platform_windows::shell_bar::take_shell_events() {
+            if self.expanded || self.is_hidden() {
+                continue;
+            }
+            let battery = crate::platform::battery()
+                .map(|(level, _)| format!("{level}%"))
+                .unwrap_or_default();
+            let (icon, accent, primary, secondary) = match event {
+                ShellEvent::Unlocked => (
+                    Icon::Home,
+                    Rgba::WHITE,
+                    tr("activity_welcome_back"),
+                    battery,
+                ),
+                ShellEvent::Resumed => (
+                    Icon::Clock,
+                    Rgba::from_rgb(255, 159, 10),
+                    tr("activity_resumed"),
+                    battery,
+                ),
+                ShellEvent::DisplayChanged => (
+                    Icon::Grid,
+                    Rgba::from_rgb(100, 210, 255),
+                    tr("activity_display_changed"),
+                    String::new(),
+                ),
+                ShellEvent::DriveAdded(letter) => (
+                    Icon::Shelf,
+                    Rgba::from_rgb(10, 132, 255),
+                    tr("activity_drive_added"),
+                    format!("{letter}:"),
+                ),
+                ShellEvent::DriveRemoved(letter) => (
+                    Icon::Check,
+                    Rgba::from_rgb(48, 209, 88),
+                    tr("activity_drive_removed"),
+                    format!("{letter}:"),
+                ),
+            };
+            self.compact_overlay.push_activity(Activity {
+                icon,
+                accent,
+                primary,
+                secondary,
+                progress: None,
+            });
+        }
+    }
 }
