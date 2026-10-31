@@ -312,3 +312,7 @@ ai_usage_empty_hint=No Claude Code or Codex activity found in the last week.
 notes_new=+ New note
 notes_new_detail=Write in the island; Esc saves
 notes_editor_hint=Esc saves and closes. The first line becomes the title.
+section_status_message=Status message
+status_message=Message
+status_message_placeholder=e.g. In a meeting, back at 3
+status_message_hint=Add the Message widget to the compact island in Widgets to show it, for example while sharing your screen.

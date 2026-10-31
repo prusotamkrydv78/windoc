@@ -95,6 +95,8 @@ pub enum CompactWidgetKind {
     ResourceUsage,
     /// Live Focus timer countdown.
     Focus,
+    /// A custom status message, for example while screen sharing.
+    Message,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -339,6 +341,7 @@ where
         "time" => Some(CompactWidgetKind::Time),
         "resource_usage" => Some(CompactWidgetKind::ResourceUsage),
         "focus" => Some(CompactWidgetKind::Focus),
+        "message" => Some(CompactWidgetKind::Message),
         _ => None,
     }))
 }
@@ -353,8 +356,9 @@ pub const AVAILABLE_WIDGETS: [WidgetKind; 5] = [
     WidgetKind::Network,
     WidgetKind::Storage,
 ];
-pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 3] = [
+pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 4] = [
     CompactWidgetKind::Time,
     CompactWidgetKind::ResourceUsage,
     CompactWidgetKind::Focus,
+    CompactWidgetKind::Message,
 ];

@@ -17,6 +17,7 @@ pub(super) enum BehaviorAction {
     WeatherLocation,
     ClearData(crate::core::data_inventory::DataKind),
     AddWorldClock,
+    StatusMessage,
     ExportBackup,
     RestoreBackup,
     RemoveWorldClock(usize),
@@ -140,6 +141,17 @@ impl SettingsApp {
         page.group_start();
         page.setting(&self.config, AppConfigField::AiUsageEnabled, true);
         page.row_label(tr("ai_usage_hint"));
+        page.group_end();
+        page.section(tr("section_status_message"));
+        page.group_start();
+        page.row_text_field(
+            tr("status_message"),
+            self.config.status_message.clone(),
+            tr("status_message_placeholder"),
+            true,
+            BehaviorAction::StatusMessage,
+        );
+        page.row_label(tr("status_message_hint"));
         page.group_end();
         page.section(tr("section_world_clocks"));
         page.group_start();
@@ -296,6 +308,12 @@ impl SettingsApp {
             (BehaviorAction::RestoreBackup, ClickResult::TextField(index)) => {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 self.begin_text_input(rect, "", 128, commit_restore_backup);
+                false
+            }
+            (BehaviorAction::StatusMessage, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                let current = self.config.status_message.clone();
+                self.begin_text_input(rect, &current, 60, commit_status_message);
                 false
             }
             (BehaviorAction::AddWorldClock, ClickResult::TextField(index)) => {
@@ -535,4 +553,9 @@ fn commit_restore_backup(app: &mut SettingsApp, passphrase: &str) {
             app.mark_items_dirty();
         }
     }
+}
+
+fn commit_status_message(app: &mut SettingsApp, text: &str) {
+    app.config.status_message = text.trim().to_string();
+    app.mark_items_dirty();
 }

@@ -90,6 +90,8 @@ pub struct AppConfig {
     pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
+    /// Text shown by the Message compact widget.
+    pub status_message: String,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

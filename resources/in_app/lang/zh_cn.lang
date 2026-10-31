@@ -312,3 +312,7 @@ ai_usage_empty_hint=最近一周没有 Claude Code 或 Codex 活动。
 notes_new=+ 新建笔记
 notes_new_detail=在灵动岛中书写，按 Esc 保存
 notes_editor_hint=按 Esc 保存并关闭，第一行将作为标题。
+section_status_message=状态消息
+status_message=消息
+status_message_placeholder=例如：开会中，3 点回来
+status_message_hint=在小组件中把“消息”添加到紧凑灵动岛即可显示，例如共享屏幕时。

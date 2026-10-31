@@ -1,4 +1,5 @@
 mod focus;
+pub(crate) mod message;
 mod resource_usage;
 mod time;
 
@@ -23,6 +24,7 @@ pub(crate) fn widget_width(widget: CompactWidgetKind) -> f32 {
         CompactWidgetKind::Time => 48.0,
         CompactWidgetKind::ResourceUsage => crate::ui::widget::resource_usage::compact_width(),
         CompactWidgetKind::Focus => 48.0,
+        CompactWidgetKind::Message => message::width(),
     }
 }
 
@@ -303,6 +305,7 @@ pub(crate) fn draw_widget(
         CompactWidgetKind::Time => time::draw(painter, rect, scale, alpha),
         CompactWidgetKind::ResourceUsage => resource_usage::draw(painter, rect, scale, alpha),
         CompactWidgetKind::Focus => focus::draw(painter, rect, scale, alpha),
+        CompactWidgetKind::Message => message::draw(painter, rect, scale, alpha),
     }
 }
 
