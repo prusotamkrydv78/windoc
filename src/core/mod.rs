@@ -2,6 +2,7 @@ pub mod ai_usage_service;
 pub mod audio;
 pub mod backup_service;
 pub mod calendar_service;
+pub mod chime;
 pub mod clipboard_history;
 pub mod converter;
 pub mod currency_service;

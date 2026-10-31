@@ -70,6 +70,9 @@ const DAY: [Scene; 9] = [
     Scene::Nap,
 ];
 
+/// Without input for this long the user counts as away and the robot naps.
+const AWAY_SECONDS: f32 = 300.0;
+
 /// How long the robot dances when a song starts.
 const DANCE_SECONDS: f32 = 8.0;
 
@@ -81,6 +84,8 @@ struct Context {
     track: String,
     /// When the robot started dancing to the current track.
     dance_started: Option<f32>,
+    /// No keyboard or mouse input for a while: the robot naps until the user is back.
+    away: bool,
 }
 
 thread_local! {
@@ -89,7 +94,18 @@ thread_local! {
 
 /// Tells the robot who it is greeting, whether a Focus timer is running and which track is
 /// playing, if any. A new track gets a short dance. Call each tick.
-pub(crate) fn set_context(name: &str, focus_running: bool, playing_track: Option<&str>) {
+pub(crate) fn set_context(
+    name: &str,
+    focus_running: bool,
+    playing_track: Option<&str>,
+    idle_seconds: f32,
+) {
+    let away = idle_seconds >= AWAY_SECONDS;
+    let returned =
+        CONTEXT.with(|context| std::mem::replace(&mut context.borrow_mut().away, away)) && !away;
+    if returned {
+        react(Reaction::WelcomeBack);
+    }
     CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.name != name {
@@ -122,6 +138,8 @@ pub(crate) enum Reaction {
     Drive,
     /// A Focus session finished: confetti and a happy jump.
     Celebrate,
+    /// The user is back after a while away: it wakes, stretches and waves.
+    WelcomeBack,
 }
 
 impl Reaction {
@@ -129,6 +147,7 @@ impl Reaction {
         match self {
             Self::MouseArrived => 6.0,
             Self::Celebrate => 4.5,
+            Self::WelcomeBack => 4.5,
             Self::Charging | Self::Drive => 4.0,
             Self::Copied => 3.0,
             Self::Surprised => 2.6,
@@ -142,8 +161,55 @@ thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
+impl Reaction {
+    /// The shortest gap between two plays of this reaction, so repeated events (copying
+    /// again and again, a flaky charger) do not turn into a stream of animations.
+    fn cooldown(self) -> f32 {
+        match self {
+            Self::Copied => 120.0,
+            Self::MouseArrived | Self::Drive => 30.0,
+            Self::Charging | Self::Surprised => 20.0,
+            Self::WelcomeBack => 60.0,
+            Self::Celebrate => 0.0,
+        }
+    }
+
+    fn index(self) -> usize {
+        self as usize
+    }
+}
+
+thread_local! {
+    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 7]> = const { std::cell::Cell::new([None; 7]) };
+}
+
+/// Whether `reaction` may play now; records it as played if so.
+fn cooled_down(reaction: Reaction) -> bool {
+    let now = seconds();
+    LAST_PLAYED.with(|cell| {
+        let mut last = cell.get();
+        let ready = last[reaction.index()].is_none_or(|at| now - at >= reaction.cooldown());
+        if ready {
+            last[reaction.index()] = Some(now);
+            cell.set(last);
+        }
+        ready
+    })
+}
+
 /// Plays `reaction` the next time the robot is on screen, replacing any earlier one.
 pub(crate) fn react(reaction: Reaction) {
+    if !cooled_down(reaction) {
+        return;
+    }
+    use crate::core::chime::{Sound, play};
+    match reaction {
+        Reaction::MouseArrived => play(Sound::Squeak),
+        Reaction::Celebrate => play(Sound::Done),
+        Reaction::WelcomeBack | Reaction::Charging => play(Sound::Hello),
+        Reaction::Drive | Reaction::Surprised => play(Sound::Pop),
+        Reaction::Copied => {}
+    }
     REACTION.with(|cell| cell.set(Some((reaction, None))));
 }
 
@@ -279,7 +345,9 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         let context = context.borrow();
         (context.name.clone(), context.focus_running)
     });
+    let away = CONTEXT.with(|context| context.borrow().away);
     let (scene, elapsed) = match dancing(time) {
+        _ if away => (Scene::Nap, SCENE_SECONDS / 2.0),
         Some(elapsed) => (Scene::Dance, elapsed),
         None => current_scene(time, hour, focus_running),
     };
@@ -1062,6 +1130,28 @@ impl Stage<'_> {
         let u = self.unit;
         match reaction {
             Reaction::MouseArrived => self.mouse_chase(rect),
+            Reaction::WelcomeBack => {
+                // Eyes open, a big stretch, then a wave.
+                let stretch = ease(t / 0.8) * ease((2.0 - t) / 0.6);
+                let mut pose = Pose::new(if t < 0.5 { Eyes::Closed } else { Eyes::Happy });
+                pose.rise = stretch * 1.4;
+                pose.left_arm = 1.0 - 2.4 * stretch;
+                pose.right_arm = if t > 2.0 {
+                    -0.45 + (t / 0.9 * TAU).sin() * 0.45
+                } else {
+                    pose.left_arm
+                };
+                self.robot(pose);
+                if t > 2.0 {
+                    self.text(
+                        &winisland_core::i18n::tr("activity_welcome_back"),
+                        self.x + 11.0 * u,
+                        self.mid + 3.0 * u,
+                        9.0,
+                        self.prop(ease((t - 2.0) / 0.4), WHITE),
+                    );
+                }
+            }
             Reaction::Charging => {
                 // A bolt drops from the top into raised hands, then glows there.
                 let caught = t > 0.8;
@@ -1463,6 +1553,14 @@ mod tests {
             .map(|index| current_scene(index as f32 * SCENE_SECONDS + 1.0, 14, false).0)
             .collect();
         assert_eq!(seen, DAY);
+    }
+
+    #[test]
+    fn repeated_reactions_wait_for_their_cooldown() {
+        assert!(cooled_down(Reaction::Copied));
+        assert!(!cooled_down(Reaction::Copied));
+        assert!(cooled_down(Reaction::Celebrate));
+        assert!(cooled_down(Reaction::Celebrate));
     }
 
     #[test]

@@ -217,6 +217,7 @@ impl SettingsApp {
             BehaviorAction::UserName,
         );
         page.row_label(tr("user_name_hint"));
+        page.setting(&self.config, AppConfigField::RobotSounds, true);
         page.group_end();
         page.section(tr("section_status_message"));
         page.group_start();

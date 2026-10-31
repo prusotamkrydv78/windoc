@@ -320,6 +320,7 @@ section_you=You
 user_name=Your name
 user_name_placeholder=e.g. Prusotam
 user_name_hint=The robot in the notch greets you by this name.
+robot_sounds=Robot sounds
 status_message=Message
 status_message_placeholder=e.g. In a meeting, back at 3
 status_message_hint=Add the Message widget to the compact island in Widgets to show it, for example while sharing your screen.

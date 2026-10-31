@@ -110,6 +110,9 @@ pub struct AppConfig {
     pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
+    /// Tiny sounds with the robot's reactions. Off by default; never during Do Not Disturb.
+    #[setting(toggle, label = "robot_sounds")]
+    pub robot_sounds: bool,
     /// What the robot calls the user in greetings; empty uses the Windows account name.
     pub user_name: String,
     /// Text shown by the Message compact widget.

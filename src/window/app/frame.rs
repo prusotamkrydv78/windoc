@@ -1856,12 +1856,17 @@ impl App {
         use winisland_core::i18n::tr;
         use winisland_platform_windows::shell_bar::ShellEvent;
         use winisland_render::Rgba;
+        crate::core::chime::set_enabled(
+            self.config.robot_sounds && !crate::core::system_watch::snapshot().do_not_disturb,
+        );
         let media = self.current_media_info();
         let playing_track = media.is_playing.then(|| media.title.clone());
         crate::ui::widget::compact::mascot::set_context(
             &self.display_name(),
             crate::ui::dashboard::focus_running(),
             playing_track.as_deref(),
+            winisland_platform_windows::input_idle_duration()
+                .map_or(0.0, |idle| idle.as_secs_f32()),
         );
         if crate::core::device_watch::mouse_arrived(std::time::Instant::now()) {
             crate::ui::widget::compact::mascot::react(
@@ -1873,6 +1878,7 @@ impl App {
             && !self.is_hidden()
         {
             // The robot holds up the new picture; the tall card grows the notch for it.
+            crate::core::chime::play(crate::core::chime::Sound::Pop);
             let name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())

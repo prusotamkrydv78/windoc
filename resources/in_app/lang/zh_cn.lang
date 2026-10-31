@@ -320,6 +320,7 @@ section_you=你
 user_name=你的名字
 user_name_placeholder=例如 Prusotam
 user_name_hint=岛上的机器人会用这个名字向你问好。
+robot_sounds=机器人音效
 status_message=消息
 status_message_placeholder=例如：开会中，3 点回来
 status_message_hint=在小组件中把“消息”添加到紧凑灵动岛即可显示，例如共享屏幕时。
