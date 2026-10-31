@@ -93,6 +93,8 @@ pub struct WidgetSlot {
 pub enum CompactWidgetKind {
     Time,
     ResourceUsage,
+    /// Live Focus timer countdown.
+    Focus,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -336,6 +338,7 @@ where
     Ok(raw.and_then(|value| match value.as_str() {
         "time" => Some(CompactWidgetKind::Time),
         "resource_usage" => Some(CompactWidgetKind::ResourceUsage),
+        "focus" => Some(CompactWidgetKind::Focus),
         _ => None,
     }))
 }
@@ -350,5 +353,8 @@ pub const AVAILABLE_WIDGETS: [WidgetKind; 5] = [
     WidgetKind::Network,
     WidgetKind::Storage,
 ];
-pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 2] =
-    [CompactWidgetKind::Time, CompactWidgetKind::ResourceUsage];
+pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 3] = [
+    CompactWidgetKind::Time,
+    CompactWidgetKind::ResourceUsage,
+    CompactWidgetKind::Focus,
+];

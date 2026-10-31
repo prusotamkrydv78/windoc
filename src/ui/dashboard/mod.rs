@@ -433,6 +433,29 @@ pub fn is_animating() -> bool {
     PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
 }
 
+/// Text for the compact Focus widget and whether the timer is running.
+pub fn focus_compact_text() -> (String, bool) {
+    PAGE.with(|page| {
+        let page = page.borrow();
+        let view = page.focus.view(Instant::now());
+        match view.state {
+            TimerState::Running | TimerState::Paused => {
+                let text = match view.remaining {
+                    Some(remaining) => format_clock(remaining, true),
+                    None => format_clock(view.elapsed, false),
+                };
+                (text, view.state == TimerState::Running)
+            }
+            TimerState::Idle | TimerState::Finished => (tr("dashboard_focus"), false),
+        }
+    })
+}
+
+/// How soon the compact Focus widget needs redrawing; `None` while the timer is stopped.
+pub fn focus_refresh_delay() -> Option<Duration> {
+    is_animating().then_some(Duration::from_millis(250))
+}
+
 /// Lays the page out in logical pixels. `scale` converts logical to device pixels.
 fn page_layout(width: f32, height: f32, scale: f32) -> DashboardLayout {
     let scale = scale.max(f32::EPSILON);

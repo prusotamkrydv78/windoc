@@ -1,3 +1,4 @@
+mod focus;
 mod resource_usage;
 mod time;
 
@@ -21,6 +22,7 @@ pub(crate) fn widget_width(widget: CompactWidgetKind) -> f32 {
     match widget {
         CompactWidgetKind::Time => 48.0,
         CompactWidgetKind::ResourceUsage => crate::ui::widget::resource_usage::compact_width(),
+        CompactWidgetKind::Focus => 48.0,
     }
 }
 
@@ -300,6 +302,7 @@ pub(crate) fn draw_widget(
     match widget {
         CompactWidgetKind::Time => time::draw(painter, rect, scale, alpha),
         CompactWidgetKind::ResourceUsage => resource_usage::draw(painter, rect, scale, alpha),
+        CompactWidgetKind::Focus => focus::draw(painter, rect, scale, alpha),
     }
 }
 
@@ -312,5 +315,10 @@ pub(crate) fn next_refresh_delay(layout: &[CompactWidgetSlot]) -> Option<std::ti
         .iter()
         .any(|entry| entry.widget == Some(CompactWidgetKind::ResourceUsage))
         .then(crate::ui::widget::resource_usage::next_refresh_delay);
-    [time, resource].into_iter().flatten().min()
+    let focus = layout
+        .iter()
+        .any(|entry| entry.widget == Some(CompactWidgetKind::Focus))
+        .then(crate::ui::dashboard::focus_refresh_delay)
+        .flatten();
+    [time, resource, focus].into_iter().flatten().min()
 }
