@@ -29,6 +29,8 @@ pub enum Icon {
     Search,
     Check,
     Plus,
+    Battery,
+    Bolt,
 }
 
 impl Icon {
@@ -64,6 +66,8 @@ impl Icon {
             Self::Search => "M11 4 A7 7 0 1 1 10.99 4 M16 16 L20 20",
             Self::Check => "M5 12.5 L10 17 L19 7",
             Self::Plus => "M12 5 V19 M5 12 H19",
+            Self::Battery => "M3 8 H18 V16 H3 Z M18 10.5 H20.5 V13.5 H18",
+            Self::Bolt => "M13 3 L6 13 H11.5 L10.5 21 L18 10.5 H12.5 Z",
         }
     }
 

@@ -93,15 +93,19 @@ pub fn poll(now: Instant) -> Option<FocusEvent> {
     Some(event)
 }
 
-fn notify_phase_finished(event: FocusEvent) {
+/// The translated message announcing what follows a finished Focus phase.
+pub fn phase_finished_message(event: FocusEvent) -> String {
     let FocusEvent::PhaseFinished { next, .. } = event;
-    let message_key = match next {
+    tr(match next {
         Some(Phase::ShortBreak) => "focus_notify_short_break",
         Some(Phase::LongBreak) => "focus_notify_long_break",
         Some(Phase::Work) => "focus_notify_work",
         Some(Phase::Countdown | Phase::Stopwatch) | None => "focus_notify_done",
-    };
-    crate::platform::notify().show_toast(&tr("focus_notify_title"), &tr(message_key));
+    })
+}
+
+fn notify_phase_finished(event: FocusEvent) {
+    crate::platform::notify().show_toast(&tr("focus_notify_title"), &phase_finished_message(event));
 }
 
 /// Clock text for a duration. Remaining time rounds up so 0:00 appears only at the end.

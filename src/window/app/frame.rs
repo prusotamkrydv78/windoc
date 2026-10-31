@@ -59,7 +59,17 @@ impl App {
         if now < self.next_frame_deadline {
             return;
         }
-        if crate::ui::dashboard::poll(now).is_some() {
+        if let Some(event) = crate::ui::dashboard::poll(now) {
+            if !self.expanded && !self.is_hidden() {
+                self.compact_overlay
+                    .push_activity(crate::ui::compact::Activity {
+                        icon: crate::ui::components::icon::Icon::Focus,
+                        accent: winisland_render::Rgba::from_argb(255, 255, 159, 10),
+                        primary: winisland_core::i18n::tr("focus_notify_title"),
+                        secondary: crate::ui::dashboard::phase_finished_message(event),
+                        progress: None,
+                    });
+            }
             window.request_redraw();
         }
         self.screen_time
@@ -78,6 +88,7 @@ impl App {
             now,
         );
         self.clipboard.poll(now);
+        self.poll_battery_activity(now);
         if let Some(index) = crate::ui::dashboard::take_clipboard_copy()
             && self.clipboard.copy_again(index)
         {
@@ -85,6 +96,7 @@ impl App {
         }
         if self.clipboard.take_captured() {
             self.attention_pulse_started = Some(now);
+            self.push_copied_activity();
             window.request_redraw();
         }
         crate::ui::dashboard::sync_clipboard(
@@ -1268,4 +1280,94 @@ struct FramePacing {
     is_hovering_visible: bool,
     compact_overlay_visible: bool,
     passive_reveal_active: bool,
+}
+
+impl App {
+    /// Shows "Charging", "On battery", "Fully charged" and low-battery activities when the
+    /// power state changes. Polled every two seconds.
+    fn poll_battery_activity(&mut self, now: Instant) {
+        use crate::ui::compact::Activity;
+        use crate::ui::components::icon::Icon;
+        use winisland_core::i18n::tr;
+        use winisland_render::Rgba;
+        const POLL_INTERVAL: Duration = Duration::from_secs(2);
+        const LOW_BATTERY: u8 = 15;
+        if self
+            .battery_checked_at
+            .is_some_and(|at| now.duration_since(at) < POLL_INTERVAL)
+        {
+            return;
+        }
+        self.battery_checked_at = Some(now);
+        let Some((level, plugged)) = crate::platform::battery() else {
+            return;
+        };
+        let previous = self.battery_state.replace((level, plugged));
+        let Some((previous_level, was_plugged)) = previous else {
+            return;
+        };
+        let green = Rgba::from_argb(255, 52, 199, 89);
+        let activity = if plugged && !was_plugged {
+            Some((Icon::Bolt, green, tr("activity_charging")))
+        } else if !plugged && was_plugged {
+            Some((Icon::Battery, Rgba::WHITE, tr("activity_on_battery")))
+        } else if plugged && level == 100 && previous_level < 100 {
+            Some((Icon::Battery, green, tr("activity_fully_charged")))
+        } else if !plugged && level <= LOW_BATTERY && previous_level > LOW_BATTERY {
+            Some((
+                Icon::Battery,
+                Rgba::from_argb(255, 255, 69, 58),
+                tr("activity_low_battery"),
+            ))
+        } else {
+            None
+        };
+        if let Some((icon, accent, secondary)) = activity
+            && !self.expanded
+            && !self.is_hidden()
+        {
+            self.compact_overlay.push_activity(Activity {
+                icon,
+                accent,
+                primary: format!("{level}%"),
+                secondary,
+                progress: Some(f32::from(level) / 100.0),
+            });
+        }
+    }
+
+    /// Confirms a clipboard capture with a "Copied · Text" activity.
+    fn push_copied_activity(&mut self) {
+        use crate::ui::compact::Activity;
+        use crate::ui::components::icon::Icon;
+        use winisland_core::clipboard::ClipboardBody;
+        use winisland_core::i18n::tr;
+        use winisland_render::Rgba;
+        if self.expanded || self.is_hidden() {
+            return;
+        }
+        let Some(item) = self
+            .clipboard
+            .items()
+            .iter()
+            .max_by_key(|item| item.captured_at)
+        else {
+            return;
+        };
+        let kind = match &item.body {
+            ClipboardBody::Text(_) => tr("activity_text"),
+            ClipboardBody::Link(_) => tr("activity_link"),
+            ClipboardBody::Image { .. } => tr("activity_image"),
+            ClipboardBody::Files(files) => {
+                tr("clipboard_files").replacen("{}", &files.len().to_string(), 1)
+            }
+        };
+        self.compact_overlay.push_activity(Activity {
+            icon: Icon::Clipboard,
+            accent: Rgba::WHITE,
+            primary: tr("activity_copied"),
+            secondary: kind,
+            progress: None,
+        });
+    }
 }

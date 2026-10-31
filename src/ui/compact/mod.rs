@@ -1,9 +1,12 @@
+mod activity;
 mod brightness;
 mod notification;
 mod volume;
 
 use winisland_render::{Painter, Rect};
 
+pub use self::activity::Activity;
+use self::activity::ActivityIndicator;
 use self::brightness::BrightnessMonitor;
 use self::notification::{NotificationIndicator, NotificationMonitor};
 use self::volume::{VolumeIndicator, VolumeMonitor};
@@ -35,10 +38,11 @@ pub struct CompactOverlay {
     brightness_overlay_enabled: bool,
     last_level_is_brightness: bool,
     notification_monitor: NotificationMonitor,
-    notification_indicator: NotificationIndicator,
+    activity_indicator: ActivityIndicator,
 }
 
 enum ActiveCompactOverlay<'a> {
+    Activity(&'a ActivityIndicator),
     Notification(&'a NotificationIndicator),
     Volume(&'a VolumeIndicator),
     Brightness(&'a VolumeIndicator),
@@ -47,6 +51,7 @@ enum ActiveCompactOverlay<'a> {
 impl ActiveCompactOverlay<'_> {
     fn target_size(&self, base_width: f32, base_height: f32, scale: f32) -> CompactSize {
         match self {
+            Self::Activity(indicator) => indicator.target_size(base_width, base_height, scale),
             Self::Notification(_) => {
                 NotificationIndicator::target_size(base_width, base_height, scale)
             }
@@ -57,6 +62,7 @@ impl ActiveCompactOverlay<'_> {
 
     fn draw(&self, painter: Painter<'_>, rect: Rect, scale: f32, alpha: f32) {
         match self {
+            Self::Activity(indicator) => indicator.draw(painter, rect, scale, alpha),
             Self::Notification(indicator) => indicator.draw(painter, rect, scale, alpha),
             Self::Volume(indicator) => indicator.draw(painter, rect, scale, alpha),
             Self::Brightness(indicator) => indicator.draw_brightness(painter, rect, scale, alpha),
@@ -75,6 +81,7 @@ impl CompactOverlay {
             last_level_is_brightness: false,
             notification_monitor: NotificationMonitor::default(),
             notification_indicator: NotificationIndicator::default(),
+            activity_indicator: ActivityIndicator::default(),
         }
     }
 
@@ -201,6 +208,11 @@ impl CompactOverlay {
         self.brightness_indicator.is_dragging()
     }
 
+    /// Shows a short live activity in the collapsed notch.
+    pub fn push_activity(&mut self, activity: Activity) {
+        self.activity_indicator.push(activity);
+    }
+
     pub fn is_notification_visible(&self) -> bool {
         self.notification_indicator.is_visible()
     }
@@ -237,7 +249,10 @@ impl CompactOverlay {
         let notification = NotificationIndicator::target_size(base_width, base_height, scale);
         let volume = VolumeIndicator::target_size(base_width, base_height, scale);
         CompactSize {
-            width: notification.width.max(volume.width),
+            width: notification
+                .width
+                .max(volume.width)
+                .max(activity::MAX_WIDTH * scale),
             height: notification.height.max(volume.height),
         }
     }
@@ -255,6 +270,8 @@ impl CompactOverlay {
             Some(ActiveCompactOverlay::Volume(&self.volume_indicator))
         } else if self.brightness_indicator.is_visible() {
             Some(ActiveCompactOverlay::Brightness(&self.brightness_indicator))
+        } else if self.activity_indicator.is_visible() {
+            Some(ActiveCompactOverlay::Activity(&self.activity_indicator))
         } else if self.notification_indicator.is_visible() {
             Some(ActiveCompactOverlay::Notification(
                 &self.notification_indicator,

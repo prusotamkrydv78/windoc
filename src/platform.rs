@@ -186,3 +186,8 @@ pub(crate) fn tray_labels(visible: bool) -> TrayLabels {
         tooltip: winisland_core::config::WINDOW_TITLE.to_string(),
     }
 }
+
+/// Battery charge (0-100) and AC state, or `None` without a battery.
+pub(crate) fn battery() -> Option<(u8, bool)> {
+    backend::battery_status()
+}

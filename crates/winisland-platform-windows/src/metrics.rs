@@ -169,3 +169,20 @@ fn gpu(adapters: &mut Option<Vec<IDXGIAdapter3>>) -> Option<(u64, u64)> {
     }
     (budget > 0).then_some((used, budget))
 }
+
+/// Battery charge (0-100) and whether AC power is connected, or `None` on machines without
+/// a battery.
+pub fn battery_status() -> Option<(u8, bool)> {
+    use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    const NO_BATTERY: u8 = 128;
+    const UNKNOWN: u8 = 255;
+    let mut status = SYSTEM_POWER_STATUS::default();
+    unsafe { GetSystemPowerStatus(&mut status) }.ok()?;
+    if status.BatteryFlag & NO_BATTERY != 0
+        || status.BatteryFlag == UNKNOWN
+        || status.BatteryLifePercent > 100
+    {
+        return None;
+    }
+    Some((status.BatteryLifePercent, status.ACLineStatus == 1))
+}
