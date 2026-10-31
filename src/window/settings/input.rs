@@ -16,7 +16,7 @@ const MAX_NUMBER_CHARS: usize = 32;
 
 impl SettingsApp {
     pub(crate) fn music_notice_button_hovered(&self) -> bool {
-        if self.active_page != 1 || !self.show_music_notice() {
+        if self.active_page != super::MUSIC_PAGE_INDEX || !self.show_music_notice() {
             return false;
         }
         let (x, y) = self.logical_mouse_pos;
@@ -81,16 +81,19 @@ impl SettingsApp {
         };
 
         match self.active_page {
-            0 => self.handle_general_click(input),
-            1 => self.handle_music_click(input),
-            2 => {
+            super::GENERAL_PAGE_INDEX => self.handle_general_click(input),
+            super::NOTCH_PAGE_INDEX => self.handle_notch_page_click(input, 0),
+            super::TOP_BAR_PAGE_INDEX => self.handle_notch_page_click(input, 1),
+            super::ACTIVITIES_PAGE_INDEX => self.handle_notch_page_click(input, 2),
+            super::MUSIC_PAGE_INDEX => self.handle_music_click(input),
+            super::WIDGETS_PAGE_INDEX => {
                 if self.handle_widget_click()
                     && let Some(window) = &self.window
                 {
                     window.request_redraw();
                 }
             }
-            3 => self.handle_plugin_click(),
+            super::PLUGINS_PAGE_INDEX => self.handle_plugin_click(),
             page if page == self.about_page_index() => self.handle_about_click(input),
             _ => self.handle_plugin_settings_click(input),
         }

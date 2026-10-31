@@ -266,15 +266,20 @@ impl SettingsApp {
 
         let pages = [
             tr("tab_general"),
+            tr("tab_notch"),
+            tr("tab_top_bar"),
+            tr("tab_activities"),
             tr("tab_music"),
             tr("tab_widgets"),
             tr("tab_plugins"),
         ];
+        // Icon per page: the notch pages reuse the general icon until they get their own.
+        const PAGE_ICONS: [usize; 7] = [0, 0, 0, 0, 1, 2, 3];
         for (index, label) in pages.iter().enumerate() {
             let row_y = SIDEBAR_START_Y + index as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
             let text_color = draw_sidebar_row_background(self, painter, theme, index, row_y);
             let icon_rect = Rect::from_xywh(SIDEBAR_PAD + 7.0, row_y + 6.0, 22.0, 22.0);
-            draw_sidebar_icon(drawing_context, painter, index, icon_rect);
+            draw_sidebar_icon(drawing_context, painter, PAGE_ICONS[index], icon_rect);
             SettingsPainter::new(painter).text(
                 label,
                 (SIDEBAR_PAD + 36.0, row_y + 22.0),

@@ -1,15 +1,21 @@
 use crate::utils::settings_ui::content_height;
 use crate::utils::settings_ui::items::SettingsItem;
 
-use super::{SETTINGS_HEADER_H, SettingsApp};
+use super::{
+    ACTIVITIES_PAGE_INDEX, GENERAL_PAGE_INDEX, MUSIC_PAGE_INDEX, NOTCH_PAGE_INDEX,
+    PLUGINS_PAGE_INDEX, SETTINGS_HEADER_H, SettingsApp, TOP_BAR_PAGE_INDEX, WIDGETS_PAGE_INDEX,
+};
 
 impl SettingsApp {
     pub(crate) fn build_current_items(&self) -> Vec<SettingsItem> {
         match self.active_page {
-            0 => self.build_general_items(),
-            1 => self.build_music_items(),
-            2 => self.build_widget_items(),
-            3 => self.build_plugin_items(),
+            GENERAL_PAGE_INDEX => self.build_general_items(),
+            NOTCH_PAGE_INDEX => self.build_notch_page().into_items(),
+            TOP_BAR_PAGE_INDEX => self.build_top_bar_page().into_items(),
+            ACTIVITIES_PAGE_INDEX => self.build_activities_page().into_items(),
+            MUSIC_PAGE_INDEX => self.build_music_items(),
+            WIDGETS_PAGE_INDEX => self.build_widget_items(),
+            PLUGINS_PAGE_INDEX => self.build_plugin_items(),
             page if page == self.about_page_index() => self.build_about_items(),
             _ => self.build_plugin_settings_items(),
         }

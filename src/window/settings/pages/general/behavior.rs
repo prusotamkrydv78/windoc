@@ -44,11 +44,6 @@ impl SettingsApp {
             caps.autostart,
             BehaviorAction::AutoStart,
         );
-        page.setting(&self.config, AppConfigField::AutoHide, true);
-        page.setting(&self.config, AppConfigField::FullscreenAutoHide, true);
-        if self.config.auto_hide {
-            page.setting(&self.config, AppConfigField::AutoHideDelay, true);
-        }
         page.push_setting(
             SettingsItem::RowStepper {
                 label: tr("hidden_width"),
@@ -60,22 +55,6 @@ impl SettingsApp {
                 enabled: true,
             },
             AppConfigField::HiddenWidth,
-        );
-        page.setting(&self.config, AppConfigField::RightClickDrag, true);
-        page.setting(
-            &self.config,
-            AppConfigField::NotificationDisplay,
-            caps.toast_events,
-        );
-        page.setting(
-            &self.config,
-            AppConfigField::ReplaceNativeVolumeFlyout,
-            caps.input_hooks && caps.volume_control,
-        );
-        page.setting(
-            &self.config,
-            AppConfigField::BrightnessOverlayEnabled,
-            caps.brightness_control,
         );
         if !caps.autostart || !caps.toast_events || !caps.input_hooks || !caps.brightness_control {
             page.row_label(tr("platform_unavailable"));
@@ -152,14 +131,10 @@ impl SettingsApp {
         page.group_end();
         page.section(tr("section_wellness"));
         page.group_start();
-        page.setting(&self.config, AppConfigField::WaterReminderMinutes, true);
-        page.setting(&self.config, AppConfigField::StretchReminderMinutes, true);
         page.row_label(tr("wellness_hint"));
         page.group_end();
         page.section(tr("section_modules"));
         page.group_start();
-        page.setting(&self.config, AppConfigField::HotkeyOpensIsland, true);
-        page.setting(&self.config, AppConfigField::HoverToOpen, true);
         for destination in crate::ui::dashboard::Destination::MORE_ITEMS {
             let key = destination.label_key();
             let hidden = self

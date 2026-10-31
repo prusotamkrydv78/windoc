@@ -37,11 +37,15 @@ pub(crate) const SIDEBAR_W: f32 = 184.0;
 pub(crate) const SIDEBAR_ROW_H: f32 = 34.0;
 pub(crate) const SIDEBAR_ROW_GAP: f32 = 2.0;
 pub(crate) const SIDEBAR_START_Y: f32 = 64.0;
-pub(crate) const BUILTIN_SIDEBAR_PAGE_COUNT: usize = 5;
+pub(crate) const BUILTIN_SIDEBAR_PAGE_COUNT: usize = 8;
 pub(crate) const GENERAL_PAGE_INDEX: usize = 0;
-pub(crate) const WIDGETS_PAGE_INDEX: usize = 2;
-pub(crate) const PLUGINS_PAGE_INDEX: usize = 3;
-pub(crate) const PLUGIN_SETTINGS_START_INDEX: usize = 4;
+pub(crate) const NOTCH_PAGE_INDEX: usize = 1;
+pub(crate) const TOP_BAR_PAGE_INDEX: usize = 2;
+pub(crate) const ACTIVITIES_PAGE_INDEX: usize = 3;
+pub(crate) const MUSIC_PAGE_INDEX: usize = 4;
+pub(crate) const WIDGETS_PAGE_INDEX: usize = 5;
+pub(crate) const PLUGINS_PAGE_INDEX: usize = 6;
+pub(crate) const PLUGIN_SETTINGS_START_INDEX: usize = 7;
 pub(crate) const PAGE_NAV_X: f32 = SIDEBAR_W + 18.0;
 pub(crate) const PAGE_NAV_Y: f32 = 18.0;
 pub(crate) const PAGE_NAV_WIDTH: f32 = 34.0;
@@ -340,10 +344,13 @@ impl SettingsApp {
 
     pub(crate) fn page_title(&self) -> String {
         match self.active_page {
-            0 => winisland_core::i18n::tr("tab_general"),
-            1 => winisland_core::i18n::tr("tab_music"),
-            2 => winisland_core::i18n::tr("tab_widgets"),
-            3 => winisland_core::i18n::tr("tab_plugins"),
+            GENERAL_PAGE_INDEX => winisland_core::i18n::tr("tab_general"),
+            NOTCH_PAGE_INDEX => winisland_core::i18n::tr("tab_notch"),
+            TOP_BAR_PAGE_INDEX => winisland_core::i18n::tr("tab_top_bar"),
+            ACTIVITIES_PAGE_INDEX => winisland_core::i18n::tr("tab_activities"),
+            MUSIC_PAGE_INDEX => winisland_core::i18n::tr("tab_music"),
+            WIDGETS_PAGE_INDEX => winisland_core::i18n::tr("tab_widgets"),
+            PLUGINS_PAGE_INDEX => winisland_core::i18n::tr("tab_plugins"),
             page if page == self.about_page_index() => winisland_core::i18n::tr("tab_about"),
             _ => self
                 .active_plugin_settings_page()
@@ -1067,7 +1074,7 @@ impl SettingsApp {
     }
 
     fn handle_cursor_left(&mut self) {
-        if self.active_page == 1 && self.show_music_notice() {
+        if self.active_page == MUSIC_PAGE_INDEX && self.show_music_notice() {
             self.logical_mouse_pos = (-1.0, -1.0);
             self.request_redraw();
         }

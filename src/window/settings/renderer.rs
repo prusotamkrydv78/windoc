@@ -221,7 +221,7 @@ impl SettingsApp {
                     self.logical_mouse_pos.1 + self.scroll_y,
                 )),
             });
-            if self.active_page == 1 && self.show_music_notice() {
+            if self.active_page == super::MUSIC_PAGE_INDEX && self.show_music_notice() {
                 self.draw_music_notice(painter, content_w);
             }
             painter.restore();
