@@ -123,7 +123,7 @@ pub struct UsageReport {
     pub days: BTreeMap<String, DayReport>,
     /// Total tokens per model across all days, largest first.
     pub models: Vec<(String, u64)>,
-    /// Total tokens per tool.
+    /// Total tokens per tool, Claude Code first.
     pub tools: Vec<(Tool, u64)>,
 }
 
@@ -152,8 +152,8 @@ impl UsageReport {
         }
         let mut models: Vec<(String, u64)> = models.into_iter().collect();
         models.sort_by(|a, b| b.1.cmp(&a.1));
-        let mut tools: Vec<(Tool, u64)> = tools.into_iter().collect();
-        tools.sort_by(|a, b| b.1.cmp(&a.1));
+        // Claude Code is the primary tool, so it always comes first.
+        let tools: Vec<(Tool, u64)> = tools.into_iter().collect();
         Self {
             days,
             models,
