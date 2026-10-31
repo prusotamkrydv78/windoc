@@ -1576,7 +1576,13 @@ impl App {
                 title: window.title,
                 foreground: window.foreground,
             })
-            .collect();
+            .collect::<Vec<_>>();
+        crate::ui::top_bar::refresh_icons(
+            &apps
+                .iter()
+                .map(|app: &crate::ui::top_bar::BarApp| app.handle)
+                .collect::<Vec<_>>(),
+        );
         crate::ui::top_bar::set_apps(apps);
     }
 }

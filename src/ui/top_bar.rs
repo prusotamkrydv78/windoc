@@ -207,12 +207,22 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
             let button = Rect::from_xywh(x, item_top, button_w, item_h);
             hover_fill(painter, button, BarHit::App(app.handle), false);
             let tile_rect = Rect::from_xywh(x + 7.0 * scale, height / 2.0 - tile / 2.0, tile, tile);
-            painter.fill_round_rect(
-                tile_rect,
-                Radius::uniform(4.5 * scale),
-                tile_color(&app.label),
-            );
-            let initial: String = app.label.chars().take(1).collect();
+            let icon = icon_for(app.handle);
+            if let Some(icon) = &icon {
+                painter.draw_image(icon, tile_rect, &winisland_render::ImageOptions::default());
+            } else {
+                painter.fill_round_rect(
+                    tile_rect,
+                    Radius::uniform(4.5 * scale),
+                    tile_color(&app.label),
+                );
+            }
+            // Apps without an icon get a monogram tile.
+            let initial: String = if icon.is_some() {
+                String::new()
+            } else {
+                app.label.chars().take(1).collect()
+            };
             let initial_size = 9.5 * scale;
             let initial_w = fonts.measure_text_cached(&initial, initial_size, FontStyle::bold());
             fonts.draw_text_cached(DrawTextCachedParams {
@@ -539,4 +549,31 @@ pub fn scroll_app_volume(point: Point, steps: f32) -> bool {
 /// The latest per-app volume change, once.
 pub fn take_app_volume() -> Option<(String, f32)> {
     APP_VOLUME.lock().ok().and_then(|mut slot| slot.take())
+}
+
+thread_local! {
+    /// App icons by window handle; `None` remembers windows without an icon.
+    static ICONS: RefCell<std::collections::HashMap<isize, Option<winisland_render::Image>>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Loads icons for windows seen for the first time and forgets closed ones.
+pub fn refresh_icons(handles: &[isize]) {
+    ICONS.with(|icons| {
+        let mut icons = icons.borrow_mut();
+        icons.retain(|handle, _| handles.contains(handle));
+        for &handle in handles {
+            icons.entry(handle).or_insert_with(|| {
+                winisland_platform_windows::shell_bar::window_icon_rgba(handle).and_then(
+                    |(width, height, rgba)| {
+                        winisland_render::Image::from_rgba8(width, height, &rgba)
+                    },
+                )
+            });
+        }
+    });
+}
+
+fn icon_for(handle: isize) -> Option<winisland_render::Image> {
+    ICONS.with(|icons| icons.borrow().get(&handle).cloned().flatten())
 }

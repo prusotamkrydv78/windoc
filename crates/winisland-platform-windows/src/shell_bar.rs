@@ -477,3 +477,102 @@ pub fn adjust_app_volume(process_id: u32, delta: f32) -> Option<f32> {
         level
     }
 }
+
+/// The window's large icon as straight RGBA pixels `(width, height, pixels)`, or `None` when
+/// the window has no icon. Falls back to the window class icon.
+pub fn window_icon_rgba(handle: isize) -> Option<(i32, i32, Vec<u8>)> {
+    use windows::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC,
+        DeleteObject, GetDIBits, GetObjectW, HGDIOBJ,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GCLP_HICON, GetClassLongPtrW, GetIconInfo, HICON, ICON_BIG, ICONINFO, SMTO_ABORTIFHUNG,
+        SendMessageTimeoutW, WM_GETICON,
+    };
+    let hwnd = HWND(handle as *mut _);
+    // SAFETY: icon and bitmap queries on handles owned by the target window or created and
+    // released here; a stale window just yields no icon.
+    unsafe {
+        let mut result = 0usize;
+        let _ = SendMessageTimeoutW(
+            hwnd,
+            WM_GETICON,
+            WPARAM(ICON_BIG as usize),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            50,
+            Some(&mut result),
+        );
+        if result == 0 {
+            result = GetClassLongPtrW(hwnd, GCLP_HICON);
+        }
+        if result == 0 {
+            return None;
+        }
+        let icon = HICON(result as *mut _);
+        let mut info = ICONINFO::default();
+        GetIconInfo(icon, &mut info).ok()?;
+        let color = info.hbmColor;
+        let mask = info.hbmMask;
+        let release = || {
+            if !color.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ(color.0));
+            }
+            if !mask.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ(mask.0));
+            }
+        };
+        if color.is_invalid() {
+            release();
+            return None;
+        }
+        let mut bitmap = BITMAP::default();
+        if GetObjectW(
+            HGDIOBJ(color.0),
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut bitmap as *mut BITMAP as *mut _),
+        ) == 0
+        {
+            release();
+            return None;
+        }
+        let (width, height) = (bitmap.bmWidth, bitmap.bmHeight);
+        let mut header = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -height, // top-down rows
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut pixels = vec![0u8; (width * height * 4).max(0) as usize];
+        let dc = CreateCompatibleDC(None);
+        let rows = GetDIBits(
+            dc,
+            color,
+            0,
+            height as u32,
+            Some(pixels.as_mut_ptr() as *mut _),
+            &mut header,
+            DIB_RGB_COLORS,
+        );
+        let _ = DeleteDC(dc);
+        release();
+        if rows == 0 {
+            return None;
+        }
+        // BGRA → RGBA. Old icons carry no alpha at all; treat them as opaque.
+        let has_alpha = pixels.chunks_exact(4).any(|px| px[3] != 0);
+        for px in pixels.chunks_exact_mut(4) {
+            px.swap(0, 2);
+            if !has_alpha {
+                px[3] = 255;
+            }
+        }
+        Some((width, height, pixels))
+    }
+}
