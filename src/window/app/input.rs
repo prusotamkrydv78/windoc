@@ -47,6 +47,10 @@ impl App {
         {
             if target == super::frame::CALL_MUTE_ACTION {
                 self.toggle_call_mute();
+            } else if target == super::frame::CALL_CAMERA_ACTION {
+                self.send_call_shortcut(false);
+            } else if target == super::frame::CALL_LEAVE_ACTION {
+                self.send_call_shortcut(true);
             } else {
                 let _ = crate::platform::shell().open_url(&target);
             }

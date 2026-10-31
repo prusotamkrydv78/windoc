@@ -68,7 +68,8 @@ impl App {
                         primary: winisland_core::i18n::tr("focus_notify_title"),
                         secondary: crate::ui::dashboard::phase_finished_message(event),
                         progress: None,
-                        action: None,
+                        actions: Vec::new(),
+                        tall: false,
                     });
             }
             window.request_redraw();
@@ -99,7 +100,8 @@ impl App {
                     primary: label,
                     secondary: format!("{}%", (level * 100.0).round()),
                     progress: Some(level),
-                    action: None,
+                    actions: Vec::new(),
+                    tall: false,
                 });
         }
         self.poll_battery_activity(now);
@@ -1393,7 +1395,8 @@ impl App {
                     primary: title,
                     secondary: when,
                     progress: None,
-                    action: None,
+                    actions: Vec::new(),
+                    tall: false,
                 });
         }
         crate::ui::dashboard::set_battery(crate::platform::battery());
@@ -1430,12 +1433,16 @@ impl App {
                 primary: format!("{level}%"),
                 secondary,
                 progress: Some(f32::from(level) / 100.0),
-                action: (!plugged && level <= LOW_BATTERY).then(|| {
-                    (
-                        tr("activity_settings"),
-                        "ms-settings:batterysaver".to_string(),
-                    )
-                }),
+                actions: (!plugged && level <= LOW_BATTERY)
+                    .then(|| {
+                        (
+                            tr("activity_settings"),
+                            "ms-settings:batterysaver".to_string(),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+                tall: false,
             });
         }
     }
@@ -1472,7 +1479,8 @@ impl App {
             primary: tr("activity_copied"),
             secondary: kind,
             progress: None,
-            action: None,
+            actions: Vec::new(),
+            tall: false,
         });
     }
 }
@@ -1499,7 +1507,8 @@ impl App {
             primary,
             secondary,
             progress: None,
-            action: None,
+            actions: Vec::new(),
+            tall: false,
         });
     }
 }
@@ -1537,7 +1546,8 @@ impl App {
             primary: tr(primary),
             secondary: tr(secondary),
             progress: None,
-            action: None,
+            actions: Vec::new(),
+            tall: false,
         });
     }
 }
@@ -1713,7 +1723,8 @@ impl App {
                             primary: format!("{name} call ended"),
                             secondary: format_call_time(now.duration_since(started)),
                             progress: None,
-                            action: None,
+                            actions: Vec::new(),
+                            tall: false,
                         });
                 }
             }
@@ -1739,10 +1750,8 @@ impl App {
             primary: name.clone(),
             secondary: format!("{} · {mic}", format_call_time(now.duration_since(*started))),
             progress: None,
-            action: Some((
-                if self.call_muted { "Unmute" } else { "Mute" }.to_string(),
-                CALL_MUTE_ACTION.to_string(),
-            )),
+            actions: call_actions(name, self.call_muted),
+            tall: false,
         };
         self.compact_overlay.push_activity(activity);
     }
@@ -1830,7 +1839,11 @@ impl App {
                 primary,
                 secondary,
                 progress: None,
-                action,
+                actions: action.into_iter().collect(),
+                tall: matches!(
+                    event,
+                    ShellEvent::Unlocked | ShellEvent::Resumed | ShellEvent::DriveAdded(_)
+                ),
             });
         }
     }
@@ -1859,3 +1872,65 @@ impl App {
 
 /// Activity action that toggles the call microphone instead of opening a URL.
 pub(super) const CALL_MUTE_ACTION: &str = "winisland:call-mute";
+
+/// Activity action that turns the call camera on or off via the calling app's shortcut.
+pub(super) const CALL_CAMERA_ACTION: &str = "winisland:call-camera";
+/// Activity action that leaves the call via the calling app's shortcut.
+pub(super) const CALL_LEAVE_ACTION: &str = "winisland:call-leave";
+
+/// Keyboard shortcuts for a calling app: `(camera, leave)` as virtual-key chords.
+pub(super) fn call_shortcuts(name: &str) -> Option<(&'static [u16], &'static [u16])> {
+    const CTRL: u16 = 0x11;
+    const SHIFT: u16 = 0x10;
+    const ALT: u16 = 0x12;
+    let name = name.to_ascii_lowercase();
+    if name.contains("teams") {
+        Some((&[CTRL, SHIFT, 0x4F], &[CTRL, SHIFT, 0x48])) // Ctrl+Shift+O, Ctrl+Shift+H
+    } else if name.contains("zoom") {
+        Some((&[ALT, 0x56], &[ALT, 0x51])) // Alt+V, Alt+Q
+    } else {
+        None
+    }
+}
+
+/// Mute for every call; Camera and Leave where the app has known shortcuts.
+fn call_actions(name: &str, muted: bool) -> Vec<(String, String)> {
+    let mut actions = Vec::new();
+    if call_shortcuts(name).is_some() {
+        actions.push(("Camera".to_string(), CALL_CAMERA_ACTION.to_string()));
+    }
+    actions.push((
+        if muted { "Unmute" } else { "Mute" }.to_string(),
+        CALL_MUTE_ACTION.to_string(),
+    ));
+    if call_shortcuts(name).is_some() {
+        actions.push(("Leave".to_string(), CALL_LEAVE_ACTION.to_string()));
+    }
+    actions
+}
+
+impl App {
+    /// Sends a camera or leave shortcut to the calling app's window.
+    pub(super) fn send_call_shortcut(&mut self, leave: bool) {
+        use winisland_platform_windows::shell_bar;
+        let Some((_, name)) = &self.call else {
+            return;
+        };
+        let Some((camera, leave_keys)) = call_shortcuts(name) else {
+            return;
+        };
+        let lower = name.to_ascii_lowercase();
+        if let Some(window) = shell_bar::app_windows()
+            .into_iter()
+            .find(|window| window.executable.to_ascii_lowercase().contains(&lower))
+        {
+            shell_bar::activate_window(window.handle);
+        }
+        let keys = if leave { leave_keys } else { camera };
+        std::thread::spawn(move || {
+            // Give the call window a moment to take focus before the shortcut.
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            shell_bar::press_shortcut(keys);
+        });
+    }
+}

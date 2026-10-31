@@ -51,7 +51,7 @@ thread_local! {
 
 const WIDTH: f32 = 320.0;
 const PAD: f32 = 12.0;
-const GLASS: Rgba = Rgba::from_argb(246, 28, 28, 30);
+const GLASS: Rgba = Rgba::from_argb(244, 30, 30, 34);
 const TILE: Rgba = Rgba::from_argb(255, 44, 44, 46);
 const BLUE: Rgba = Rgba::from_rgb(10, 132, 255);
 const MUTED: Rgba = Rgba::from_argb(160, 245, 245, 247);
@@ -157,7 +157,7 @@ pub fn draw(painter: Painter<'_>, top: f32, width: f32, scale: f32) {
         } * s;
         let left = (anchor - w).clamp(8.0 * s, width - w - 8.0 * s);
         let panel = Rect::from_xywh(left, top + 6.0 * s, w, height);
-        painter.fill_round_rect(panel, Radius::uniform(16.0 * s), GLASS);
+        draw_glass(painter, panel, s);
         painter.stroke_round_rect(
             panel,
             Radius::uniform(16.0 * s),
@@ -535,4 +535,51 @@ fn draw_notifications(
         Rgba::WHITE,
     );
     targets.push((button, PopHit::WindowsNotifications));
+}
+
+/// A frosted-glass look without a live backdrop blur: a soft shadow, a dark translucent body
+/// with a lighter top, and a fine highlight along the upper edge.
+fn draw_glass(painter: Painter<'_>, panel: Rect, s: f32) {
+    use winisland_render::{BlurSpec, GradientStop, Path, TileMode};
+    let radius = Radius::uniform(16.0 * s);
+    painter.fill_path_blurred(
+        &Path::continuous_rounded_rect(
+            panel.offset(winisland_render::Vec2::new(0.0, 10.0 * s)),
+            16.0 * s,
+        ),
+        Rgba::from_argb(110, 0, 0, 0),
+        BlurSpec {
+            sigma: (18.0 * s, 18.0 * s),
+            tile: None,
+        },
+    );
+    painter.fill_round_rect(panel, radius, GLASS);
+    painter.fill_round_rect_with_gradient(
+        panel,
+        radius,
+        Point::new(panel.left, panel.top),
+        Point::new(panel.left, panel.top + 120.0 * s),
+        &[
+            GradientStop {
+                offset: 0.0,
+                color: Rgba::from_argb(26, 255, 255, 255),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Rgba::from_argb(0, 255, 255, 255),
+            },
+        ],
+        TileMode::Clamp,
+    );
+    // Fine top highlight that catches the light like a glass edge.
+    painter.fill_round_rect(
+        Rect::from_xywh(
+            panel.left + 16.0 * s,
+            panel.top + 0.5,
+            panel.width() - 32.0 * s,
+            1.0,
+        ),
+        Radius::uniform(0.5),
+        Rgba::WHITE.with_alpha(46),
+    );
 }
