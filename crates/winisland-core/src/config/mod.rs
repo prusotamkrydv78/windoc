@@ -250,6 +250,7 @@ pub struct AppConfig {
     #[serde(deserialize_with = "widgets::deserialize_widget_sizes")]
     pub widget_sizes: Vec<WidgetSize>,
     pub plugin_widget_layout: Vec<PluginWidgetSlot>,
+    #[educe(Default(expression = default_compact_widget_layout()))]
     pub compact_widget_layout: Vec<CompactWidgetSlot>,
     #[educe(Default(expression = default_resource_metrics()))]
     pub resource_metrics: Vec<ResourceMetricConfig>,

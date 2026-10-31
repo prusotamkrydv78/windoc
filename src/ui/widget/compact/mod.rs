@@ -1,4 +1,5 @@
 mod focus;
+mod mascot;
 pub(crate) mod message;
 mod resource_usage;
 mod time;
@@ -25,6 +26,7 @@ pub(crate) fn widget_width(widget: CompactWidgetKind) -> f32 {
         CompactWidgetKind::ResourceUsage => crate::ui::widget::resource_usage::compact_width(),
         CompactWidgetKind::Focus => 48.0,
         CompactWidgetKind::Message => message::width(),
+        CompactWidgetKind::Mascot => mascot::WIDTH,
     }
 }
 
@@ -306,6 +308,7 @@ pub(crate) fn draw_widget(
         CompactWidgetKind::ResourceUsage => resource_usage::draw(painter, rect, scale, alpha),
         CompactWidgetKind::Focus => focus::draw(painter, rect, scale, alpha),
         CompactWidgetKind::Message => message::draw(painter, rect, scale, alpha),
+        CompactWidgetKind::Mascot => mascot::draw(painter, rect, scale, alpha),
     }
 }
 
@@ -323,5 +326,9 @@ pub(crate) fn next_refresh_delay(layout: &[CompactWidgetSlot]) -> Option<std::ti
         .any(|entry| entry.widget == Some(CompactWidgetKind::Focus))
         .then(crate::ui::dashboard::focus_refresh_delay)
         .flatten();
-    [time, resource, focus].into_iter().flatten().min()
+    let mascot = layout
+        .iter()
+        .any(|entry| entry.widget == Some(CompactWidgetKind::Mascot))
+        .then_some(mascot::FRAME);
+    [time, resource, focus, mascot].into_iter().flatten().min()
 }

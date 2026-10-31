@@ -97,6 +97,8 @@ pub enum CompactWidgetKind {
     Focus,
     /// A custom status message, for example while screen sharing.
     Message,
+    /// A sleeping robot for the idle island; the default.
+    Mascot,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -342,6 +344,7 @@ where
         "resource_usage" => Some(CompactWidgetKind::ResourceUsage),
         "focus" => Some(CompactWidgetKind::Focus),
         "message" => Some(CompactWidgetKind::Message),
+        "mascot" => Some(CompactWidgetKind::Mascot),
         _ => None,
     }))
 }
@@ -356,9 +359,19 @@ pub const AVAILABLE_WIDGETS: [WidgetKind; 5] = [
     WidgetKind::Network,
     WidgetKind::Storage,
 ];
-pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 4] = [
+pub const AVAILABLE_COMPACT_WIDGETS: [CompactWidgetKind; 5] = [
+    CompactWidgetKind::Mascot,
     CompactWidgetKind::Time,
     CompactWidgetKind::ResourceUsage,
     CompactWidgetKind::Focus,
     CompactWidgetKind::Message,
 ];
+
+/// The idle island shows the mascot until the user arranges their own widgets.
+pub fn default_compact_widget_layout() -> Vec<CompactWidgetSlot> {
+    vec![CompactWidgetSlot {
+        slot: 0,
+        widget: Some(CompactWidgetKind::Mascot),
+        alignment: CompactWidgetAlignment::Center,
+    }]
+}
