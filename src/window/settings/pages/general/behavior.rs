@@ -16,6 +16,8 @@ pub(super) enum BehaviorAction {
     ResetDefaults,
     WeatherLocation,
     ClearData(crate::core::data_inventory::DataKind),
+    AddWorldClock,
+    RemoveWorldClock(usize),
     HideIsland,
     Exit,
 }
@@ -132,6 +134,24 @@ impl SettingsApp {
         }
         page.row_label(tr("weather_hint"));
         page.group_end();
+        page.section(tr("section_world_clocks"));
+        page.group_start();
+        for (index, key) in self.config.world_clocks.iter().enumerate() {
+            page.row_button(
+                key.clone(),
+                tr("world_clock_remove"),
+                true,
+                BehaviorAction::RemoveWorldClock(index),
+            );
+        }
+        page.row_text_field(
+            tr("world_clock_add"),
+            String::new(),
+            tr("world_clock_placeholder"),
+            self.config.world_clocks.len() < MAX_WORLD_CLOCKS,
+            BehaviorAction::AddWorldClock,
+        );
+        page.group_end();
         page.section(tr("section_local_data"));
         page.group_start();
         for kind in crate::core::data_inventory::DataKind::ALL {
@@ -232,6 +252,18 @@ impl SettingsApp {
                     WEATHER_QUERY_MAX_CHARS,
                     commit_weather_search,
                 );
+                false
+            }
+            (BehaviorAction::RemoveWorldClock(index), ClickResult::RowButton(_)) => {
+                if index < self.config.world_clocks.len() {
+                    self.config.world_clocks.remove(index);
+                }
+                true
+            }
+            (BehaviorAction::AddWorldClock, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.weather_search_rect = rect;
+                self.begin_text_input(rect, "", 60, commit_world_clock_search);
                 false
             }
             (BehaviorAction::ClearData(kind), ClickResult::RowButton(_)) => {
@@ -375,4 +407,49 @@ impl SettingsApp {
         self.mark_items_dirty();
         self.request_redraw();
     }
+}
+
+const MAX_WORLD_CLOCKS: usize = 8;
+
+/// Offers time zones whose name contains the typed text.
+fn commit_world_clock_search(app: &mut SettingsApp, query: &str) {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return;
+    }
+    let matches: Vec<_> = winisland_platform_windows::time_zones()
+        .into_iter()
+        .filter(|zone| {
+            zone.key.to_lowercase().contains(&query) || zone.display.to_lowercase().contains(&query)
+        })
+        .take(20)
+        .collect();
+    if matches.is_empty() {
+        return;
+    }
+    let (win_w, win_h) = app.logical_window_size();
+    let labels = matches.iter().map(|zone| zone.display.clone()).collect();
+    let values = matches.into_iter().map(|zone| zone.key).collect();
+    app.show_popup(PopupState::new(
+        select_world_clock,
+        app.weather_search_rect,
+        labels,
+        values,
+        0,
+        win_w,
+        win_h,
+    ));
+}
+
+fn select_world_clock(app: &mut SettingsApp, key: &str) {
+    if !app
+        .config
+        .world_clocks
+        .iter()
+        .any(|existing| existing == key)
+        && app.config.world_clocks.len() < MAX_WORLD_CLOCKS
+    {
+        app.config.world_clocks.push(key.to_string());
+    }
+    app.mark_items_dirty();
 }

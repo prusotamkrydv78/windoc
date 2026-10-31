@@ -85,6 +85,8 @@ pub struct AppConfig {
     pub weather_imperial: bool,
     /// Chosen by searching a city name; coordinates are rounded to about 1 km.
     pub weather_place: Option<crate::weather::Place>,
+    /// Windows time zone keys shown as world clocks.
+    pub world_clocks: Vec<String>,
     #[educe(Default = true)]
     #[setting(toggle)]
     pub show_lyrics: bool,

@@ -638,6 +638,8 @@ pub enum Destination {
     More,
     /// Reached from More; not a dock destination.
     Notes,
+    /// World clocks; reached from More.
+    Clock,
 }
 
 impl Destination {
@@ -652,12 +654,13 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 5] = [
+    pub const MORE_ITEMS: [Self; 6] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
         Self::Focus,
         Self::Notes,
+        Self::Clock,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -669,6 +672,7 @@ impl Destination {
             Self::Focus => "dashboard_focus",
             Self::More => "dashboard_more",
             Self::Notes => "dashboard_notes",
+            Self::Clock => "dashboard_clock",
         }
     }
 }
@@ -731,6 +735,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_more_page(painter, layout, interaction.hovered_row, colors);
     } else if active == Destination::Notes {
         draw_notes_page(painter, layout.grid, colors);
+    } else if active == Destination::Clock {
+        draw_clock_page(painter, layout.grid, colors);
     } else if cards.is_empty() {
         draw_text(
             painter,
@@ -890,4 +896,53 @@ pub fn semantics(
             .with_children(card_nodes),
         dock,
     ])
+}
+
+thread_local! {
+    static WORLD_CLOCKS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the configured world clock zone keys.
+pub fn set_world_clocks(keys: &[String]) {
+    WORLD_CLOCKS.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if current.as_slice() != keys {
+            *current = keys.to_vec();
+        }
+    });
+}
+
+fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    use crate::ui::components::list_row::draw_list_row;
+    WORLD_CLOCKS.with(|cell| {
+        let keys = cell.borrow();
+        if keys.is_empty() {
+            draw_text(
+                painter,
+                &tr("world_clock_empty"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, key) in keys.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            let time = winisland_platform_windows::now_in_zone(key)
+                .map(|now| format!("{:02}:{:02}", now.hour, now.minute))
+                .unwrap_or_else(|| "—".to_string());
+            draw_list_row(
+                painter,
+                &row,
+                &time,
+                Some(key.as_str()),
+                colors,
+                InteractionState::default(),
+            );
+        }
+    });
 }

@@ -16,6 +16,7 @@ mod metrics;
 mod notify;
 mod process;
 mod shell;
+mod timezone;
 pub mod window;
 
 pub use audio::WindowsAudio;
@@ -28,6 +29,7 @@ pub use media::WindowsMedia;
 pub use metrics::WindowsMetrics;
 pub use notify::WindowsNotifications;
 pub use shell::WindowsShell;
+pub use timezone::{TimeZoneEntry, now_in_zone, time_zones};
 
 use winisland_platform::{AudioProvider, Capabilities, MediaProvider, Platform, ShellIntegration};
 
