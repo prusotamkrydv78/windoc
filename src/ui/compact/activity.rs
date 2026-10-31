@@ -275,13 +275,13 @@ impl ActivityIndicator {
             ICON_SIZE
         } * scale;
         let icon_rect = Rect::from_xywh(left, center_y - icon_size / 2.0, icon_size, icon_size);
-        if matches!(activity.icon, Icon::Pet | Icon::PetPhoto) {
+        if matches!(activity.icon, Icon::Pet | Icon::PetPhoto | Icon::PetTired) {
             // The robot stands at full height, without a tile.
             use crate::ui::widget::compact::mascot::{Gesture, draw_gesture};
-            let gesture = if activity.icon == Icon::PetPhoto {
-                Gesture::Present
-            } else {
-                Gesture::Wave
+            let gesture = match activity.icon {
+                Icon::PetPhoto => Gesture::Present,
+                Icon::PetTired => Gesture::Tired,
+                _ => Gesture::Wave,
             };
             draw_gesture(painter, icon_rect, to_alpha(1.0), gesture);
         } else if activity.tall {

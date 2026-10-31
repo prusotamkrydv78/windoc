@@ -1410,8 +1410,9 @@ impl App {
             && !self.expanded
             && !self.is_hidden()
         {
+            let low = !plugged && level <= LOW_BATTERY;
             self.compact_overlay.push_activity(Activity {
-                icon,
+                icon: if low { Icon::PetTired } else { icon },
                 accent,
                 primary: format!("{level}%"),
                 secondary,
@@ -1425,7 +1426,7 @@ impl App {
                     })
                     .into_iter()
                     .collect(),
-                tall: false,
+                tall: low,
                 priority: if !plugged && level <= LOW_BATTERY {
                     crate::ui::compact::Priority::High
                 } else {
@@ -1463,7 +1464,7 @@ impl App {
         };
         self.compact_overlay.push_activity(Activity {
             icon: Icon::Clipboard,
-            accent: Rgba::WHITE,
+            accent: Rgba::from_rgb(255, 159, 10),
             primary: tr("activity_copied"),
             secondary: kind,
             progress: None,

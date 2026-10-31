@@ -282,6 +282,8 @@ pub(crate) enum Gesture {
     Wave,
     /// Holds up a fresh picture, for a saved screenshot.
     Present,
+    /// Slumped and sleepy, holding a nearly empty battery.
+    Tired,
 }
 
 /// The robot awake in `gesture`, fitted to `rect`, for activity cards.
@@ -306,6 +308,7 @@ pub(crate) fn draw_gesture(painter: Painter<'_>, rect: Rect, alpha: u8, gesture:
             stage.robot(pose);
         }
         Gesture::Present => stage.present(),
+        Gesture::Tired => stage.tired(),
     }
 }
 
@@ -961,6 +964,46 @@ impl Stage<'_> {
                 self.prop((phase * PI).sin(), colors[index]),
             );
         }
+    }
+
+    fn tired(&self) {
+        let mut pose = Pose::new(Eyes::Closed);
+        pose.right_arm = 0.2;
+        pose.lean = 6.0 + (self.time * 0.8).sin() * 1.5;
+        pose.rise = -0.6;
+        let hands = self.robot(pose);
+        // A battery with one red bar left, held out.
+        let body = Rect::from_xywh(
+            hands.right.x,
+            hands.right.y - 2.0 * self.unit,
+            6.0 * self.unit,
+            3.4 * self.unit,
+        );
+        self.painter.stroke_round_rect(
+            body,
+            Radius::uniform(0.8 * self.unit),
+            0.6 * self.unit,
+            self.color(1.0, WHITE),
+        );
+        self.painter.fill_rect(
+            Rect::from_xywh(
+                body.right,
+                body.center_y() - 0.7 * self.unit,
+                0.7 * self.unit,
+                1.4 * self.unit,
+            ),
+            self.color(1.0, WHITE),
+        );
+        let blink = 0.5 + 0.5 * (self.time * 4.0).sin();
+        self.painter.fill_rect(
+            Rect::from_xywh(
+                body.left + 0.7 * self.unit,
+                body.top + 0.7 * self.unit,
+                1.3 * self.unit,
+                body.height() - 1.4 * self.unit,
+            ),
+            self.color(blink, RED),
+        );
     }
 
     /// Holds up a small framed picture, proud of it.

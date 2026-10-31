@@ -6,7 +6,9 @@ use winisland_core::config::LyricTransitionAnimation;
 use winisland_core::context::MiniContent;
 use winisland_core::lyrics::LyricHighlight;
 use winisland_render::text::{DrawTextCachedParams, FontManager};
-use winisland_render::{BlurSpec, Image, ImageOptions, Painter, Radius, Rect, Rgba, Sampling};
+use winisland_render::{
+    BlurSpec, Image, ImageOptions, Painter, Point, Radius, Rect, Rgba, Sampling,
+};
 
 const PENDING_LYRIC_CHANNEL: u8 = 190;
 const SECONDARY_LYRIC_SCALE: f32 = 0.85;
@@ -99,6 +101,7 @@ pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
 
 fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
     draw_mini_cover(params, alpha);
+    draw_dot_row(params, alpha);
     let no_lyrics = params.current_lyric.is_empty() && params.old_lyric.is_empty();
     let show_text = !params.robot_beside;
     if no_lyrics && show_text {
@@ -621,6 +624,48 @@ fn draw_playing_indicator(params: &MiniContentParams<'_>, alpha: u8) {
             Rect::from_xywh(x, center_y - height / 2.0, bar_w, height),
             Radius::uniform(bar_w / 2.0),
             color,
+        );
+    }
+}
+
+/// A row of small dots along the bottom of the notch in the album colour, brightening with
+/// the music like a gentle level meter (a travelling shimmer when the spectrum is silent).
+fn draw_dot_row(params: &MiniContentParams<'_>, alpha: u8) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    if !params.media.is_playing {
+        return;
+    }
+    let scale = params.global_scale;
+    let spacing = 5.0 * scale;
+    let left = params.offset_x + 14.0 * scale;
+    let right = params.offset_x + params.current_w - 14.0 * scale;
+    let count = ((right - left) / spacing).floor().max(0.0) as usize;
+    if count < 4 {
+        return;
+    }
+    let y = params.stable_offset_y + params.base_h - 3.2 * scale;
+    let color = params.palette.first().copied().unwrap_or(Rgba::WHITE);
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|time| (time.as_millis() % 100_000) as f32 / 1000.0)
+        .unwrap_or_default();
+    let spectrum = &params.media.spectrum;
+    let silent = spectrum.iter().all(|level| *level <= 0.0);
+    for index in 0..=count {
+        let position = index as f32 / count as f32;
+        let level = if silent {
+            0.5 + 0.5 * (position * 9.0 - seconds * 3.0).sin()
+        } else {
+            let sample = (position * (spectrum.len().saturating_sub(1)) as f32) as usize;
+            spectrum.get(sample).copied().unwrap_or(0.0).clamp(0.0, 1.0)
+        };
+        // Dots fade toward both ends, like Vayli's.
+        let edge = (position * std::f32::consts::PI).sin().powf(0.6);
+        let opacity = (0.25 + 0.75 * level) * edge;
+        params.painter.fill_circle(
+            Point::new(left + index as f32 * spacing, y),
+            1.0 * scale,
+            color.with_alpha((f32::from(alpha) * opacity) as u8),
         );
     }
 }
