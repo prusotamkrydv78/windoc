@@ -89,6 +89,7 @@ impl App {
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         self.wellness.poll(&self.config, now);
+        self.poll_image_job();
         if let Some(rates) = self
             .currency
             .poll(crate::ui::dashboard::palette::take_rates_request(), now)

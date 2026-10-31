@@ -93,6 +93,13 @@ fn preview(query: &str) -> Option<String> {
         Command::QuickNote(_) => Some(tr("palette_note")),
         Command::OpenFolder(_) | Command::OpenModule(_) => Some(tr("palette_open")),
         Command::SearchClipboard(_) => Some(tr("palette_clipboard")),
+        Command::ConvertImages(format) => {
+            Some(winisland_core::i18n::tr_args("palette_convert", &[format]))
+        }
+        Command::CompressImages(bytes) => Some(winisland_core::i18n::tr_args(
+            "palette_compress",
+            &[&format!("{} KB", bytes / 1024)],
+        )),
         Command::WebSearch { provider, .. } => {
             Some(winisland_core::i18n::tr_args("palette_search", &[provider]))
         }

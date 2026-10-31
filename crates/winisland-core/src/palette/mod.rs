@@ -53,6 +53,10 @@ pub enum Command {
         from: String,
         to: String,
     },
+    /// `convert png`: convert images on the active shelf.
+    ConvertImages(&'static str),
+    /// `compress 200kb`: re-encode images on the active shelf as JPEG within a size.
+    CompressImages(u64),
     /// `note buy milk`
     QuickNote(String),
     /// `open downloads`
@@ -143,6 +147,19 @@ pub fn parse(query: &str) -> Option<Command> {
                 return Some(Command::OpenFolder(folder));
             }
         }
+        "convert" => {
+            if let Some(format) = ["png", "jpg", "ico", "bmp"]
+                .into_iter()
+                .find(|format| *format == rest || (rest == "jpeg" && *format == "jpg"))
+            {
+                return Some(Command::ConvertImages(format));
+            }
+        }
+        "compress" => {
+            if let Some(bytes) = parse_size(rest) {
+                return Some(Command::CompressImages(bytes));
+            }
+        }
         "g" | "yt" | "gh" | "so" if !original_rest.is_empty() => {
             return search_url(word, original_rest);
         }
@@ -218,4 +235,21 @@ fn search_url(prefix: &str, query: &str) -> Option<Command> {
         provider: name,
         url: template.replace("{}", &encoded),
     })
+}
+
+/// Parses `200kb`, `1.5 mb` or `500k` into bytes.
+fn parse_size(text: &str) -> Option<u64> {
+    let text = text.replace(' ', "");
+    let split = text
+        .find(|character: char| character.is_ascii_alphabetic())
+        .unwrap_or(text.len());
+    let value: f64 = text[..split].parse().ok()?;
+    let factor = match &text[split..] {
+        "b" => 1.0,
+        "k" | "kb" => 1024.0,
+        "m" | "mb" => 1024.0 * 1024.0,
+        _ => return None,
+    };
+    let bytes = value * factor;
+    (bytes >= 1024.0).then_some(bytes as u64)
 }

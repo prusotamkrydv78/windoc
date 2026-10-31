@@ -149,3 +149,14 @@ pub fn saved_shelves() -> Vec<(u64, String)> {
         _ => Vec::new(),
     }
 }
+
+impl ShelfService {
+    /// Paths of files on the active shelf that still exist.
+    pub fn existing_paths(&self) -> Vec<PathBuf> {
+        self.entries()
+            .into_iter()
+            .filter(|row| row.3)
+            .map(|row| row.2)
+            .collect()
+    }
+}

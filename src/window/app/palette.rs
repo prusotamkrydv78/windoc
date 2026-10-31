@@ -60,10 +60,72 @@ impl App {
                 "clock" => dashboard::show(Destination::Clock),
                 _ => dashboard::show(Destination::Home),
             },
+            Command::ConvertImages(format) => {
+                self.run_image_job(move |path| crate::core::converter::convert(path, format))
+            }
+            Command::CompressImages(max_bytes) => {
+                self.run_image_job(move |path| crate::core::converter::compress(path, max_bytes))
+            }
             Command::Convert { .. } | Command::ConvertCurrency { .. } => {}
         }
         if let Some(window_ref) = &self.window {
             window_ref.request_redraw();
         }
+    }
+}
+
+impl App {
+    /// Runs `job` on each file of the active shelf on a background thread, then adds the
+    /// outputs to the shelf and reports the result in a notification.
+    fn run_image_job(
+        &mut self,
+        job: impl Fn(&std::path::Path) -> Result<std::path::PathBuf, String> + Send + 'static,
+    ) {
+        let paths = self.shelf.existing_paths();
+        if paths.is_empty() {
+            crate::platform::notify().show_toast(
+                &winisland_core::i18n::tr("converter_title"),
+                &winisland_core::i18n::tr("converter_empty"),
+            );
+            return;
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let results: Vec<_> = paths.iter().map(|path| job(path)).collect();
+            let _ = sender.send(results);
+        });
+        self.image_job = Some(receiver);
+    }
+
+    /// Collects finished conversions. Called from the frame loop.
+    pub(super) fn poll_image_job(&mut self) {
+        let Some(receiver) = &self.image_job else {
+            return;
+        };
+        let Ok(results) = receiver.try_recv() else {
+            return;
+        };
+        self.image_job = None;
+        let mut done = 0;
+        let mut failed = 0;
+        for result in results {
+            match result {
+                Ok(path) => {
+                    self.shelf.add(path);
+                    done += 1;
+                }
+                Err(error) => {
+                    log::warn!("Image conversion failed: {error}");
+                    failed += 1;
+                }
+            }
+        }
+        crate::platform::notify().show_toast(
+            &winisland_core::i18n::tr("converter_title"),
+            &winisland_core::i18n::tr_args(
+                "converter_result",
+                &[&done.to_string(), &failed.to_string()],
+            ),
+        );
     }
 }
