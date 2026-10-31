@@ -138,6 +138,8 @@ pub struct App {
     battery_checked_at: Option<Instant>,
     file_drag_hover: bool,
     top_bar: Option<crate::core::top_bar::TopBarSession>,
+    /// Hidden window receiving system broadcasts for the whole session.
+    shell_listener: Option<winisland_platform_windows::shell_bar::ShellEventListener>,
     /// Active call: when it started and the calling app's name.
     call: Option<(Instant, String)>,
     /// Microphone mute as last set from the notch.
@@ -305,6 +307,7 @@ impl Default for App {
             battery_checked_at: None,
             file_drag_hover: false,
             top_bar: None,
+            shell_listener: None,
             call: None,
             call_muted: false,
             bar_preview: None,

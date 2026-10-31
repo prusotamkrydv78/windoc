@@ -180,7 +180,12 @@ static SHELL_EVENTS: std::sync::Mutex<Vec<ShellEvent>> = std::sync::Mutex::new(V
 pub fn take_shell_events() -> Vec<ShellEvent> {
     SHELL_EVENTS
         .lock()
-        .map(|mut events| std::mem::take(&mut *events))
+        .map(|mut events| {
+            let mut taken = std::mem::take(&mut *events);
+            // The AppBar host and the listener both receive broadcasts; report each once.
+            taken.dedup();
+            taken
+        })
         .unwrap_or_default()
 }
 
@@ -256,9 +261,10 @@ fn taskbar_windows() -> Vec<HWND> {
 /// The taskbar's AppBar state before we changed it, so restore can put it back exactly.
 static PREVIOUS_STATE: AtomicIsize = AtomicIsize::new(-1);
 
-/// Hides the classic taskbar on every monitor and switches it to auto-hide so Windows releases
-/// its reserved space. Returns the previous AppBar state, for the caller's crash marker.
-pub fn hide_taskbar() -> isize {
+/// Hides the classic taskbar on `monitor` (the one the top bar replaces) and switches the
+/// taskbar to auto-hide so Windows releases its reserved space; taskbars on other monitors stay
+/// and simply auto-hide. Returns the previous AppBar state, for the caller's crash marker.
+pub fn hide_taskbar(monitor: ScreenRect) -> isize {
     let Some(&primary) = taskbar_windows().first() else {
         return -1;
     };
@@ -275,7 +281,7 @@ pub fn hide_taskbar() -> isize {
             SHAppBarMessage(ABM_SETSTATE, &mut data);
         }
     }
-    for hwnd in taskbar_windows() {
+    for hwnd in taskbar_windows_on(monitor) {
         // SAFETY: hiding windows owned by Explorer; restore_taskbar shows them again.
         unsafe {
             let _ = ShowWindow(hwnd, SW_HIDE);
@@ -286,8 +292,8 @@ pub fn hide_taskbar() -> isize {
 
 /// Hides any taskbar window that came back, for example after Explorer restarted. Cheap
 /// enough to call every couple of seconds while the top bar is active.
-pub fn keep_taskbar_hidden() {
-    for hwnd in taskbar_windows() {
+pub fn keep_taskbar_hidden(monitor: ScreenRect) {
+    for hwnd in taskbar_windows_on(monitor) {
         // SAFETY: visibility query and hide on Explorer's taskbar windows.
         unsafe {
             if IsWindowVisible(hwnd).as_bool() {
@@ -769,6 +775,45 @@ pub fn show_taskbar_windows() {
         // SAFETY: showing Explorer's taskbar windows without activating them.
         unsafe {
             let _ = ShowWindow(hwnd, SW_SHOWNA);
+        }
+    }
+}
+
+/// Taskbar windows whose centre lies on `monitor`.
+fn taskbar_windows_on(monitor: ScreenRect) -> Vec<HWND> {
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    taskbar_windows()
+        .into_iter()
+        .filter(|hwnd| {
+            let mut rect = RECT::default();
+            // SAFETY: reading the bounds of an Explorer taskbar window.
+            if unsafe { GetWindowRect(*hwnd, &mut rect) }.is_err() {
+                return true;
+            }
+            let (x, y) = ((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+            x >= monitor.left && x < monitor.right && y >= monitor.top && y < monitor.bottom
+        })
+        .collect()
+}
+
+/// A hidden window that listens for system broadcasts (unlock, resume, display and USB
+/// changes) for the app's whole lifetime, independent of the top bar. See
+/// [`take_shell_events`].
+pub struct ShellEventListener {
+    hwnd: HWND,
+}
+
+impl ShellEventListener {
+    pub fn new() -> Option<Self> {
+        create_host_window().map(|hwnd| Self { hwnd })
+    }
+}
+
+impl Drop for ShellEventListener {
+    fn drop(&mut self) {
+        // SAFETY: destroys the window created in `new`.
+        unsafe {
+            let _ = DestroyWindow(self.hwnd);
         }
     }
 }

@@ -49,7 +49,7 @@ impl TopBarSession {
     pub fn start(monitor: ScreenRect, scale: f32) -> Option<Self> {
         let height = (BAR_HEIGHT * scale).round() as i32;
         let reservation = AppBarReservation::new(monitor, height)?;
-        let previous = shell_bar::hide_taskbar();
+        let previous = shell_bar::hide_taskbar(monitor);
         if let Err(error) = std::fs::write(marker_path(), previous.to_string()) {
             log::warn!("Could not write the taskbar marker: {error}");
         }
@@ -67,7 +67,7 @@ impl TopBarSession {
             return;
         }
         self.last_watchdog = now;
-        shell_bar::keep_taskbar_hidden();
+        shell_bar::keep_taskbar_hidden(monitor);
         let height = (BAR_HEIGHT * scale).round() as i32;
         let wanted = ScreenRect {
             bottom: monitor.top + height,

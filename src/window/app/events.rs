@@ -642,6 +642,7 @@ impl AppHandler for App {
     fn on_exit(&mut self) {
         // Dropping the session restores the Windows taskbar.
         self.top_bar = None;
+        self.shell_listener = None;
         self.screen_time.shutdown(Instant::now());
         self.clipboard.shutdown();
         self.close_settings();

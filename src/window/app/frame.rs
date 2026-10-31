@@ -1743,6 +1743,9 @@ fn format_call_time(elapsed: Duration) -> String {
 impl App {
     /// Turns system events from the top bar's host window into notch activities.
     fn show_shell_events(&mut self) {
+        if self.shell_listener.is_none() && !crate::core::safe_mode::active() {
+            self.shell_listener = winisland_platform_windows::shell_bar::ShellEventListener::new();
+        }
         use crate::ui::compact::Activity;
         use crate::ui::components::icon::Icon;
         use winisland_core::i18n::tr;
