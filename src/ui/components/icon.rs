@@ -31,11 +31,14 @@ pub enum Icon {
     Plus,
     Battery,
     Bolt,
+    /// The island's robot, drawn by the mascot widget rather than from a path.
+    Pet,
 }
 
 impl Icon {
     const fn path(self) -> &'static str {
         match self {
+            Self::Pet => "",
             Self::Home => "M4 11 L12 4 L20 11 M6 9.5 V20 H18 V9.5 M10 20 V14 H14 V20",
             Self::Music => {
                 "M9 17 V6 L19 4 V15 M9 17 A2.5 2.5 0 1 1 4 17 A2.5 2.5 0 1 1 9 17 \

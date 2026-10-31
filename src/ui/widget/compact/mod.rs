@@ -1,5 +1,5 @@
 mod focus;
-mod mascot;
+pub(crate) mod mascot;
 pub(crate) mod message;
 mod resource_usage;
 mod time;

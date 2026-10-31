@@ -196,6 +196,9 @@ pub fn draw_island(
         );
     }
     draw_background_layer(painter, drawing_context, &params, rect, &island_path);
+    if let Some(color) = edge_color {
+        draw_edge_line(painter, &params, rect, &island_path, color);
+    }
     painter.save();
     painter.clip_path(&island_path);
 
@@ -513,6 +516,38 @@ fn draw_pager(
         host_blur: params.style.host_backdrop,
         backdrop: backdrop.as_ref(),
     });
+}
+
+/// A thin line in the edge-light colour around the collapsed notch, over the glow. The top
+/// edge, where the notch meets the screen, stays unlit.
+fn draw_edge_line(
+    painter: Painter<'_>,
+    params: &DrawIslandParams<'_>,
+    rect: Rect,
+    island_path: &Path,
+    color: Rgba,
+) {
+    let opacity = 1.0 - params.layout.expansion_progress.clamp(0.0, 1.0);
+    if opacity <= 0.01 {
+        return;
+    }
+    let scale = params.layout.compact_scale.max(0.5);
+    let unlit_top = rect.top.max(0.0) + params.style.bar_height + 2.0 * scale;
+    painter.save();
+    painter.clip_rect(Rect::from_ltrb(
+        rect.left - 20.0 * scale,
+        unlit_top,
+        rect.right + 20.0 * scale,
+        rect.bottom + 20.0 * scale,
+    ));
+    painter.stroke_path(
+        island_path,
+        1.4 * scale,
+        color.with_alpha((220.0 * opacity) as u8),
+        winisland_render::StrokeCap::Round,
+        winisland_render::StrokeJoin::Round,
+    );
+    painter.restore();
 }
 
 fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {

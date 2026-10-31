@@ -275,7 +275,10 @@ impl ActivityIndicator {
             ICON_SIZE
         } * scale;
         let icon_rect = Rect::from_xywh(left, center_y - icon_size / 2.0, icon_size, icon_size);
-        if activity.tall {
+        if activity.icon == Icon::Pet {
+            // The robot stands at full height, without a tile.
+            crate::ui::widget::compact::mascot::draw_waving(painter, icon_rect, to_alpha(1.0));
+        } else if activity.tall {
             painter.fill_round_rect(
                 icon_rect,
                 Radius::uniform(10.0 * scale),

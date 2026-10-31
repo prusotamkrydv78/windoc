@@ -1784,6 +1784,46 @@ fn format_call_time(elapsed: Duration) -> String {
 
 impl App {
     /// Turns system events from the top bar's host window into notch activities.
+    /// The robot waves with "Good morning, Name" (or afternoon or evening) and the battery.
+    fn push_greeting(&mut self, priority: crate::ui::compact::Priority) {
+        use winisland_core::i18n::tr;
+        let now = crate::platform::shell().local_datetime();
+        let key = match now.hour {
+            5..=11 => "greeting_morning",
+            12..=16 => "greeting_afternoon",
+            _ => "greeting_evening",
+        };
+        let name = std::env::var("USERNAME")
+            .ok()
+            .and_then(|name| {
+                let mut chars = name.chars();
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+            })
+            .unwrap_or_default();
+        let primary = if name.is_empty() {
+            tr(key)
+        } else {
+            format!("{}, {name}", tr(key))
+        };
+        let secondary = crate::core::system_watch::snapshot()
+            .battery
+            .map(|(level, _)| format!("{level}%"))
+            .unwrap_or_default();
+        self.compact_overlay
+            .push_activity(crate::ui::compact::Activity {
+                icon: crate::ui::components::icon::Icon::Pet,
+                accent: winisland_render::Rgba::WHITE,
+                primary,
+                secondary,
+                progress: None,
+                actions: Vec::new(),
+                tall: true,
+                priority,
+            });
+    }
+
     fn show_shell_events(&mut self) {
         if self.shell_listener.is_none() && !crate::core::safe_mode::active() {
             self.shell_listener = winisland_platform_windows::shell_bar::ShellEventListener::new();
@@ -1793,8 +1833,21 @@ impl App {
         use winisland_core::i18n::tr;
         use winisland_platform_windows::shell_bar::ShellEvent;
         use winisland_render::Rgba;
+        // The robot says hello once when the app starts.
+        static GREETED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !self.expanded
+            && !self.is_hidden()
+            && !GREETED.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            self.push_greeting(crate::ui::compact::Priority::Normal);
+        }
         for event in winisland_platform_windows::shell_bar::take_shell_events() {
             if self.expanded || self.is_hidden() {
+                continue;
+            }
+            if matches!(event, ShellEvent::Unlocked) {
+                // Welcome back goes first; nothing else should hold it up.
+                self.push_greeting(crate::ui::compact::Priority::Critical);
                 continue;
             }
             let battery = crate::core::system_watch::snapshot()
@@ -1802,12 +1855,8 @@ impl App {
                 .map(|(level, _)| format!("{level}%"))
                 .unwrap_or_default();
             let (icon, accent, primary, secondary) = match event {
-                ShellEvent::Unlocked => (
-                    Icon::Home,
-                    Rgba::WHITE,
-                    tr("activity_welcome_back"),
-                    battery,
-                ),
+                // Greeted above.
+                ShellEvent::Unlocked => continue,
                 ShellEvent::Resumed => (
                     Icon::Clock,
                     Rgba::from_rgb(255, 159, 10),
@@ -1850,16 +1899,8 @@ impl App {
                 secondary,
                 progress: None,
                 actions: action.into_iter().collect(),
-                tall: matches!(
-                    event,
-                    ShellEvent::Unlocked | ShellEvent::Resumed | ShellEvent::DriveAdded(_)
-                ),
-                // The welcome back goes first; nothing else should hold it up.
-                priority: if matches!(event, ShellEvent::Unlocked) {
-                    crate::ui::compact::Priority::Critical
-                } else {
-                    crate::ui::compact::Priority::Normal
-                },
+                tall: matches!(event, ShellEvent::Resumed | ShellEvent::DriveAdded(_)),
+                priority: crate::ui::compact::Priority::Normal,
             });
         }
     }
