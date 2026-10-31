@@ -17,6 +17,13 @@ use winisland_core::config::MIN_HIDDEN_WIDTH;
 use super::{App, DragAxis, RIGHT_DRAG_THRESHOLD};
 
 const INTERACTIVE_FRAME_INTERVAL: Duration = Duration::from_millis(20);
+/// Island shape springs: slightly stiffer and livelier than the original 0.10 / 0.68,
+/// so expanding and collapsing feel quicker with a gentle overshoot.
+const SHAPE_STIFFNESS: f32 = 0.12;
+const SHAPE_DAMPING: f32 = 0.71;
+/// Page swipe spring.
+const PAGE_STIFFNESS: f32 = 0.14;
+const PAGE_DAMPING: f32 = 0.70;
 const PLAYBACK_FRAME_INTERVAL: Duration = Duration::from_millis(20);
 const IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const SETTLE_PIXELS: f32 = 0.1;
@@ -701,8 +708,7 @@ impl App {
         }
         let has_widgets = !self.components_hidden
             && (self
-                .config
-                .compact_widget_layout
+                .compact_layout()
                 .iter()
                 .any(|entry| entry.widget.is_some())
                 || matches!(
@@ -874,6 +880,49 @@ impl App {
         if !self.expanded && is_hovering_visible && pressing {
             self.idle_timer = Instant::now();
         }
+        self.update_hover_open(window, is_hovering_visible, pressing);
+    }
+
+    /// Opens the island after a short rest on it and closes a hover-opened island once the
+    /// cursor has left for a moment. Clicks and typing keep their usual behaviour.
+    fn update_hover_open(&mut self, window: &WindowRef, hovering: bool, pressing: bool) {
+        const OPEN_DELAY: Duration = Duration::from_millis(450);
+        const CLOSE_DELAY: Duration = Duration::from_millis(600);
+        let now = Instant::now();
+        if !self.config.hover_to_open || self.is_hidden() {
+            self.hover_open_since = None;
+            self.hover_leave_since = None;
+            return;
+        }
+        if !self.expanded {
+            self.hover_opened = false;
+            self.hover_leave_since = None;
+            if hovering && !pressing {
+                let since = *self.hover_open_since.get_or_insert(now);
+                if now.duration_since(since) >= OPEN_DELAY {
+                    self.hover_open_since = None;
+                    self.expand();
+                    self.hover_opened = true;
+                    window.request_redraw();
+                }
+            } else {
+                self.hover_open_since = None;
+            }
+            return;
+        }
+        self.hover_open_since = None;
+        if !self.hover_opened || hovering || crate::ui::dashboard::wants_keyboard() {
+            self.hover_leave_since = None;
+            return;
+        }
+        let left_at = *self.hover_leave_since.get_or_insert(now);
+        if now.duration_since(left_at) >= CLOSE_DELAY {
+            self.hover_leave_since = None;
+            self.hover_opened = false;
+            self.expanded = false;
+            self.reset_page();
+            window.request_redraw();
+        }
     }
 
     fn update_lyrics(&mut self, window: &WindowRef, music_active: bool, is_paused: bool, dt: f32) {
@@ -952,13 +1001,14 @@ impl App {
         {
             let scale = self.config.compact_scale.max(f32::EPSILON);
             let has_mini_content = self.ctx_mgr.current_mini().is_some();
+            let compact_layout = self.compact_layout();
             let center_content_width =
                 (!self.components_hidden && has_mini_content).then_some(lyric_target_w / scale);
             crate::ui::widget::compact::target_width(
                 if self.components_hidden {
                     &[]
                 } else {
-                    &self.config.compact_widget_layout
+                    &compact_layout
                 },
                 self.config.base_width,
                 center_content_width,
@@ -1010,20 +1060,28 @@ impl App {
                 self.restoring_hide_width = false;
             }
         } else {
-            self.springs.w.update_dt(target_w, 0.10, 0.68, dt);
+            self.springs
+                .w
+                .update_dt(target_w, SHAPE_STIFFNESS, SHAPE_DAMPING, dt);
             self.springs
                 .w
                 .settle(target_w, SETTLE_PIXELS, SETTLE_PIXEL_VELOCITY);
         }
-        self.springs.h.update_dt(target_h, 0.10, 0.68, dt);
+        self.springs
+            .h
+            .update_dt(target_h, SHAPE_STIFFNESS, SHAPE_DAMPING, dt);
         self.springs
             .h
             .settle(target_h, SETTLE_PIXELS, SETTLE_PIXEL_VELOCITY);
-        self.springs.r.update_dt(target_r, 0.10, 0.68, dt);
+        self.springs
+            .r
+            .update_dt(target_r, SHAPE_STIFFNESS, SHAPE_DAMPING, dt);
         self.springs
             .r
             .settle(target_r, SETTLE_PIXELS, SETTLE_PIXEL_VELOCITY);
-        self.springs.view.update_dt(target_view, 0.12, 0.68, dt);
+        self.springs
+            .view
+            .update_dt(target_view, PAGE_STIFFNESS, PAGE_DAMPING, dt);
         let page_width = self.springs.w.value.max(1.0);
         self.springs.view.settle(
             target_view,
@@ -1044,8 +1102,7 @@ impl App {
             self.compact_widget_refresh.clear();
             return;
         }
-        let Some(delay) =
-            crate::ui::widget::compact::next_refresh_delay(&self.config.compact_widget_layout)
+        let Some(delay) = crate::ui::widget::compact::next_refresh_delay(&self.compact_layout())
         else {
             self.compact_widget_refresh.clear();
             return;
@@ -1156,8 +1213,7 @@ impl App {
                     .iter()
                     .any(|slot| slot.widget == Some(WidgetKind::ResourceUsage))
         } else {
-            self.config
-                .compact_widget_layout
+            self.compact_layout()
                 .iter()
                 .any(|slot| slot.widget == Some(CompactWidgetKind::ResourceUsage))
         };

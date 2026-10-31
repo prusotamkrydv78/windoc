@@ -74,6 +74,11 @@ pub struct App {
     weather: crate::core::weather_service::WeatherService,
     shelf: crate::core::shelf_store::ShelfService,
     palette_focused: bool,
+    /// Hover-to-open timing: when the cursor started resting, when it left, and whether
+    /// the current expansion came from hovering.
+    hover_open_since: Option<Instant>,
+    hover_leave_since: Option<Instant>,
+    hover_opened: bool,
     drop_session: Option<crate::core::drop_server::DropSession>,
     calendar: crate::core::calendar_service::CalendarService,
     image_job: Option<std::sync::mpsc::Receiver<Vec<Result<std::path::PathBuf, String>>>>,
@@ -233,6 +238,9 @@ impl Default for App {
             weather: crate::core::weather_service::WeatherService::load(),
             shelf: crate::core::shelf_store::ShelfService::load(),
             palette_focused: false,
+            hover_open_since: None,
+            hover_leave_since: None,
+            hover_opened: false,
             drop_session: None,
             calendar: crate::core::calendar_service::CalendarService::new(),
             image_job: None,

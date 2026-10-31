@@ -311,6 +311,7 @@ impl App {
                             }
                         }
                         let compact_components_hidden = self.components_hidden && !self.expanded;
+                        let compact_layout = self.compact_layout();
                         let mini_content = if compact_components_hidden {
                             None
                         } else {
@@ -473,7 +474,7 @@ impl App {
                                             compact_widget_layout: if compact_components_hidden {
                                                 &[]
                                             } else {
-                                                &self.config.compact_widget_layout
+                                                &compact_layout
                                             },
                                             pages: &expanded_pages,
                                         },

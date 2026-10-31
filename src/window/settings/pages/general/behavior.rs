@@ -159,6 +159,7 @@ impl SettingsApp {
         page.section(tr("section_modules"));
         page.group_start();
         page.setting(&self.config, AppConfigField::HotkeyOpensIsland, true);
+        page.setting(&self.config, AppConfigField::HoverToOpen, true);
         for destination in crate::ui::dashboard::Destination::MORE_ITEMS {
             let key = destination.label_key();
             let hidden = self

@@ -17,8 +17,15 @@ impl App {
     pub(super) fn required_window_size(&self) -> WindowSize {
         let compact_scale = self.config.compact_scale;
         let expanded_scale = self.config.expanded_scale;
+        // Size for the largest layout, including an automatic Focus countdown.
+        let mut widest_layout = self.config.compact_widget_layout.clone();
+        widest_layout.push(winisland_core::config::CompactWidgetSlot {
+            slot: usize::MAX,
+            widget: Some(winisland_core::config::CompactWidgetKind::Focus),
+            alignment: winisland_core::config::CompactWidgetAlignment::Right,
+        });
         let compact_width = crate::ui::widget::compact::target_width(
-            &self.config.compact_widget_layout,
+            &widest_layout,
             self.config.base_width,
             Some(MAX_LYRIC_WIDTH),
         ) * compact_scale;
@@ -465,5 +472,27 @@ impl App {
         } else {
             target_base_w * self.config.compact_scale
         }
+    }
+}
+
+impl App {
+    /// Configured compact widgets, plus a Focus countdown while the timer runs so the
+    /// collapsed island shows it as a live activity even when it was not added.
+    pub(super) fn compact_layout(&self) -> Vec<winisland_core::config::CompactWidgetSlot> {
+        use winisland_core::config::{
+            CompactWidgetAlignment, CompactWidgetKind, CompactWidgetSlot,
+        };
+        let mut layout = self.config.compact_widget_layout.clone();
+        let has_focus = layout
+            .iter()
+            .any(|entry| entry.widget == Some(CompactWidgetKind::Focus));
+        if !has_focus && crate::ui::dashboard::focus_running() {
+            layout.push(CompactWidgetSlot {
+                slot: usize::MAX,
+                widget: Some(CompactWidgetKind::Focus),
+                alignment: CompactWidgetAlignment::Right,
+            });
+        }
+        layout
     }
 }

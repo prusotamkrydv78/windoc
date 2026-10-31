@@ -511,7 +511,7 @@ impl App {
         );
     }
 
-    fn expand(&mut self) {
+    pub(super) fn expand(&mut self) {
         let compact_height = self.compact_content_height();
         let interrupts_collapse = self.springs.h.value - compact_height
             > 0.5 * self.config.compact_scale

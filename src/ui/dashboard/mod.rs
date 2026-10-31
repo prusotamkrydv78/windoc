@@ -2337,3 +2337,8 @@ fn hit_clip_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
 pub fn take_clipboard_copy() -> Option<usize> {
     CLIPBOARD_COPY.with(Cell::take)
 }
+
+/// Whether the Focus timer is counting, for the automatic compact live activity.
+pub fn focus_running() -> bool {
+    PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
+}

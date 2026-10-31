@@ -120,6 +120,10 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle, label = "hotkey_opens_island")]
     pub hotkey_opens_island: bool,
+    /// Opens the island after the cursor rests on it, and closes it when the cursor leaves.
+    #[educe(Default = true)]
+    #[setting(toggle, label = "hover_to_open")]
+    pub hover_to_open: bool,
     /// More-page modules the user has hidden, by label key.
     pub hidden_modules: Vec<String>,
     /// Subscribed ICS or webcal feed links.
