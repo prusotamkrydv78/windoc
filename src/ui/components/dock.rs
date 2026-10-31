@@ -8,8 +8,6 @@ use super::text::{Align, draw_text};
 
 /// Meets the comfortable minimum target size.
 pub const DOCK_HEIGHT: f32 = 44.0;
-const INDICATOR_WIDTH: f32 = 18.0;
-const INDICATOR_HEIGHT: f32 = 3.0;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DockLayout {
@@ -78,52 +76,84 @@ pub fn draw_dock(
     focused: Option<usize>,
     colors: &SemanticColors,
 ) {
+    // A rounded bar holds the row; narrow cells show icons only, like a launcher.
+    painter.fill_round_rect(
+        layout.bounds,
+        Radius::uniform(layout.bounds.height() / 2.0),
+        colors.surface_raised,
+    );
+    painter.stroke_round_rect(
+        layout.bounds,
+        Radius::uniform(layout.bounds.height() / 2.0),
+        1.0,
+        colors.border_subtle,
+    );
     for (index, (rect, label)) in layout.items.iter().zip(labels).enumerate() {
-        let cell = rect.inset(space::S1);
-        if hovered == Some(index) {
+        let is_active = index == active;
+        let is_hovered = hovered == Some(index);
+        let icon_only = rect.width() < 72.0;
+        let diameter = (rect.height() - space::S2).min(rect.width() - space::S1);
+        let bubble = Rect::from_xywh(
+            rect.center_x() - diameter / 2.0,
+            rect.center_y() - diameter / 2.0,
+            diameter,
+            diameter,
+        );
+        if is_active || is_hovered {
             painter.fill_round_rect(
-                cell,
-                Radius::uniform(radius::CONTROL),
-                colors.surface_interactive,
+                if icon_only {
+                    bubble
+                } else {
+                    rect.inset(space::S1)
+                },
+                Radius::uniform(if icon_only {
+                    diameter / 2.0
+                } else {
+                    radius::CONTROL
+                }),
+                if is_active {
+                    colors.surface_interactive
+                } else {
+                    colors.surface_overlay
+                },
             );
         }
-        let is_active = index == active;
-        if is_active {
-            // A soft pill marks the active tab; the bolder colour repeats it for clarity.
-            painter.fill_round_rect(cell, Radius::uniform(radius::CONTROL), colors.accent_soft);
-        }
         let color = if is_active {
-            colors.accent_primary
+            colors.text_primary
         } else {
             colors.text_secondary
         };
         match icons.get(index) {
-            Some(icon) => {
-                let icon_size = (cell.height() * 0.42).min(18.0);
-                let icon_top =
-                    cell.top + (cell.height() - icon_size - typography::CAPTION.size - 2.0) / 2.0;
+            Some(icon) if icon_only => {
+                let size = (diameter * 0.5).min(18.0);
                 super::icon::draw_icon(
                     painter,
                     *icon,
                     Rect::from_xywh(
-                        cell.center_x() - icon_size / 2.0,
-                        icon_top,
-                        icon_size,
-                        icon_size,
+                        rect.center_x() - size / 2.0,
+                        rect.center_y() - size / 2.0,
+                        size,
+                        size,
                     ),
+                    color,
+                );
+            }
+            Some(icon) => {
+                let size = 16.0;
+                let text_width = 60.0f32.min(rect.width() - size - space::S3);
+                let left = rect.center_x() - (size + space::S1 + text_width) / 2.0;
+                super::icon::draw_icon(
+                    painter,
+                    *icon,
+                    Rect::from_xywh(left, rect.center_y() - size / 2.0, size, size),
                     color,
                 );
                 draw_text(
                     painter,
                     label,
-                    typography::CAPTION,
-                    Rect::from_ltrb(
-                        cell.left,
-                        icon_top + icon_size + 2.0,
-                        cell.right,
-                        icon_top + icon_size + 2.0 + typography::CAPTION.size + 2.0,
-                    ),
-                    Align::Center,
+                    typography::LABEL,
+                    Rect::from_xywh(left + size + space::S1, rect.top, text_width, rect.height()),
+                    Align::Start,
                     color,
                 );
             }
@@ -131,13 +161,13 @@ pub fn draw_dock(
                 painter,
                 label,
                 typography::LABEL,
-                cell,
+                *rect,
                 Align::Center,
                 color,
             ),
         }
         if focused == Some(index) {
-            super::draw_focus_ring(painter, cell, radius::CONTROL, colors);
+            super::draw_focus_ring(painter, bubble, diameter / 2.0, colors);
         }
     }
 }

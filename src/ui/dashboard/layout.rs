@@ -9,7 +9,7 @@ use winisland_render::{Point, Rect};
 use super::Destination;
 use crate::ui::components::dock::{DOCK_HEIGHT, DockLayout};
 
-pub const HEADER_HEIGHT: f32 = 36.0;
+pub const HEADER_HEIGHT: f32 = 34.0;
 const VISIBLE_ROWS: usize = 2;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -30,7 +30,7 @@ impl DashboardLayout {
     pub const fn columns(size_class: SizeClass) -> usize {
         match size_class {
             SizeClass::Compact => 2,
-            SizeClass::Standard => 4,
+            SizeClass::Standard => 3,
         }
     }
 
@@ -90,10 +90,12 @@ impl DashboardLayout {
             rows as f32 * row_height + (rows - 1) as f32 * gap
         };
 
-        let destinations = match size_class {
-            SizeClass::Standard => Destination::ALL.to_vec(),
-            SizeClass::Compact => Destination::COMPACT.to_vec(),
-        };
+        // One icon dock lists every module, like a launcher; hidden modules are skipped.
+        let _ = size_class;
+        let destinations: Vec<Destination> = Destination::DOCK
+            .into_iter()
+            .filter(|destination| !super::module_hidden(*destination))
+            .collect();
         let dock = DockLayout::new(dock_rect, destinations.len());
         Self {
             bounds,

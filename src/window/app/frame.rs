@@ -69,6 +69,8 @@ impl App {
             .check_limit(self.config.screen_time_limit_minutes, now);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::ScreenTime) {
             crate::ui::dashboard::set_screen_time_rows(self.screen_time.report_rows(now));
+        }
+        if self.expanded {
             crate::ui::dashboard::set_screen_time_week(self.screen_time.week_minutes(now));
         }
         self.clipboard.apply_settings(
@@ -106,6 +108,21 @@ impl App {
         crate::ui::island::set_edge_light(&self.config.edge_light);
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
+        match crate::ui::dashboard::take_header_request() {
+            Some(true) => self.open_settings(),
+            Some(false) => {
+                crate::ui::dashboard::palette::close();
+                crate::ui::dashboard::editor::close();
+                self.expanded = false;
+                self.reset_page();
+                window.request_redraw();
+            }
+            None => {}
+        }
+        let playing = self.media_active() && self.current_media_info().is_playing;
+        crate::ui::dashboard::set_now_playing(
+            playing.then(|| self.current_media_info().title.clone()),
+        );
         self.wellness.poll(&self.config, now);
         self.poll_image_job();
         self.poll_drop(now);

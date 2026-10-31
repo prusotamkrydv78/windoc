@@ -59,7 +59,7 @@ pub const HOME_CARDS: [SampleCard; 6] = [
         title_key: "card_focus",
         value: "18:40",
         detail_key: "card_focus_detail",
-        column_span: 2,
+        column_span: 1,
     },
     SampleCard {
         kind: CardKind::Clipboard,
@@ -80,6 +80,6 @@ pub const HOME_CARDS: [SampleCard; 6] = [
         title_key: "card_system",
         value: "",
         detail_key: "card_system_detail",
-        column_span: 2,
+        column_span: 1,
     },
 ];

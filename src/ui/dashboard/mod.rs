@@ -38,6 +38,12 @@ pub enum DashboardHit {
     ShelfEntry(usize),
     /// The header, which opens the command palette.
     Header,
+    /// Focus page buttons: 0 reset, 1 play or pause, 2 skip.
+    FocusButton(u8),
+    /// The header's settings button.
+    OpenSettings,
+    /// The header's close button.
+    Close,
     /// Row on the Notes page: 0 is "New note".
     NoteRow(usize),
     /// Row on the Links page.
@@ -715,6 +721,13 @@ pub fn hit_test(
         return Some(DashboardHit::Destination(destination));
     }
     if layout.header.contains(local) {
+        let (settings, close) = header_buttons(layout.header);
+        if settings.contains(local) {
+            return Some(DashboardHit::OpenSettings);
+        }
+        if close.contains(local) {
+            return Some(DashboardHit::Close);
+        }
         return Some(DashboardHit::Header);
     }
     let active = PAGE.with(|page| page.borrow().active);
@@ -726,6 +739,12 @@ pub fn hit_test(
     }
     if active == Destination::Notes {
         return hit_note_row(&layout, local).map(DashboardHit::NoteRow);
+    }
+    if active == Destination::Focus {
+        return focus_buttons(layout.grid)
+            .iter()
+            .position(|button| button.contains(local))
+            .map(|index| DashboardHit::FocusButton(index as u8));
     }
     if active == Destination::Links {
         return hit_link_row(&layout, local).map(DashboardHit::LinkRow);
@@ -763,6 +782,20 @@ pub fn apply(hit: DashboardHit) {
             }
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
             DashboardHit::Header => palette::open(),
+            DashboardHit::FocusButton(button) => {
+                let now = Instant::now();
+                match button {
+                    0 => page.focus.reset(),
+                    1 => toggle_focus(&mut page.focus, now),
+                    _ => {
+                        page.focus.skip();
+                    }
+                }
+                crate::core::focus_store::save(&page.focus);
+            }
+            DashboardHit::OpenSettings | DashboardHit::Close => {
+                HEADER_REQUEST.with(|cell| cell.set(Some(hit)));
+            }
             DashboardHit::NoteRow(index) => open_note_row(index),
             DashboardHit::LinkRow(index) => open_link(index),
             DashboardHit::ClipRow(index) => CLIPBOARD_COPY.with(|cell| cell.set(Some(index))),
@@ -816,6 +849,12 @@ pub fn draw_page(
                 .position(|candidate| *candidate == destination),
             _ => None,
         },
+        hovered_focus: match hover {
+            Some(DashboardHit::FocusButton(button)) => Some(button),
+            _ => None,
+        },
+        hovered_header: hover
+            .filter(|hit| matches!(hit, DashboardHit::OpenSettings | DashboardHit::Close)),
         hovered_row: match hover {
             Some(DashboardHit::ShelfEntry(index)) => Some(index),
             Some(DashboardHit::NoteRow(index)) => Some(index),
@@ -896,6 +935,22 @@ impl Destination {
         Self::Focus,
         Self::More,
     ];
+    /// The icon dock, in order: every module, like a launcher.
+    pub const DOCK: [Self; 13] = [
+        Self::Home,
+        Self::Media,
+        Self::Clipboard,
+        Self::Notes,
+        Self::Focus,
+        Self::Shelf,
+        Self::Weather,
+        Self::Clock,
+        Self::Agenda,
+        Self::ScreenTime,
+        Self::AiUsage,
+        Self::Links,
+        Self::Drop,
+    ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
@@ -963,6 +1018,10 @@ pub struct DashboardInteraction {
     pub focused_dock: Option<usize>,
     /// Hovered row on list pages such as More.
     pub hovered_row: Option<usize>,
+    /// Hovered header button, if any.
+    pub hovered_header: Option<DashboardHit>,
+    /// Hovered Focus page button.
+    pub hovered_focus: Option<u8>,
 }
 
 pub struct DashboardParams<'a> {
@@ -994,7 +1053,13 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         Radius::uniform(radius::WORKSPACE),
         colors.surface_base,
     );
-    draw_header(painter, layout.header, active, colors);
+    draw_header(
+        painter,
+        layout.header,
+        active,
+        interaction.hovered_header,
+        colors,
+    );
 
     let save = painter.save();
     painter.clip_rect(layout.grid);
@@ -1026,6 +1091,12 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         );
         if card.kind == CardKind::System {
             draw_system_rings(painter, card_layout.content, colors);
+        } else if card.kind == CardKind::Clipboard
+            && draw_recent_clips(painter, card_layout.content, colors)
+        {
+        } else if card.kind == CardKind::Notes
+            && draw_recent_notes(painter, card_layout.content, colors)
+        {
         } else {
             let (value, detail) = card_text(card, focus.as_ref());
             draw_card_value(painter, &card_layout, &value, &detail, colors);
@@ -1034,6 +1105,9 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             && let Some(progress) = focus.as_ref().and_then(|view| view.progress)
         {
             draw_progress_ring(painter, card_layout.content, 1.0 - progress, colors);
+        }
+        if card.kind == CardKind::ScreenTime {
+            draw_mini_week(painter, card_layout.content, colors);
         }
         painter.restore_to(card_save);
     }
@@ -1085,6 +1159,14 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             grid,
             colors,
         );
+    } else if active == Destination::Focus {
+        draw_focus_page(
+            painter,
+            layout.grid,
+            focus.as_ref(),
+            interaction.hovered_focus,
+            colors,
+        );
     } else if active == Destination::Links {
         draw_links_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Shelf {
@@ -1124,38 +1206,186 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
     );
 }
 
-fn draw_header(painter: Painter<'_>, header: Rect, active: Destination, colors: &SemanticColors) {
-    let badge = tr("dashboard_sample_badge");
-    let badge_width = (header.width() * 0.4).min(160.0);
-    let title = Rect::from_ltrb(
-        header.left,
-        header.top,
-        header.right - badge_width,
-        header.bottom,
+/// Header button size and the two right-aligned buttons: settings, then close.
+const HEADER_BUTTON: f32 = 26.0;
+
+fn header_buttons(header: Rect) -> (Rect, Rect) {
+    let top = header.center_y() - HEADER_BUTTON / 2.0;
+    let close = Rect::from_xywh(
+        header.right - HEADER_BUTTON,
+        top,
+        HEADER_BUTTON,
+        HEADER_BUTTON,
+    );
+    let settings = Rect::from_xywh(
+        close.left - HEADER_BUTTON - space::S1,
+        top,
+        HEADER_BUTTON,
+        HEADER_BUTTON,
+    );
+    (settings, close)
+}
+
+fn today_label() -> String {
+    const DAYS: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let now = crate::platform::shell().local_datetime();
+    let day = DAYS
+        .get(usize::from(now.day_of_week))
+        .copied()
+        .unwrap_or("");
+    let month = MONTHS
+        .get(usize::from(now.month.saturating_sub(1)))
+        .copied()
+        .unwrap_or("");
+    format!("{day}, {month} {}", now.day)
+}
+
+fn draw_header(
+    painter: Painter<'_>,
+    header: Rect,
+    active: Destination,
+    hovered: Option<DashboardHit>,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::icon::{Icon, draw_icon};
+    // Left: module icon, title, a divider and today's date.
+    let icon_size = 18.0;
+    draw_icon(
+        painter,
+        active.icon(),
+        Rect::from_xywh(
+            header.left,
+            header.center_y() - icon_size / 2.0,
+            icon_size,
+            icon_size,
+        ),
+        colors.text_primary,
+    );
+    let title = tr(active.label_key());
+    let title_left = header.left + icon_size + space::S2;
+    let title_width = winisland_render::text::FontManager::global().measure_text_cached(
+        &title,
+        typography::SECTION_TITLE.size,
+        winisland_render::FontStyle::bold(),
     );
     draw_text(
         painter,
-        &tr(active.label_key()),
-        typography::PAGE_TITLE,
-        title,
+        &title,
+        typography::SECTION_TITLE,
+        Rect::from_xywh(title_left, header.top, title_width + 2.0, header.height()),
         Align::Start,
         colors.text_primary,
     );
-    let badge_rect = Rect::from_ltrb(
-        header.right - badge_width,
-        header.center_y() - 10.0,
-        header.right,
-        header.center_y() + 10.0,
+    let divider_x = title_left + title_width + space::S3;
+    painter.fill_rect(
+        Rect::from_xywh(divider_x, header.center_y() - 8.0, 1.0, 16.0),
+        colors.border_strong,
     );
-    painter.fill_round_rect(badge_rect, Radius::uniform(10.0), colors.accent_soft);
+    let (settings, close) = header_buttons(header);
+    let date_left = divider_x + space::S3;
     draw_text(
         painter,
-        &badge,
-        typography::CAPTION,
-        badge_rect.inset(space::S1),
-        Align::Center,
-        colors.text_primary,
+        &today_label(),
+        typography::BODY,
+        Rect::from_xywh(date_left, header.top, 160.0, header.height()),
+        Align::Start,
+        colors.text_secondary,
     );
+    // Centre: what is playing, as a pill.
+    if let Some(title) = NOW_PLAYING.with(|cell| cell.borrow().clone()) {
+        let pill_width = (header.width() * 0.3).clamp(120.0, 220.0);
+        let pill = Rect::from_xywh(
+            header.center_x() - pill_width / 2.0,
+            header.center_y() - 13.0,
+            pill_width,
+            26.0,
+        );
+        if pill.left > date_left + 150.0 && pill.right < settings.left - space::S2 {
+            painter.fill_round_rect(pill, Radius::uniform(13.0), colors.surface_raised);
+            painter.stroke_round_rect(pill, Radius::uniform(13.0), 1.0, colors.accent_soft);
+            draw_icon(
+                painter,
+                Icon::Music,
+                Rect::from_xywh(pill.left + 9.0, pill.center_y() - 7.0, 14.0, 14.0),
+                colors.accent_primary,
+            );
+            draw_text(
+                painter,
+                &title,
+                typography::LABEL,
+                Rect::from_ltrb(pill.left + 29.0, pill.top, pill.right - 10.0, pill.bottom),
+                Align::Start,
+                colors.text_primary,
+            );
+        }
+    }
+    // Right: settings and close.
+    for (rect, icon, hit) in [
+        (settings, Icon::Settings, DashboardHit::OpenSettings),
+        (close, Icon::Plus, DashboardHit::Close),
+    ] {
+        if hovered == Some(hit) {
+            painter.fill_round_rect(
+                rect,
+                Radius::uniform(rect.height() / 2.0),
+                colors.surface_overlay,
+            );
+        }
+        let inner = rect.inset(6.0);
+        if hit == DashboardHit::Close {
+            // The plus icon rotated 45 degrees reads as a close cross.
+            let save = painter.save();
+            painter.translate(Vec2::new(inner.center_x(), inner.center_y()));
+            painter.rotate_degrees(45.0);
+            draw_icon(
+                painter,
+                icon,
+                Rect::from_xywh(
+                    -inner.width() / 2.0,
+                    -inner.height() / 2.0,
+                    inner.width(),
+                    inner.height(),
+                ),
+                colors.text_secondary,
+            );
+            painter.restore_to(save);
+        } else {
+            draw_icon(painter, icon, inner, colors.text_secondary);
+        }
+    }
+}
+
+thread_local! {
+    static NOW_PLAYING: RefCell<Option<String>> = const { RefCell::new(None) };
+    static HEADER_REQUEST: Cell<Option<DashboardHit>> = const { Cell::new(None) };
+}
+
+/// Publishes the playing track for the header pill, or `None` when nothing plays.
+pub fn set_now_playing(title: Option<String>) {
+    NOW_PLAYING.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != title {
+            *current = title;
+        }
+    });
+}
+
+/// Whether the user clicked the header's settings (`true`) or close (`false`) button.
+pub fn take_header_request() -> Option<bool> {
+    HEADER_REQUEST
+        .with(Cell::take)
+        .map(|hit| hit == DashboardHit::OpenSettings)
 }
 
 fn draw_card_value(
@@ -2341,4 +2571,287 @@ pub fn take_clipboard_copy() -> Option<usize> {
 /// Whether the Focus timer is counting, for the automatic compact live activity.
 pub fn focus_running() -> bool {
     PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
+}
+
+/// Whether the user hid `destination` in Settings (Home is always shown).
+pub(crate) fn module_hidden(destination: Destination) -> bool {
+    destination != Destination::Home
+        && HIDDEN_MODULES.with(|cell| {
+            cell.borrow()
+                .iter()
+                .any(|key| key == destination.label_key())
+        })
+}
+
+/// Up to two compact rows with an icon and a title, inside a card. Returns false when
+/// there is nothing to show, so the card falls back to its value text.
+fn draw_card_rows(
+    painter: Painter<'_>,
+    content: Rect,
+    rows: &[(String, String)],
+    icon: crate::ui::components::icon::Icon,
+    colors: &SemanticColors,
+) -> bool {
+    use crate::ui::components::icon::draw_icon;
+    if rows.is_empty() {
+        return false;
+    }
+    let row_height = (content.height() / 2.0).min(30.0);
+    for (index, (title, detail)) in rows.iter().take(2).enumerate() {
+        let row = Rect::from_xywh(
+            content.left,
+            content.top + index as f32 * row_height,
+            content.width(),
+            row_height - 3.0,
+        );
+        painter.fill_round_rect(
+            row,
+            Radius::uniform(radius::CONTROL),
+            colors.surface_overlay,
+        );
+        let icon_size = 13.0;
+        draw_icon(
+            painter,
+            icon,
+            Rect::from_xywh(
+                row.left + 8.0,
+                row.center_y() - icon_size / 2.0,
+                icon_size,
+                icon_size,
+            ),
+            colors.text_secondary,
+        );
+        let detail_width = if detail.is_empty() { 0.0 } else { 44.0 };
+        draw_text(
+            painter,
+            title,
+            typography::LABEL,
+            Rect::from_ltrb(
+                row.left + 28.0,
+                row.top,
+                row.right - detail_width - 6.0,
+                row.bottom,
+            ),
+            Align::Start,
+            colors.text_primary,
+        );
+        if !detail.is_empty() {
+            draw_text(
+                painter,
+                detail,
+                typography::CAPTION,
+                Rect::from_ltrb(
+                    row.right - detail_width,
+                    row.top,
+                    row.right - 6.0,
+                    row.bottom,
+                ),
+                Align::Start,
+                colors.text_secondary,
+            );
+        }
+    }
+    true
+}
+
+fn draw_recent_clips(painter: Painter<'_>, content: Rect, colors: &SemanticColors) -> bool {
+    let rows: Vec<(String, String)> = CLIPBOARD_VIEW.with(|view| {
+        view.borrow()
+            .rows
+            .iter()
+            .take(2)
+            .map(|(title, _)| (title.clone(), String::new()))
+            .collect()
+    });
+    draw_card_rows(
+        painter,
+        content,
+        &rows,
+        crate::ui::components::icon::Icon::Clipboard,
+        colors,
+    )
+}
+
+fn draw_recent_notes(painter: Painter<'_>, content: Rect, colors: &SemanticColors) -> bool {
+    let rows: Vec<(String, String)> = NOTE_ROWS.with(|cell| {
+        cell.borrow()
+            .iter()
+            .take(2)
+            .map(|(_, title, detail)| (title.clone(), detail.clone()))
+            .collect()
+    });
+    draw_card_rows(
+        painter,
+        content,
+        &rows,
+        crate::ui::components::icon::Icon::Notes,
+        colors,
+    )
+}
+
+/// Seven small bars along the bottom right of the Screen Time card.
+fn draw_mini_week(painter: Painter<'_>, content: Rect, colors: &SemanticColors) {
+    let week = SCREEN_TIME_WEEK.with(|cell| cell.borrow().clone());
+    if !week.iter().any(|(_, minutes)| *minutes > 0.0) {
+        return;
+    }
+    let max = week
+        .iter()
+        .map(|(_, minutes)| *minutes)
+        .fold(1.0f32, f32::max);
+    let bar_width = 5.0;
+    let gap = 6.0;
+    let height = (content.height() * 0.45).min(26.0);
+    let total = week.len() as f32 * (bar_width + gap) - gap;
+    let left = content.right - total;
+    for (index, (_, minutes)) in week.iter().enumerate() {
+        let bar_height = (minutes / max * height).max(3.0);
+        let today = index + 1 == week.len();
+        painter.fill_round_rect(
+            Rect::from_xywh(
+                left + index as f32 * (bar_width + gap),
+                content.bottom - bar_height,
+                bar_width,
+                bar_height,
+            ),
+            Radius::uniform(bar_width / 2.0),
+            if today {
+                colors.accent_primary
+            } else {
+                colors.border_strong
+            },
+        );
+    }
+}
+
+/// Reset, play/pause and skip buttons centred near the bottom of the Focus page.
+fn focus_buttons(grid: Rect) -> [Rect; 3] {
+    let size = 40.0;
+    let main = 52.0;
+    let gap = space::S5;
+    let center_y = grid.bottom - main / 2.0 - space::S1;
+    let center_x = grid.center_x();
+    [
+        Rect::from_xywh(
+            center_x - main / 2.0 - gap - size,
+            center_y - size / 2.0,
+            size,
+            size,
+        ),
+        Rect::from_xywh(center_x - main / 2.0, center_y - main / 2.0, main, main),
+        Rect::from_xywh(
+            center_x + main / 2.0 + gap,
+            center_y - size / 2.0,
+            size,
+            size,
+        ),
+    ]
+}
+
+fn draw_focus_page(
+    painter: Painter<'_>,
+    grid: Rect,
+    focus: Option<&FocusView>,
+    hovered: Option<u8>,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::icon::{Icon, draw_icon};
+    let Some(view) = focus else {
+        return;
+    };
+    let buttons = focus_buttons(grid);
+    let label = match view.state {
+        TimerState::Paused => tr("focus_paused"),
+        _ => tr(view.label_key),
+    };
+    draw_text(
+        painter,
+        &label.to_uppercase(),
+        typography::LABEL,
+        Rect::from_xywh(grid.left, grid.top, grid.width(), 20.0),
+        Align::Center,
+        colors.accent_primary,
+    );
+    let time = match view.remaining {
+        Some(remaining) => format_clock(remaining, true),
+        None => format_clock(view.elapsed, false),
+    };
+    let big = winisland_render::tokens::TextStyle {
+        size: (buttons[1].top - grid.top - 40.0).clamp(28.0, 64.0),
+        weight: 600,
+        tabular: true,
+    };
+    let time_rect = Rect::from_ltrb(
+        grid.left,
+        grid.top + 18.0,
+        grid.right,
+        buttons[1].top - 14.0,
+    );
+    draw_text(
+        painter,
+        &time,
+        big,
+        time_rect,
+        Align::Center,
+        colors.text_primary,
+    );
+    if let Some(progress) = view.progress {
+        let track = Rect::from_xywh(grid.center_x() - 90.0, time_rect.bottom - 4.0, 180.0, 4.0);
+        painter.fill_round_rect(track, Radius::uniform(2.0), colors.border_strong);
+        painter.fill_round_rect(
+            Rect::from_xywh(
+                track.left,
+                track.top,
+                track.width() * progress.clamp(0.0, 1.0),
+                track.height(),
+            ),
+            Radius::uniform(2.0),
+            colors.accent_primary,
+        );
+    }
+    let running = view.state == TimerState::Running;
+    for (index, rect) in buttons.iter().enumerate() {
+        let primary = index == 1;
+        let fill = if primary {
+            colors.accent_primary
+        } else if hovered == Some(index as u8) {
+            colors.surface_overlay
+        } else {
+            colors.surface_raised
+        };
+        painter.fill_round_rect(*rect, Radius::uniform(rect.height() / 2.0), fill);
+        let icon_color = if primary {
+            colors.surface_base
+        } else {
+            colors.text_primary
+        };
+        let inner = rect.inset(rect.width() * 0.3);
+        match index {
+            0 => draw_icon(painter, Icon::Focus, inner, icon_color),
+            1 if running => {
+                // Pause: two rounded bars.
+                let bar = inner.width() * 0.26;
+                for x in [
+                    inner.left + inner.width() * 0.18,
+                    inner.right - inner.width() * 0.18 - bar,
+                ] {
+                    painter.fill_round_rect(
+                        Rect::from_xywh(x, inner.top, bar, inner.height()),
+                        Radius::uniform(bar / 2.0),
+                        icon_color,
+                    );
+                }
+            }
+            1 => {
+                // Play: a triangle nudged right for optical centring.
+                let mut path = winisland_render::PathBuilder::new();
+                path.move_to(Point::new(inner.left + inner.width() * 0.25, inner.top))
+                    .line_to(Point::new(inner.right, inner.center_y()))
+                    .line_to(Point::new(inner.left + inner.width() * 0.25, inner.bottom))
+                    .close();
+                painter.fill_path(&path.detach(), icon_color);
+            }
+            _ => draw_icon(painter, Icon::More, inner, icon_color),
+        }
+    }
 }
