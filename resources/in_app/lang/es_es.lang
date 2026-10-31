@@ -98,6 +98,7 @@ position_x_offset=Offset X (px)
 position_y_offset=Offset Y (px)
 monitor=Monitor
 font_size=Tamaño de Fuente (px)
+notch_shape=Forma de Muesca
 motion_blur=Desenfoque de Movimiento
 animation_fps=Límite de FPS de expansión
 expanded_idle_fps=FPS del contenido expandido

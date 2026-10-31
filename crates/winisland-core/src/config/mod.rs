@@ -45,6 +45,10 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle)]
     pub motion_blur: bool,
+    /// Attach the island to the top screen edge as a notch with concave shoulders.
+    #[educe(Default = true)]
+    #[setting(toggle)]
+    pub notch_shape: bool,
     #[educe(Default = 90)]
     #[setting(choice(
         30 => "30 FPS",

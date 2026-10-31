@@ -98,6 +98,7 @@ position_x_offset=水平偏移 (px)
 position_y_offset=垂直偏移 (px)
 monitor=显示器
 font_size=字体大小 (px)
+notch_shape=刘海形状
 motion_blur=动态模糊
 animation_fps=展开动画帧率上限
 expanded_idle_fps=展开态动态内容帧率

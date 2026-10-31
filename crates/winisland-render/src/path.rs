@@ -112,6 +112,46 @@ impl Path {
         path
     }
 
+    /// A notch hanging from `top`: flat top edge, concave shoulders of radius `shoulder`
+    /// flaring into the top edge, and rounded bottom corners of radius `radius`.
+    pub fn notch(rect: Rect, top: f32, radius: f32, shoulder: f32) -> Self {
+        if !rect.is_finite() || rect.width() <= 0.0 || rect.bottom <= top {
+            return Self::default();
+        }
+        const ARC: f32 = std::f32::consts::FRAC_1_SQRT_2;
+        let (left, right, bottom) = (rect.left, rect.right, rect.bottom);
+        let height = bottom - top;
+        let shoulder = shoulder.max(0.0).min(height / 2.0);
+        let radius = radius
+            .max(0.0)
+            .min(rect.width() / 2.0)
+            .min(height - shoulder);
+        let mut builder = PathBuilder::new();
+        builder
+            .move_to(Point::new(left - shoulder, top))
+            .conic_to(Point::new(left, top), Point::new(left, top + shoulder), ARC)
+            .line_to(Point::new(left, bottom - radius))
+            .conic_to(
+                Point::new(left, bottom),
+                Point::new(left + radius, bottom),
+                ARC,
+            )
+            .line_to(Point::new(right - radius, bottom))
+            .conic_to(
+                Point::new(right, bottom),
+                Point::new(right, bottom - radius),
+                ARC,
+            )
+            .line_to(Point::new(right, top + shoulder))
+            .conic_to(
+                Point::new(right, top),
+                Point::new(right + shoulder, top),
+                ARC,
+            )
+            .close();
+        builder.detach()
+    }
+
     pub(crate) fn as_skia(&self) -> &SkPath {
         &self.inner
     }

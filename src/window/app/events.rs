@@ -477,6 +477,8 @@ impl App {
                                                 &compact_layout
                                             },
                                             pages: &expanded_pages,
+                                            attached: self.config.notch_shape
+                                                && !island_layout.dock_bottom,
                                         },
                                         mini_content,
                                         compact_overlay: &self.compact_overlay,

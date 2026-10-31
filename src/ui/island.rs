@@ -81,6 +81,8 @@ pub struct StyleParams<'a> {
     pub plugin_host: Option<&'a PluginHost>,
     pub compact_widget_layout: &'a [CompactWidgetSlot],
     pub pages: &'a [ExpandedPage],
+    /// Draw the island attached to the top screen edge with concave shoulders.
+    pub attached: bool,
 }
 
 use winisland_core::context::MiniContent;
@@ -138,7 +140,7 @@ pub fn draw_island(
         layout.current_w,
         layout.current_h,
     );
-    let island_path = Path::continuous_rounded_rect(rect, layout.current_r);
+    let island_path = island_shape(&params, rect);
     let blur_filter = if layout.sigmas.0 > MIN_BLUR_SIGMA || layout.sigmas.1 > MIN_BLUR_SIGMA {
         Some(BlurSpec {
             sigma: layout.sigmas,
@@ -489,6 +491,10 @@ fn draw_pager(
 }
 
 fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
+    if params.style.attached {
+        // A notch reads as hardware: pure black, no outline.
+        return;
+    }
     let layout = &params.layout;
     let solid_style = params.style.island_style == SOLID_STYLE;
     let alpha = if solid_style {
@@ -546,4 +552,16 @@ fn edge_light_color(params: &DrawIslandParams<'_>) -> Option<Rgba> {
         }
     }
     Some(crate::ui::theme::colors().accent_primary)
+}
+
+/// The island outline: a notch hanging from the top edge, or a floating pill.
+fn island_shape(params: &DrawIslandParams<'_>, rect: Rect) -> Path {
+    let layout = &params.layout;
+    if !params.style.attached {
+        return Path::continuous_rounded_rect(rect, layout.current_r);
+    }
+    let scale = layout.compact_scale.max(0.5);
+    let shoulder = (layout.current_r * 0.6).clamp(6.0 * scale, 14.0 * scale);
+    let top = rect.top.min(0.0);
+    Path::notch(rect, top, layout.current_r, shoulder)
 }
