@@ -1109,14 +1109,14 @@ impl App {
                 self.config.expanded_scale,
             )
         } else {
-            compact_content_h / 2.0
+            self.compact_radius(compact_content_h)
         };
         let (target_w, target_h, target_r) = if let Some(size) = self.compact_overlay.target_size(
             self.config.base_width,
             self.config.base_height,
             self.config.compact_scale,
         ) {
-            (size.width, size.height, size.height / 2.0)
+            (size.width, size.height, self.compact_radius(size.height))
         } else {
             (compact_widget_target_w, default_target_h, default_target_r)
         };
@@ -1560,7 +1560,18 @@ impl App {
         crate::ui::top_bar::set_active(active);
         let _ = was_active;
         // The bar has its own window docked at the bottom of the monitor.
-        self.sync_bar_window(active, monitor, scale);
+        // Anchor to the strip Windows actually reserved: its bottom is the true screen bottom,
+        // even after the reservation shrinks the work area other code may report.
+        let anchor = self.top_bar.as_ref().map_or(monitor, |session| {
+            let reserved = session.reserved();
+            ScreenRect {
+                left: reserved.left,
+                right: reserved.right,
+                bottom: reserved.bottom,
+                ..monitor
+            }
+        });
+        self.sync_bar_window(active, anchor, scale);
         if active {
             self.publish_top_bar_apps(system.apps.clone());
             crate::ui::top_bar::set_battery(system.battery);
@@ -1907,5 +1918,17 @@ impl App {
             std::thread::sleep(std::time::Duration::from_millis(120));
             shell_bar::press_shortcut(keys);
         });
+    }
+}
+
+impl App {
+    /// Bottom corner radius of the collapsed island. As a notch it has a flat bottom with small
+    /// corners, like the Mac notch and Vayli; as a floating island it stays a pill.
+    fn compact_radius(&self, height: f32) -> f32 {
+        if self.config.notch_shape {
+            (height * 0.36).min(10.0 * self.config.compact_scale.max(0.5))
+        } else {
+            height / 2.0
+        }
     }
 }

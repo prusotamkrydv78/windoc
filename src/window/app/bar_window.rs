@@ -191,6 +191,17 @@ impl App {
         match event {
             PlatformEvent::RedrawRequested { .. } => self.draw_bar_window(),
             PlatformEvent::Resized { size, .. } if size.width > 0 && size.height > 0 => {
+                // Keep the bottom edge on the screen bottom whatever height Windows gave us.
+                if size.height != self.bar_geometry.height {
+                    let bottom = self.bar_geometry.y + self.bar_geometry.height as i32;
+                    self.bar_geometry.height = size.height;
+                    self.bar_geometry.width = size.width;
+                    self.bar_geometry.y = bottom - size.height as i32;
+                    window().set_position(
+                        bar.id(),
+                        WindowPosition::new(self.bar_geometry.x, self.bar_geometry.y),
+                    );
+                }
                 if let (Some(renderer), Some(target)) = (self.renderer.as_mut(), self.bar_target) {
                     let _ = renderer.resize(target, size.width, size.height);
                 }
