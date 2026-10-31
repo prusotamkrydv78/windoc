@@ -257,6 +257,13 @@ fn platform_event(id: WinitWindowId, event: WindowEvent) -> Option<PlatformEvent
             id,
             key: match event.logical_key {
                 WinitKey::Named(NamedKey::Backspace) => Key::Backspace,
+                WinitKey::Named(NamedKey::Delete) => Key::Delete,
+                WinitKey::Named(NamedKey::Tab) => Key::Tab,
+                WinitKey::Named(NamedKey::Home) => Key::Home,
+                WinitKey::Named(NamedKey::End) => Key::End,
+                WinitKey::Named(NamedKey::ArrowUp) => Key::ArrowUp,
+                WinitKey::Named(NamedKey::ArrowDown) => Key::ArrowDown,
+                WinitKey::Named(NamedKey::Space) => Key::Character(" ".to_string()),
                 WinitKey::Named(NamedKey::Enter) => Key::Enter,
                 WinitKey::Named(NamedKey::Escape) => Key::Escape,
                 WinitKey::Named(NamedKey::ArrowLeft) => Key::ArrowLeft,

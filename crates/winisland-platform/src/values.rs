@@ -113,10 +113,17 @@ pub enum MouseWheelDelta {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Key {
     Backspace,
+    Delete,
     Enter,
     Escape,
+    Tab,
+    Home,
+    End,
     ArrowLeft,
     ArrowRight,
+    ArrowUp,
+    ArrowDown,
+    /// Text produced by the key, including a space for the space bar.
     Character(String),
     Other,
 }

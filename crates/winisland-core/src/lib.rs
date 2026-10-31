@@ -34,5 +34,6 @@ pub mod physics;
 pub mod plugin_settings;
 pub mod screen_time;
 pub mod shelf;
+pub mod text_edit;
 pub mod units;
 pub mod widgets;
