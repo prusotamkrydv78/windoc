@@ -33,4 +33,5 @@ pub mod persistence;
 pub mod physics;
 pub mod plugin_settings;
 pub mod screen_time;
+pub mod shelf;
 pub mod widgets;
