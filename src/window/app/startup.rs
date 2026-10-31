@@ -29,6 +29,12 @@ impl App {
             };
             let window_ref = WindowRef(id);
             self.window = Some(window_ref);
+            if let Some(surface) = window().native_surface(id) {
+                winisland_platform_windows::accessibility::install(
+                    surface.handle() as isize,
+                    WINDOW_TITLE,
+                );
+            }
             let dpi_size = self.required_window_size();
             if dpi_size != window_size {
                 let _ = window_ref.request_inner_size(dpi_size);

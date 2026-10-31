@@ -74,6 +74,21 @@ impl App {
         crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
+        let accessible = if self.expanded && self.page_visible(ExpandedPage::Home) {
+            let layout = self.compute_island_layout();
+            crate::ui::dashboard::accessible_elements(
+                layout.offset_x as f32 + self.page_translation(ExpandedPage::Home),
+                layout.island_y as f32,
+                self.springs.w.value,
+                (self.config.expanded_height * self.config.expanded_scale)
+                    .min(self.springs.h.value),
+                self.config.expanded_scale,
+                (f64::from(self.geom.win_x), f64::from(self.geom.win_y)),
+            )
+        } else {
+            Vec::new()
+        };
+        winisland_platform_windows::accessibility::publish(accessible);
         if let Some(entry_id) = crate::ui::dashboard::take_shelf_removal() {
             self.shelf.remove(entry_id);
         }

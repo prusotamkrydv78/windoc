@@ -1109,3 +1109,53 @@ fn draw_shelf_page(
         }
     });
 }
+
+/// Flattens the dashboard's semantic tree into screen-space UI Automation elements.
+/// `origin` is the island window's screen position in physical pixels.
+pub fn accessible_elements(
+    ox: f32,
+    oy: f32,
+    width: f32,
+    height: f32,
+    scale: f32,
+    origin: (f64, f64),
+) -> Vec<winisland_platform_windows::accessibility::AccessibleElement> {
+    use crate::ui::components::semantics::Role;
+    use winisland_platform_windows::accessibility::{AccessibleElement, AccessibleRole};
+
+    let layout = page_layout(width, height, scale);
+    let active = PAGE.with(|page| page.borrow().active);
+    let tree = semantics(
+        &layout,
+        active,
+        cards_for(active),
+        DashboardInteraction::default(),
+    );
+    let mut elements = Vec::new();
+    let mut stack = vec![tree];
+    while let Some(node) = stack.pop() {
+        if !node.name.is_empty() {
+            let bounds = node.bounds;
+            elements.push(AccessibleElement {
+                name: node.name.clone(),
+                role: match node.role {
+                    Role::Button => AccessibleRole::Button,
+                    Role::Group => AccessibleRole::Group,
+                    Role::ListItem => AccessibleRole::ListItem,
+                    Role::Tab => AccessibleRole::Tab,
+                    Role::TabList => AccessibleRole::TabList,
+                    Role::Text => AccessibleRole::Text,
+                },
+                bounds: (
+                    origin.0 + f64::from(ox + bounds.left * scale),
+                    origin.1 + f64::from(oy + bounds.top * scale),
+                    f64::from(bounds.width() * scale),
+                    f64::from(bounds.height() * scale),
+                ),
+                selected: node.state.selected,
+            });
+        }
+        stack.extend(node.children.into_iter().rev());
+    }
+    elements
+}

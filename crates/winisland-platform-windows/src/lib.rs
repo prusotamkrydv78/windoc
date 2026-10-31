@@ -2,6 +2,7 @@
 //!
 //! This crate owns the event loop, windows, and operating system calls; rendering stays in the application.
 
+pub mod accessibility;
 mod audio;
 mod backdrop;
 mod clipboard;
