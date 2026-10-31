@@ -399,3 +399,5 @@ activity_low_battery=请尽快充电
 activity_drop_here=拖放以保存
 activity_shelf=文件架
 activity_saved_to_shelf=已保存到文件架
+activity_starting_now=即将开始
+activity_in_minutes={} 分钟后

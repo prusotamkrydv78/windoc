@@ -1307,6 +1307,28 @@ impl App {
             .set_quiet(crate::platform::do_not_disturb());
         let (microphone, camera) = crate::platform::capture_in_use();
         crate::ui::island::set_capture_in_use(microphone, camera);
+        if !self.expanded
+            && !self.is_hidden()
+            && let Some((title, minutes)) = self.calendar.take_starting_soon(5)
+        {
+            let when = if minutes == 0 {
+                winisland_core::i18n::tr("activity_starting_now")
+            } else {
+                winisland_core::i18n::tr("activity_in_minutes").replacen(
+                    "{}",
+                    &minutes.to_string(),
+                    1,
+                )
+            };
+            self.compact_overlay
+                .push_activity(crate::ui::compact::Activity {
+                    icon: crate::ui::components::icon::Icon::Calendar,
+                    accent: winisland_render::Rgba::from_argb(255, 255, 69, 58),
+                    primary: title,
+                    secondary: when,
+                    progress: None,
+                });
+        }
         let Some((level, plugged)) = crate::platform::battery() else {
             return;
         };

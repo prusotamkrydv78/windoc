@@ -399,3 +399,5 @@ activity_low_battery=Plug in soon
 activity_drop_here=Drop to save
 activity_shelf=Shelf
 activity_saved_to_shelf=Saved to Shelf
+activity_starting_now=Starting now
+activity_in_minutes=in {} min

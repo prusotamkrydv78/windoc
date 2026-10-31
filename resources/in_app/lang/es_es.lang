@@ -399,3 +399,5 @@ activity_low_battery=Conecta pronto
 activity_drop_here=Suelta para guardar
 activity_shelf=Estante
 activity_saved_to_shelf=Guardado en el estante
+activity_starting_now=Empieza ahora
+activity_in_minutes=en {} min

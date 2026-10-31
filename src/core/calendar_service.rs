@@ -14,6 +14,8 @@ pub struct CalendarService {
     pending: Option<Receiver<Vec<CalendarEvent>>>,
     next_fetch: Instant,
     revision: u64,
+    /// Starts of events already announced by `take_starting_soon`.
+    announced: Vec<String>,
 }
 
 impl CalendarService {
@@ -24,6 +26,7 @@ impl CalendarService {
             pending: None,
             next_fetch: Instant::now(),
             revision: 0,
+            announced: Vec::new(),
         }
     }
 
@@ -112,4 +115,56 @@ impl CalendarService {
     pub fn revision(&self) -> u64 {
         self.revision
     }
+
+    /// The first timed event starting within `lead_minutes` that has not been announced yet,
+    /// as `(title, minutes until it starts)`. Each event is returned once.
+    pub fn take_starting_soon(&mut self, lead_minutes: i64) -> Option<(String, i64)> {
+        let local = crate::platform::shell().local_datetime();
+        let local_now = civil_minutes(
+            i64::from(local.year),
+            i64::from(local.month),
+            i64::from(local.day),
+            i64::from(local.hour),
+            i64::from(local.minute),
+        );
+        let utc_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|time| (time.as_secs() / 60) as i64)
+            .unwrap_or_default();
+        let event = self.events.iter().find_map(|event| {
+            if event.all_day || event.start.len() < 13 {
+                return None;
+            }
+            let field = |range: std::ops::Range<usize>| event.start[range].parse::<i64>().ok();
+            let start = civil_minutes(
+                field(0..4)?,
+                field(4..6)?,
+                field(6..8)?,
+                field(9..11)?,
+                field(11..13)?,
+            );
+            let now = if event.utc { utc_now } else { local_now };
+            let until = start - now;
+            ((0..=lead_minutes).contains(&until) && !self.announced.contains(&event.start))
+                .then(|| (event.start.clone(), event.title.clone(), until))
+        })?;
+        let (start, title, until) = event;
+        self.announced.push(start);
+        if self.announced.len() > 64 {
+            self.announced.remove(0);
+        }
+        Some((title, until))
+    }
+}
+
+/// Minutes since 1970-01-01 00:00 for a proleptic Gregorian date and time.
+fn civil_minutes(year: i64, month: i64, day: i64, hour: i64, minute: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month_index = (month + 9) % 12;
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    (days * 24 + hour) * 60 + minute
 }
