@@ -76,6 +76,9 @@ impl App {
             window.request_redraw();
         }
         crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
+        if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::Weather) {
+            crate::ui::dashboard::set_weather_rows(self.weather.detail_rows(&self.config));
+        }
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::widget::compact::message::set(&self.config.status_message);
         crate::ui::dashboard::set_links(&self.config.links);

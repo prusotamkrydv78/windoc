@@ -779,6 +779,8 @@ pub enum Destination {
     AiUsage,
     /// Quick links; reached from More.
     Links,
+    /// Forecast details; reached from More.
+    Weather,
 }
 
 impl Destination {
@@ -793,7 +795,7 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 8] = [
+    pub const MORE_ITEMS: [Self; 9] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -802,6 +804,7 @@ impl Destination {
         Self::Clock,
         Self::AiUsage,
         Self::Links,
+        Self::Weather,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -816,6 +819,7 @@ impl Destination {
             Self::Clock => "dashboard_clock",
             Self::AiUsage => "dashboard_ai_usage",
             Self::Links => "dashboard_links",
+            Self::Weather => "dashboard_weather",
         }
     }
 }
@@ -882,6 +886,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_clock_page(painter, layout.grid, colors);
     } else if active == Destination::AiUsage {
         draw_ai_usage_page(painter, layout.grid, colors);
+    } else if active == Destination::Weather {
+        draw_weather_page(painter, layout.grid, colors);
     } else if active == Destination::Links {
         draw_links_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Shelf {
@@ -1445,4 +1451,56 @@ fn draw_links_page(
             );
         }
     });
+}
+
+thread_local! {
+    static WEATHER_ROWS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the Weather page rows.
+pub fn set_weather_rows(rows: Vec<(String, String)>) {
+    WEATHER_ROWS.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != rows {
+            *current = rows;
+        }
+    });
+}
+
+fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    use crate::ui::components::list_row::draw_list_row;
+    WEATHER_ROWS.with(|cell| {
+        let rows = cell.borrow();
+        if rows.is_empty() {
+            draw_text(
+                painter,
+                &tr("weather_turn_on"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (title, detail)) in rows.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            let detail = (!detail.is_empty()).then_some(detail.as_str());
+            draw_list_row(
+                painter,
+                &row,
+                title,
+                detail,
+                colors,
+                InteractionState::default(),
+            );
+        }
+    });
+}
+
+/// Whether `destination` is the active dashboard page.
+pub fn showing(destination: Destination) -> bool {
+    PAGE.with(|page| page.borrow().active == destination)
 }

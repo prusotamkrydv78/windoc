@@ -144,3 +144,56 @@ impl WeatherService {
         }
     }
 }
+
+impl WeatherService {
+    /// `(title, detail)` rows for the Weather page: details, next hours, then 5 days.
+    pub fn detail_rows(&self, config: &AppConfig) -> Vec<(String, String)> {
+        use winisland_core::i18n::{tr, tr_args};
+        let Some(forecast) = self.forecast.as_ref().filter(|_| config.weather_enabled) else {
+            return Vec::new();
+        };
+        let symbol = forecast.temperature_symbol();
+        let mut rows = vec![(
+            format!(
+                "{:.0}{symbol} · {}",
+                forecast.temperature,
+                tr(forecast.condition.label_key())
+            ),
+            tr_args(
+                "weather_feels_like",
+                &[&format!("{:.0}{symbol}", forecast.apparent_temperature)],
+            ),
+        )];
+        let mut details = Vec::new();
+        if let Some(humidity) = forecast.humidity_percent {
+            details.push(tr_args("weather_humidity", &[&format!("{humidity:.0}")]));
+        }
+        if let Some(wind) = forecast.wind_speed {
+            details.push(tr_args("weather_wind", &[&format!("{wind:.0}")]));
+        }
+        if let Some(uv) = forecast.uv_index {
+            details.push(tr_args("weather_uv", &[&format!("{uv:.0}")]));
+        }
+        if !details.is_empty() {
+            rows.push((details.join(" · "), forecast.place.name.clone()));
+        }
+        for hour in forecast.hourly.iter().take(6) {
+            let time = hour.time.get(11..16).unwrap_or(&hour.time).to_string();
+            let rain = hour
+                .precipitation_probability
+                .map(|chance| tr_args("weather_rain_chance", &[&chance.to_string()]))
+                .unwrap_or_default();
+            rows.push((format!("{time} · {:.0}{symbol}", hour.temperature), rain));
+        }
+        for day in &forecast.daily {
+            rows.push((
+                format!(
+                    "{} · {:.0}{symbol} / {:.0}{symbol}",
+                    day.date, day.max, day.min
+                ),
+                tr(day.condition.label_key()),
+            ));
+        }
+        rows
+    }
+}

@@ -108,6 +108,15 @@ pub struct HourlyPoint {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct DailyPoint {
+    /// Provider date such as `2026-10-30`.
+    pub date: String,
+    pub condition: Condition,
+    pub max: f64,
+    pub min: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Forecast {
     pub place: Place,
     pub units: Units,
@@ -115,6 +124,14 @@ pub struct Forecast {
     pub apparent_temperature: f64,
     pub condition: Condition,
     pub hourly: Vec<HourlyPoint>,
+    #[serde(default)]
+    pub humidity_percent: Option<f64>,
+    #[serde(default)]
+    pub wind_speed: Option<f64>,
+    #[serde(default)]
+    pub uv_index: Option<f64>,
+    #[serde(default)]
+    pub daily: Vec<DailyPoint>,
     pub fetched_at: SystemTime,
 }
 
@@ -178,8 +195,10 @@ impl std::error::Error for WeatherError {}
 pub fn forecast_url(place: &Place, units: Units) -> String {
     let mut url = format!(
         "{FORECAST_ENDPOINT}?latitude={:.2}&longitude={:.2}\
-         &current=temperature_2m,apparent_temperature,weather_code\
+         &current=temperature_2m,apparent_temperature,weather_code,\
+         relative_humidity_2m,wind_speed_10m,uv_index\
          &hourly=temperature_2m,precipitation_probability\
+         &daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5\
          &forecast_hours={HOURS_KEPT}&timezone=auto",
         place.latitude, place.longitude
     );
@@ -211,6 +230,7 @@ pub fn geocoding_url(query: &str, language: &str) -> Option<String> {
 struct ForecastResponse {
     current: CurrentResponse,
     hourly: Option<HourlyResponse>,
+    daily: Option<DailyResponse>,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +238,17 @@ struct CurrentResponse {
     temperature_2m: f64,
     apparent_temperature: f64,
     weather_code: u32,
+    relative_humidity_2m: Option<f64>,
+    wind_speed_10m: Option<f64>,
+    uv_index: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct DailyResponse {
+    time: Vec<String>,
+    weather_code: Vec<Option<u32>>,
+    temperature_2m_max: Vec<Option<f64>>,
+    temperature_2m_min: Vec<Option<f64>>,
 }
 
 #[derive(Deserialize)]
@@ -255,6 +286,26 @@ pub fn parse_forecast(
                 .collect()
         })
         .unwrap_or_default();
+    let daily = response
+        .daily
+        .map(|daily| {
+            daily
+                .time
+                .into_iter()
+                .enumerate()
+                .filter_map(|(index, date)| {
+                    Some(DailyPoint {
+                        date,
+                        condition: Condition::from_wmo(
+                            daily.weather_code.get(index).copied().flatten()?,
+                        ),
+                        max: daily.temperature_2m_max.get(index).copied().flatten()?,
+                        min: daily.temperature_2m_min.get(index).copied().flatten()?,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(Forecast {
         place,
         units,
@@ -262,6 +313,10 @@ pub fn parse_forecast(
         apparent_temperature: response.current.apparent_temperature,
         condition: Condition::from_wmo(response.current.weather_code),
         hourly,
+        humidity_percent: response.current.relative_humidity_2m,
+        wind_speed: response.current.wind_speed_10m,
+        uv_index: response.current.uv_index,
+        daily,
         fetched_at: now,
     })
 }
