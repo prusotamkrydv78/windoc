@@ -28,6 +28,8 @@ pub struct Activity {
     pub primary: String,
     pub secondary: String,
     pub progress: Option<f32>,
+    /// Optional button: `(label, target)`; the target is a URL or path opened on click.
+    pub action: Option<(String, String)>,
 }
 
 #[derive(Default)]
@@ -35,6 +37,10 @@ pub(super) struct ActivityIndicator {
     current: Option<Activity>,
     shown_at: Option<Instant>,
     updated_at: Option<Instant>,
+    /// Activities waiting for the current one to finish, oldest first, one per kind.
+    queue: std::collections::VecDeque<Activity>,
+    /// The action button's rectangle from the last draw.
+    button: std::cell::Cell<Option<Rect>>,
 }
 
 impl ActivityIndicator {
@@ -47,11 +53,40 @@ impl ActivityIndicator {
                 .current
                 .as_ref()
                 .is_some_and(|current| current.icon == activity.icon);
+        // A different activity waits its turn instead of cutting the current one off.
+        if self.is_visible() && !same_kind {
+            self.queue.retain(|queued| queued.icon != activity.icon);
+            self.queue.push_back(activity);
+            return;
+        }
         if !same_kind {
             self.shown_at = Some(now);
         }
         self.updated_at = Some(now);
         self.current = Some(activity);
+    }
+
+    /// Starts the next queued activity once the current one has finished. Call every frame.
+    pub(super) fn advance(&mut self) {
+        if !self.is_visible()
+            && let Some(next) = self.queue.pop_front()
+        {
+            self.push(next);
+        }
+    }
+
+    /// The action target when `point` is on the visible activity's button.
+    pub(super) fn action_at(&self, point: winisland_render::Point) -> Option<String> {
+        let button = self.button.get()?;
+        (self.is_visible() && button.contains(point))
+            .then(|| {
+                self.current
+                    .as_ref()?
+                    .action
+                    .as_ref()
+                    .map(|(_, target)| target.clone())
+            })
+            .flatten()
     }
 
     pub(super) fn is_visible(&self) -> bool {
@@ -78,6 +113,9 @@ impl ActivityIndicator {
         }
         if activity.progress.is_some() {
             width += PROGRESS_GAP + PROGRESS_WIDTH;
+        }
+        if let Some((label, _)) = &activity.action {
+            width += 10.0 + fonts.measure_text_cached(label, 12.0, FontStyle::bold()) + 22.0;
         }
         CompactSize {
             width: width.clamp(MIN_WIDTH.max(base_width), MAX_WIDTH) * scale,
@@ -141,6 +179,37 @@ impl ActivityIndicator {
             right -= width + PROGRESS_GAP * scale;
         }
 
+        self.button.set(None);
+        if let Some((label, _)) = &activity.action {
+            // A blue pill on the right, like "Join" or "Open".
+            let fonts = FontManager::global();
+            let label_size = 12.0 * scale;
+            let label_w = fonts.measure_text_cached(label, label_size, FontStyle::bold());
+            let pill_h = 24.0 * scale;
+            let pill = Rect::from_xywh(
+                right - label_w - 22.0 * scale,
+                center_y - pill_h / 2.0,
+                label_w + 22.0 * scale,
+                pill_h,
+            );
+            painter.fill_round_rect(
+                pill,
+                Radius::uniform(pill_h / 2.0),
+                Rgba::from_rgb(10, 132, 255).with_alpha(to_alpha(1.0)),
+            );
+            fonts.draw_text_cached(DrawTextCachedParams {
+                painter,
+                text: label,
+                x: pill.left + 11.0 * scale,
+                y: center_y + label_size * 0.36,
+                size: label_size,
+                bold: true,
+                color: Rgba::WHITE.with_alpha(to_alpha(1.0)),
+                blur: None,
+            });
+            self.button.set(Some(pill));
+            right = pill.left - 10.0 * scale;
+        }
         let fonts = FontManager::global();
         let size = TEXT_SIZE * scale;
         let baseline = center_y + size * 0.36;

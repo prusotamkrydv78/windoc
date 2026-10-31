@@ -23,6 +23,8 @@ pub struct BarApp {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BarHit {
     Start,
+    /// Opens the panel with the command palette focused.
+    Search,
     App(isize),
     Clock,
     /// Wi-Fi, volume and battery: opens Quick Settings.
@@ -182,7 +184,11 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
             );
         }
         targets.push((start, BarHit::Start));
-        x = start.right + 6.0 * scale;
+        let search = Rect::from_xywh(start.right + 2.0 * scale, item_top, 28.0 * scale, item_h);
+        hover_fill(painter, search, BarHit::Search, false);
+        draw_glyph(painter, SEARCH, search, scale);
+        targets.push((search, BarHit::Search));
+        x = search.right + 6.0 * scale;
         painter.fill_rect(
             Rect::from_xywh(x, height / 2.0 - 7.0 * scale, 1.0, 14.0 * scale),
             Rgba::WHITE.with_alpha(40),
@@ -405,6 +411,20 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
         }
         targets.push((group, BarHit::Status));
         let tray = Rect::from_xywh(group.left - 26.0 * scale, item_top, 24.0 * scale, item_h);
+        let (microphone, camera) = crate::ui::island::capture_in_use();
+        if microphone || camera {
+            // Privacy dot left of the tray chevron: orange for the mic, green for the camera.
+            let color = if microphone {
+                Rgba::from_rgb(255, 159, 10)
+            } else {
+                Rgba::from_rgb(48, 209, 88)
+            };
+            painter.fill_circle(
+                Point::new(group.left - 34.0 * scale, height / 2.0),
+                3.5 * scale,
+                color,
+            );
+        }
         if hovered == Some(BarHit::Tray) {
             painter.fill_round_rect(
                 tray,
@@ -425,6 +445,7 @@ const SPEAKER: &str =
     "M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10";
 const BELL: &str = "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15zM10 20.5a2.2 2.2 0 0 0 4 0";
 const CHEVRON: &str = "M7 14.5l5-5 5 5";
+const SEARCH: &str = "M11 4.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM16 16l4.5 4.5";
 
 /// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
 fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
@@ -435,6 +456,7 @@ fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
         WIFI => WIFI,
         SPEAKER => SPEAKER,
         CHEVRON => CHEVRON,
+        SEARCH => SEARCH,
         _ => BELL,
     };
     let path = CACHE.with(|cache| {

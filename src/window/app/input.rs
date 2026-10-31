@@ -38,6 +38,16 @@ impl App {
         if state == InputState::Pressed && self.handle_popover_click(rel_x, rel_y) {
             return;
         }
+        // An activity's action button (Open, Settings…) acts on press.
+        if state == InputState::Pressed
+            && !self.expanded
+            && let Some(target) = self
+                .compact_overlay
+                .activity_action_at(winisland_render::Point::new(rel_x as f32, rel_y as f32))
+        {
+            let _ = crate::platform::shell().open_url(&target);
+            return;
+        }
         // Top bar items act on release-free press, like the taskbar.
         if state == InputState::Pressed
             && let Some(hit) =
@@ -46,6 +56,16 @@ impl App {
             use winisland_platform_windows::shell_bar;
             match hit {
                 crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
+                crate::ui::top_bar::BarHit::Search => {
+                    if self.is_hidden() {
+                        self.reveal_island();
+                    }
+                    self.expanded = true;
+                    crate::ui::dashboard::show(crate::ui::dashboard::Destination::Home);
+                    self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
+                    self.snap_to_current_page();
+                    crate::ui::dashboard::palette::open();
+                }
                 crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
                 crate::ui::top_bar::BarHit::Clock => {
                     toggle_popover(crate::ui::top_bar::popover::Popover::Calendar, hit)

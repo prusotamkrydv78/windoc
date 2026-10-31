@@ -658,3 +658,8 @@ fn idle_dim(dt: f32) -> f32 {
         next
     })
 }
+
+/// Microphone and camera in-use flags, as last published.
+pub fn capture_in_use() -> (bool, bool) {
+    CAPTURE_IN_USE.with(std::cell::Cell::get)
+}

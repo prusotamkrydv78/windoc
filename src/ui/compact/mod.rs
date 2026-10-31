@@ -143,6 +143,7 @@ impl CompactOverlay {
         if brightness_changed {
             self.last_level_is_brightness = true;
         }
+        self.activity_indicator.advance();
         let notification = self.notification_monitor.update(notification_display);
         let notification_received = if notification_display {
             self.notification_indicator
@@ -224,6 +225,11 @@ impl CompactOverlay {
     /// suppressed; volume and brightness still show because the user caused them.
     pub fn set_quiet(&mut self, quiet: bool) {
         self.quiet = quiet;
+    }
+
+    /// The action target under `point` on the visible activity's button, if any.
+    pub fn activity_action_at(&self, point: winisland_render::Point) -> Option<String> {
+        self.activity_indicator.action_at(point)
     }
 
     pub fn set_activities_enabled(&mut self, enabled: bool) {

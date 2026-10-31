@@ -414,3 +414,5 @@ activity_resumed=已唤醒
 activity_display_changed=显示器已更改
 activity_drive_added=已连接 USB 驱动器
 activity_drive_removed=驱动器已移除
+activity_open=打开
+activity_settings=设置

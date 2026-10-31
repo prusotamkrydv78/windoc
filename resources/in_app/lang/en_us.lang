@@ -414,3 +414,5 @@ activity_resumed=Awake again
 activity_display_changed=Display changed
 activity_drive_added=USB drive connected
 activity_drive_removed=Drive removed
+activity_open=Open
+activity_settings=Settings

@@ -414,3 +414,5 @@ activity_resumed=Activo de nuevo
 activity_display_changed=Pantalla cambiada
 activity_drive_added=Unidad USB conectada
 activity_drive_removed=Unidad extraída
+activity_open=Abrir
+activity_settings=Ajustes

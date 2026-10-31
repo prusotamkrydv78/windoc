@@ -68,6 +68,7 @@ impl App {
                         primary: winisland_core::i18n::tr("focus_notify_title"),
                         secondary: crate::ui::dashboard::phase_finished_message(event),
                         progress: None,
+                        action: None,
                     });
             }
             window.request_redraw();
@@ -98,6 +99,7 @@ impl App {
                     primary: label,
                     secondary: format!("{}%", (level * 100.0).round()),
                     progress: Some(level),
+                    action: None,
                 });
         }
         self.poll_battery_activity(now);
@@ -1391,6 +1393,7 @@ impl App {
                     primary: title,
                     secondary: when,
                     progress: None,
+                    action: None,
                 });
         }
         crate::ui::dashboard::set_battery(crate::platform::battery());
@@ -1427,6 +1430,12 @@ impl App {
                 primary: format!("{level}%"),
                 secondary,
                 progress: Some(f32::from(level) / 100.0),
+                action: (!plugged && level <= LOW_BATTERY).then(|| {
+                    (
+                        tr("activity_settings"),
+                        "ms-settings:batterysaver".to_string(),
+                    )
+                }),
             });
         }
     }
@@ -1463,6 +1472,7 @@ impl App {
             primary: tr("activity_copied"),
             secondary: kind,
             progress: None,
+            action: None,
         });
     }
 }
@@ -1489,6 +1499,7 @@ impl App {
             primary,
             secondary,
             progress: None,
+            action: None,
         });
     }
 }
@@ -1526,6 +1537,7 @@ impl App {
             primary: tr(primary),
             secondary: tr(secondary),
             progress: None,
+            action: None,
         });
     }
 }
@@ -1701,6 +1713,7 @@ impl App {
                             primary: format!("{name} call ended"),
                             secondary: format_call_time(now.duration_since(started)),
                             progress: None,
+                            action: None,
                         });
                 }
             }
@@ -1726,6 +1739,7 @@ impl App {
             primary: name.clone(),
             secondary: format!("{} · {mic}", format_call_time(now.duration_since(*started))),
             progress: None,
+            action: None,
         };
         self.compact_overlay.push_activity(activity);
     }
@@ -1797,12 +1811,23 @@ impl App {
                     format!("{letter}:"),
                 ),
             };
+            // Drives open in Explorer; display changes open display settings.
+            let action = match event {
+                ShellEvent::DriveAdded(letter) => {
+                    Some((tr("activity_open"), format!("{letter}:\\")))
+                }
+                ShellEvent::DisplayChanged => {
+                    Some((tr("activity_settings"), "ms-settings:display".to_string()))
+                }
+                _ => None,
+            };
             self.compact_overlay.push_activity(Activity {
                 icon,
                 accent,
                 primary,
                 secondary,
                 progress: None,
+                action,
             });
         }
     }
