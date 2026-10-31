@@ -175,6 +175,24 @@ pub fn draw_island(
             },
         );
     }
+    if params.attention_alpha > 0.0 {
+        // Attention: a soft amber glow around the real notch shape, behind it, so only the
+        // light spilling past the edge shows.
+        let scale = params.layout.compact_scale.max(0.5);
+        painter.fill_path_blurred(
+            &island_path,
+            Rgba::from_argb(
+                (150.0 * params.attention_alpha.clamp(0.0, 1.0)) as u8,
+                255,
+                196,
+                64,
+            ),
+            BlurSpec {
+                sigma: (9.0 * scale, 9.0 * scale),
+                tile: None,
+            },
+        );
+    }
     draw_background_layer(painter, drawing_context, &params, rect, &island_path);
     painter.save();
     painter.clip_path(&island_path);
@@ -235,31 +253,6 @@ pub fn draw_island(
         );
     }
     draw_pager(painter, drawing_context, &params, rect, expanded_alpha);
-    if params.attention_alpha > 0.0 {
-        let layout = &params.layout;
-        let inset = -2.0 * layout.compact_scale;
-        let outline = Path::continuous_rounded_rect(
-            Rect::from_xywh(
-                layout.island_x + inset,
-                layout.island_y + inset,
-                layout.current_w - 2.0 * inset,
-                layout.current_h - 2.0 * inset,
-            ),
-            layout.current_r - inset,
-        );
-        painter.stroke_path(
-            &outline,
-            2.5 * layout.compact_scale,
-            Rgba::from_argb(
-                (220.0 * params.attention_alpha.clamp(0.0, 1.0)) as u8,
-                255,
-                207,
-                45,
-            ),
-            winisland_render::StrokeCap::Butt,
-            winisland_render::StrokeJoin::Miter,
-        );
-    }
     if dim < 0.995 {
         painter.restore();
     }
@@ -591,12 +584,18 @@ fn island_shape(params: &DrawIslandParams<'_>, rect: Rect) -> Path {
     let scale = layout.compact_scale.max(0.5);
     let shoulder = (layout.current_r * 0.6).clamp(6.0 * scale, 14.0 * scale);
     let bar = params.style.bar_height;
-    let top = if bar > 0.0 && rect.bottom > bar + 2.0 {
-        bar
-    } else {
-        rect.top.min(0.0)
-    };
-    Path::notch(rect, top, layout.current_r, shoulder)
+    if bar > 0.0 {
+        // Under the top bar the notch always dips visibly below it, so it never collapses
+        // into a thin strip when the compact content is short.
+        let rect = Rect::from_ltrb(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom.max(bar + 12.0 * scale),
+        );
+        return Path::notch(rect, bar, layout.current_r, shoulder);
+    }
+    Path::notch(rect, rect.top.min(0.0), layout.current_r, shoulder)
 }
 
 thread_local! {

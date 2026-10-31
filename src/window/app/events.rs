@@ -541,6 +541,14 @@ impl App {
                                         self.springs.w.value,
                                         self.springs.h.value,
                                     );
+                                    // Same minimum dip below the bar as the notch shape.
+                                    let compact_scale = self.config.compact_scale.max(0.5);
+                                    let notch = winisland_render::Rect::from_ltrb(
+                                        notch.left,
+                                        notch.top,
+                                        notch.right,
+                                        notch.bottom.max(top_bar_height + 12.0 * compact_scale),
+                                    );
                                     let compact = self.config.compact_scale.max(0.5);
                                     let radius = self.springs.r.value;
                                     crate::ui::top_bar::draw_edge_light(

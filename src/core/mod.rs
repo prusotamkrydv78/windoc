@@ -14,6 +14,7 @@ pub mod safe_mode;
 pub mod screen_time;
 pub mod shelf_store;
 pub mod smtc;
+pub mod system_watch;
 pub mod top_bar;
 pub mod weather_service;
 pub mod wellness;

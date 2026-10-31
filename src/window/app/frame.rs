@@ -1359,15 +1359,16 @@ impl App {
             return;
         }
         self.battery_checked_at = Some(now);
-        self.sync_top_bar(now);
+        // Blocking system queries run on the watcher thread; this only reads the snapshot.
+        crate::core::system_watch::start();
+        let system = crate::core::system_watch::snapshot();
+        self.sync_top_bar(now, &system);
         self.show_shell_events();
-        self.compact_overlay
-            .set_quiet(crate::platform::do_not_disturb());
+        self.compact_overlay.set_quiet(system.do_not_disturb);
         self.compact_overlay
             .set_activities_enabled(self.config.live_activities);
-        let (microphone, camera) = crate::platform::capture_in_use();
-        crate::ui::island::set_capture_in_use(microphone, camera);
-        self.update_call(microphone, now);
+        crate::ui::island::set_capture_in_use(system.microphone, system.camera);
+        self.update_call(system.microphone, &system.apps, now);
         self.poll_onboarding();
         const IDLE_DIM_AFTER: Duration = Duration::from_secs(10 * 60);
         crate::ui::island::set_idle_dimmed(
@@ -1399,8 +1400,8 @@ impl App {
                     tall: false,
                 });
         }
-        crate::ui::dashboard::set_battery(crate::platform::battery());
-        let Some((level, plugged)) = crate::platform::battery() else {
+        crate::ui::dashboard::set_battery(system.battery);
+        let Some((level, plugged)) = system.battery else {
             return;
         };
         let previous = self.battery_state.replace((level, plugged));
@@ -1555,7 +1556,7 @@ impl App {
 impl App {
     /// Starts or stops the top bar session to match the setting. Never runs in safe mode, so
     /// `--safe-mode` is always a way back to the normal taskbar.
-    fn sync_top_bar(&mut self, now: Instant) {
+    fn sync_top_bar(&mut self, now: Instant, system: &crate::core::system_watch::SystemSnapshot) {
         use winisland_platform_windows::shell_bar::ScreenRect;
         let wanted = self.config.top_bar && !crate::core::safe_mode::active();
         let Some(window_ref) = self.window else {
@@ -1585,8 +1586,8 @@ impl App {
         let active = self.top_bar.is_some();
         crate::ui::top_bar::set_active(active);
         if active {
-            self.refresh_top_bar_apps();
-            crate::ui::top_bar::set_battery(crate::platform::battery());
+            self.publish_top_bar_apps(system.apps.clone());
+            crate::ui::top_bar::set_battery(system.battery);
             if crate::ui::top_bar::popover::is_open() {
                 self.refresh_popover_data(None);
             }
@@ -1613,8 +1614,16 @@ impl App {
 
 impl App {
     /// Publishes the running app windows to the top bar.
+    /// Publishes the running app windows to the top bar, re-reading them now (after a click).
     pub(super) fn refresh_top_bar_apps(&mut self) {
-        let apps = winisland_platform_windows::shell_bar::app_windows()
+        self.publish_top_bar_apps(winisland_platform_windows::shell_bar::app_windows());
+    }
+
+    fn publish_top_bar_apps(
+        &mut self,
+        windows: Vec<winisland_platform_windows::shell_bar::AppWindow>,
+    ) {
+        let apps = windows
             .into_iter()
             .map(|window| crate::ui::top_bar::BarApp {
                 handle: window.handle,
@@ -1694,11 +1703,16 @@ impl App {
 impl App {
     /// Meeting mode: while the microphone is in use and a calling app runs, the notch shows
     /// the call with its duration and mic state, refreshed every poll so it stays up.
-    fn update_call(&mut self, microphone: bool, now: Instant) {
+    fn update_call(
+        &mut self,
+        microphone: bool,
+        apps: &[winisland_platform_windows::shell_bar::AppWindow],
+        now: Instant,
+    ) {
         use winisland_platform_windows::shell_bar;
         let caller = microphone
             .then(|| {
-                shell_bar::app_windows().into_iter().find(|window| {
+                apps.iter().find(|window| {
                     shell_bar::CALL_APPS
                         .iter()
                         .any(|app| window.executable.eq_ignore_ascii_case(app))
@@ -1788,7 +1802,8 @@ impl App {
             if self.expanded || self.is_hidden() {
                 continue;
             }
-            let battery = crate::platform::battery()
+            let battery = crate::core::system_watch::snapshot()
+                .battery
                 .map(|(level, _)| format!("{level}%"))
                 .unwrap_or_default();
             let (icon, accent, primary, secondary) = match event {
@@ -1863,7 +1878,7 @@ impl App {
                     .ok()
                     .map(|state| state.level)
             }),
-            battery: crate::platform::battery(),
+            battery: crate::core::system_watch::snapshot().battery,
             track,
             agenda: self.calendar.agenda_rows(),
         });
