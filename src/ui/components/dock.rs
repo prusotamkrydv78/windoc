@@ -76,16 +76,15 @@ pub fn draw_dock(
     focused: Option<usize>,
     colors: &SemanticColors,
 ) {
-    // A rounded bar holds the row; narrow cells show icons only, like a launcher.
-    painter.fill_round_rect(
-        layout.bounds,
-        Radius::uniform(layout.bounds.height() / 2.0),
-        colors.surface_raised,
-    );
-    painter.stroke_round_rect(
-        layout.bounds,
-        Radius::uniform(layout.bounds.height() / 2.0),
-        1.0,
+    // A flat row under a hairline, like a launcher strip: no bar background. Narrow cells
+    // show icons only; the active one is bright with a small accent dot underneath.
+    painter.fill_rect(
+        Rect::from_xywh(
+            layout.bounds.left,
+            layout.bounds.top,
+            layout.bounds.width(),
+            1.0,
+        ),
         colors.border_subtle,
     );
     for (index, (rect, label)) in layout.items.iter().zip(labels).enumerate() {
@@ -99,18 +98,14 @@ pub fn draw_dock(
             diameter,
             diameter,
         );
-        if is_active || is_hovered {
+        if (is_active && !icon_only) || is_hovered {
             painter.fill_round_rect(
                 if icon_only {
-                    bubble
+                    Rect::from_xywh(rect.center_x() - 18.0, rect.center_y() - 17.0, 36.0, 34.0)
                 } else {
                     rect.inset(space::S1)
                 },
-                Radius::uniform(if icon_only {
-                    diameter / 2.0
-                } else {
-                    radius::CONTROL
-                }),
+                Radius::uniform(if icon_only { 9.0 } else { radius::CONTROL }),
                 if is_active {
                     colors.surface_interactive
                 } else {
@@ -125,7 +120,17 @@ pub fn draw_dock(
         };
         match icons.get(index) {
             Some(icon) if icon_only => {
-                let size = (diameter * 0.5).min(18.0);
+                let size = (diameter * 0.5).min(16.0);
+                if is_active {
+                    painter.fill_circle(
+                        winisland_render::Point::new(
+                            rect.center_x(),
+                            rect.center_y() + size / 2.0 + 6.0,
+                        ),
+                        2.0,
+                        winisland_render::Rgba::from_rgb(255, 176, 32),
+                    );
+                }
                 super::icon::draw_icon(
                     painter,
                     *icon,

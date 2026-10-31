@@ -1337,39 +1337,44 @@ fn draw_header(
     colors: &SemanticColors,
 ) {
     use crate::ui::components::icon::{Icon, draw_icon};
-    // Left: module icon, title, a divider and today's date.
-    let icon_size = 18.0;
-    draw_icon(
-        painter,
-        active.icon(),
-        Rect::from_xywh(
-            header.left,
-            header.center_y() - icon_size / 2.0,
-            icon_size,
-            icon_size,
-        ),
-        colors.text_primary,
-    );
-    let title = tr(active.label_key());
-    let title_left = header.left + icon_size + space::S2;
-    let title_width = winisland_render::text::FontManager::global().measure_text_cached(
-        &title,
-        typography::SECTION_TITLE.size,
-        winisland_render::FontStyle::bold(),
-    );
-    draw_text(
-        painter,
-        &title,
-        typography::SECTION_TITLE,
-        Rect::from_xywh(title_left, header.top, title_width + 2.0, header.height()),
-        Align::Start,
-        colors.text_primary,
-    );
-    let divider_x = title_left + title_width + space::S3;
-    painter.fill_rect(
-        Rect::from_xywh(divider_x, header.center_y() - 8.0, 1.0, 16.0),
-        colors.border_strong,
-    );
+    // Left: on Home only the workspace tabs; on a module page its icon and title first.
+    let divider_x = if active == Destination::Home {
+        header.left - space::S3
+    } else {
+        let icon_size = 18.0;
+        draw_icon(
+            painter,
+            active.icon(),
+            Rect::from_xywh(
+                header.left,
+                header.center_y() - icon_size / 2.0,
+                icon_size,
+                icon_size,
+            ),
+            colors.text_primary,
+        );
+        let title = tr(active.label_key());
+        let title_left = header.left + icon_size + space::S2;
+        let title_width = winisland_render::text::FontManager::global().measure_text_cached(
+            &title,
+            typography::SECTION_TITLE.size,
+            winisland_render::FontStyle::bold(),
+        );
+        draw_text(
+            painter,
+            &title,
+            typography::SECTION_TITLE,
+            Rect::from_xywh(title_left, header.top, title_width + 2.0, header.height()),
+            Align::Start,
+            colors.text_primary,
+        );
+        let divider_x = title_left + title_width + space::S3;
+        painter.fill_rect(
+            Rect::from_xywh(divider_x, header.center_y() - 8.0, 1.0, 16.0),
+            colors.border_strong,
+        );
+        divider_x
+    };
     let (settings, close) = header_buttons(header);
     let date_left = divider_x + space::S3;
     draw_workspace_tabs(painter, header, active, hovered, colors);
@@ -2335,13 +2340,27 @@ fn draw_system_rings(painter: Painter<'_>, content: Rect, colors: &SemanticColor
                 StrokeCap::Round,
             );
         }
-        let percent =
-            value.map_or_else(|| "—".to_string(), |value| format!("{:.0}%", value * 100.0));
+        // Small rings drop the % sign and use caption type so the number always fits.
+        let small = size < 52.0;
+        let percent = value.map_or_else(
+            || "—".to_string(),
+            |value| {
+                if small {
+                    format!("{:.0}", value * 100.0)
+                } else {
+                    format!("{:.0}%", value * 100.0)
+                }
+            },
+        );
         draw_text(
             painter,
             &percent,
-            typography::LABEL,
-            ring,
+            if small {
+                typography::CAPTION
+            } else {
+                typography::LABEL
+            },
+            ring.inset(-4.0),
             Align::Center,
             colors.text_primary,
         );
@@ -3076,7 +3095,11 @@ fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)
         typography::SECTION_TITLE.size,
         winisland_render::FontStyle::bold(),
     );
-    let mut x = header.left + icon_size + space::S2 + title_width + space::S3 * 2.0 + 1.0;
+    let mut x = if active == Destination::Home {
+        header.left - 8.0
+    } else {
+        header.left + icon_size + space::S2 + title_width + space::S3 * 2.0 + 1.0
+    };
     let mut tabs = Vec::new();
     let names: Vec<String> = WORKSPACES.with(|cell| {
         cell.borrow()
@@ -3087,7 +3110,7 @@ fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)
     for (index, name) in names.iter().enumerate() {
         let width = fonts.measure_text_cached(
             name,
-            typography::BODY.size,
+            typography::SECTION_TITLE.size,
             winisland_render::FontStyle::bold(),
         ) + 16.0;
         tabs.push((
@@ -3140,18 +3163,17 @@ fn draw_workspace_tabs(
         match hit {
             DashboardHit::Workspace(index) => {
                 let on = usize::from(index) == current;
-                if hover && !on {
-                    painter.fill_round_rect(rect, Radius::uniform(7.0), colors.surface_overlay);
-                }
                 let color = if on {
                     colors.text_primary
-                } else {
+                } else if hover {
                     colors.text_secondary
+                } else {
+                    colors.text_disabled
                 };
                 draw_text(
                     painter,
                     &names[usize::from(index)],
-                    typography::BODY,
+                    typography::SECTION_TITLE,
                     rect.inset(8.0),
                     Align::Start,
                     color,
@@ -3186,7 +3208,7 @@ fn draw_workspace_tabs(
                 } else if hover {
                     (colors.surface_overlay, colors.text_primary)
                 } else {
-                    (colors.surface_raised, colors.text_secondary)
+                    (winisland_render::Rgba::TRANSPARENT, colors.text_disabled)
                 };
                 painter.fill_round_rect(rect, Radius::uniform(rect.height() / 2.0), fill);
                 draw_text(
