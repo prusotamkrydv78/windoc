@@ -1880,6 +1880,13 @@ impl App {
                 )
             }),
         );
+        crate::ui::widget::compact::mascot::set_preferences(
+            self.config.robot_liveliness,
+            self.config.robot_festive,
+            self.config.robot_nudges,
+            self.config.robot_pc_reactions,
+            &self.config.birthday,
+        );
         let media = self.current_media_info();
         let playing_track = media.is_playing.then(|| media.title.clone());
         crate::ui::widget::compact::mascot::set_context(

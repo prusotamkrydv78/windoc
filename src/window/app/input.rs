@@ -498,7 +498,8 @@ impl App {
                 } else {
                     // With hover-to-open the panel opens on its own, so a click on the resting
                     // robot makes it hop instead.
-                    let robot_resting = self.config.hover_to_open
+                    let robot_resting = self.config.robot_enabled
+                        && self.config.hover_to_open
                         && !self.current_media_info().is_playing
                         && self.config.compact_widget_layout.iter().any(|slot| {
                             slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)

@@ -19,6 +19,8 @@ pub(super) enum BehaviorAction {
     AddWorldClock,
     StatusMessage,
     UserName,
+    Birthday,
+    PreviewReaction,
     AddLink,
     AddFeed,
     RemoveFeed(usize),
@@ -217,7 +219,29 @@ impl SettingsApp {
             BehaviorAction::UserName,
         );
         page.row_label(tr("user_name_hint"));
-        page.setting(&self.config, AppConfigField::RobotSounds, true);
+        page.group_end();
+        page.section(tr("section_robot"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::RobotEnabled, true);
+        let robot = self.config.robot_enabled;
+        page.setting(&self.config, AppConfigField::RobotLiveliness, robot);
+        page.setting(&self.config, AppConfigField::RobotFestive, robot);
+        page.setting(&self.config, AppConfigField::RobotNudges, robot);
+        page.setting(&self.config, AppConfigField::RobotPcReactions, robot);
+        page.setting(&self.config, AppConfigField::RobotSounds, robot);
+        page.row_text_field(
+            tr("birthday"),
+            self.config.birthday.clone(),
+            tr("birthday_placeholder"),
+            robot,
+            BehaviorAction::Birthday,
+        );
+        page.row_button(
+            tr("robot_preview"),
+            tr("robot_preview_button"),
+            robot,
+            BehaviorAction::PreviewReaction,
+        );
         page.group_end();
         page.section(tr("section_status_message"));
         page.group_start();
@@ -438,6 +462,16 @@ impl SettingsApp {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 let current = self.config.status_message.clone();
                 self.begin_text_input(rect, &current, 60, commit_status_message);
+                false
+            }
+            (BehaviorAction::Birthday, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                let current = self.config.birthday.clone();
+                self.begin_text_input(rect, &current, 5, commit_birthday);
+                false
+            }
+            (BehaviorAction::PreviewReaction, ClickResult::RowButton(_)) => {
+                crate::ui::widget::compact::mascot::preview_next();
                 false
             }
             (BehaviorAction::UserName, ClickResult::TextField(index)) => {
@@ -683,6 +717,23 @@ fn commit_restore_backup(app: &mut SettingsApp, passphrase: &str) {
             app.mark_items_dirty();
         }
     }
+}
+
+/// Accepts `MM-DD`; anything else clears the birthday.
+fn commit_birthday(app: &mut SettingsApp, text: &str) {
+    let text = text.trim();
+    let valid = text.split_once('-').is_some_and(|(month, day)| {
+        month
+            .parse::<u32>()
+            .is_ok_and(|month| (1..=12).contains(&month))
+            && day.parse::<u32>().is_ok_and(|day| (1..=31).contains(&day))
+    });
+    app.config.birthday = if valid {
+        text.to_string()
+    } else {
+        String::new()
+    };
+    app.mark_items_dirty();
 }
 
 fn commit_user_name(app: &mut SettingsApp, text: &str) {

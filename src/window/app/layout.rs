@@ -409,11 +409,11 @@ impl App {
         is_paused: bool,
         dt: f32,
     ) -> f32 {
-        let robot_beside = self
-            .config
-            .compact_widget_layout
-            .iter()
-            .any(|slot| slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot));
+        let robot_beside =
+            self.config.robot_enabled
+                && self.config.compact_widget_layout.iter().any(|slot| {
+                    slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)
+                });
         let target_base_w =
             if music_active && robot_beside && !self.expanded && !self.is_width_hiding() {
                 // Only the cover and waveform show beside the robot.
@@ -502,6 +502,9 @@ impl App {
             CompactWidgetAlignment, CompactWidgetKind, CompactWidgetSlot,
         };
         let mut layout = self.config.compact_widget_layout.clone();
+        if !self.config.robot_enabled {
+            layout.retain(|slot| slot.widget != Some(CompactWidgetKind::Mascot));
+        }
         let has_focus = layout
             .iter()
             .any(|entry| entry.widget == Some(CompactWidgetKind::Focus));

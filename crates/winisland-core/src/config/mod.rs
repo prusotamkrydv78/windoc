@@ -110,6 +110,25 @@ pub struct AppConfig {
     pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
+    /// Shows the robot in the resting notch.
+    #[educe(Default = true)]
+    #[setting(toggle, label = "robot_enabled")]
+    pub robot_enabled: bool,
+    /// How often the robot changes scene and nudges: 0 calm, 1 normal, 2 playful.
+    #[educe(Default = 1)]
+    #[setting(choice(0 => "robot_calm", 1 => "robot_normal", 2 => "robot_playful"), label = "robot_liveliness")]
+    pub robot_liveliness: u8,
+    #[educe(Default = true)]
+    #[setting(toggle, label = "robot_festive")]
+    pub robot_festive: bool,
+    #[educe(Default = true)]
+    #[setting(toggle, label = "robot_nudges")]
+    pub robot_nudges: bool,
+    #[educe(Default = true)]
+    #[setting(toggle, label = "robot_pc_reactions")]
+    pub robot_pc_reactions: bool,
+    /// The user.s birthday as `MM-DD`, for a cake on the day. Empty when not set.
+    pub birthday: String,
     /// Tiny sounds with the robot's reactions. Off by default; never during Do Not Disturb.
     #[setting(toggle, label = "robot_sounds")]
     pub robot_sounds: bool,

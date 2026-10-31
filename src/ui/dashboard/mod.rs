@@ -1339,7 +1339,15 @@ fn draw_header(
     use crate::ui::components::icon::{Icon, draw_icon};
     // Left: on Home only the workspace tabs; on a module page its icon and title first.
     let divider_x = if active == Destination::Home {
-        header.left - space::S3
+        // The robot waves from the corner of Home, before the workspace tabs.
+        let robot = header.height().min(28.0);
+        crate::ui::widget::compact::mascot::draw_gesture(
+            painter,
+            Rect::from_xywh(header.left, header.center_y() - robot / 2.0, robot, robot),
+            u8::MAX,
+            crate::ui::widget::compact::mascot::Gesture::Wave,
+        );
+        header.left + robot + space::S2 - space::S3
     } else {
         let icon_size = 18.0;
         draw_icon(

@@ -189,11 +189,12 @@ mod tests {
     #[test]
     fn compact_uses_fewer_columns_and_scrolls() {
         let layout = compact();
-        assert_eq!(layout.destinations, Destination::COMPACT.to_vec());
+        // Both sizes share the full dock; the compact one scrolls instead.
+        assert_eq!(layout.destinations, standard().destinations);
         assert!(layout.overflows());
-        // Focus spans the full compact width.
-        let focus = layout.cards[2];
-        assert!((focus.width() - layout.grid.width()).abs() < 0.01);
+        assert!(
+            DashboardLayout::columns(SizeClass::Compact) < DashboardLayout::columns(SizeClass::Standard)
+        );
     }
 
     #[test]

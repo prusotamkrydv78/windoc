@@ -172,6 +172,14 @@ pub(crate) enum Reaction {
     Trophy,
     /// The festive days around Diwali: diyas, sparklers and fireworks.
     Diwali,
+    /// Holi: clouds of coloured powder.
+    Holi,
+    /// Christmas: a Santa hat, snow and a little tree.
+    Christmas,
+    /// New Year: fireworks and confetti.
+    NewYear,
+    /// The user's birthday: a party hat and a cake with candles.
+    Birthday,
 }
 
 impl Reaction {
@@ -192,6 +200,10 @@ impl Reaction {
                 Some("reaction_diwali_coming")
             }
             Self::Diwali => Some("reaction_diwali"),
+            Self::Holi => Some("reaction_holi"),
+            Self::Christmas => Some("reaction_christmas"),
+            Self::NewYear => Some("reaction_new_year"),
+            Self::Birthday => Some("reaction_birthday"),
             _ => None,
         }
     }
@@ -206,7 +218,7 @@ impl Reaction {
             Self::Offline | Self::Downloaded => 4.0,
             Self::Online => 3.5,
             Self::HotCpu | Self::Trophy => 5.0,
-            Self::Diwali => 9.0,
+            Self::Diwali | Self::Holi | Self::Christmas | Self::NewYear | Self::Birthday => 9.0,
             Self::Charging | Self::Drive => 4.0,
             Self::Copied => 3.0,
             Self::Surprised => 2.6,
@@ -235,7 +247,12 @@ impl Reaction {
             Self::Offline | Self::Online => 60.0,
             Self::HotCpu => 600.0,
             Self::Downloaded => 20.0,
-            Self::Trophy | Self::Diwali => 0.0,
+            Self::Trophy
+            | Self::Diwali
+            | Self::Holi
+            | Self::Christmas
+            | Self::NewYear
+            | Self::Birthday => 0.0,
             Self::Celebrate => 0.0,
         }
     }
@@ -265,6 +282,9 @@ fn cooled_down(reaction: Reaction) -> bool {
 
 /// Plays `reaction` the next time the robot is on screen, replacing any earlier one.
 pub(crate) fn react(reaction: Reaction) {
+    if !allowed(reaction) {
+        return;
+    }
     if !cooled_down(reaction) {
         return;
     }
@@ -274,7 +294,12 @@ pub(crate) fn react(reaction: Reaction) {
         Reaction::Celebrate => play(Sound::Done),
         Reaction::WelcomeBack | Reaction::Charging => play(Sound::Hello),
         Reaction::Drive | Reaction::Surprised => play(Sound::Pop),
-        Reaction::Trophy | Reaction::Diwali => play(Sound::Done),
+        Reaction::Trophy
+        | Reaction::Diwali
+        | Reaction::Holi
+        | Reaction::Christmas
+        | Reaction::NewYear
+        | Reaction::Birthday => play(Sound::Done),
         Reaction::Online => play(Sound::Hello),
         Reaction::Downloaded => play(Sound::Pop),
         Reaction::Jump | Reaction::Offline | Reaction::HotCpu => {}
@@ -389,11 +414,211 @@ fn diwali_today() -> Option<i32> {
     )
 }
 
+#[derive(Clone, Copy)]
+struct Preferences {
+    /// 0 calm, 1 normal, 2 playful.
+    liveliness: u8,
+    festive: bool,
+    nudges: bool,
+    pc_reactions: bool,
+    /// Month and day.
+    birthday: Option<(u32, u32)>,
+}
+
+thread_local! {
+    static PREFERENCES: std::cell::Cell<Preferences> = const {
+        std::cell::Cell::new(Preferences {
+            liveliness: 1,
+            festive: true,
+            nudges: true,
+            pc_reactions: true,
+            birthday: None,
+        })
+    };
+}
+
+/// Applies the Robot settings. `birthday` is `MM-DD` or empty. Call each tick.
+pub(crate) fn set_preferences(
+    liveliness: u8,
+    festive: bool,
+    nudges: bool,
+    pc_reactions: bool,
+    birthday: &str,
+) {
+    let birthday = birthday
+        .split_once('-')
+        .and_then(|(month, day)| Some((month.parse().ok()?, day.parse().ok()?)));
+    PREFERENCES.with(|cell| {
+        cell.set(Preferences {
+            liveliness: liveliness.min(2),
+            festive,
+            nudges,
+            pc_reactions,
+            birthday,
+        });
+    });
+}
+
+fn preferences() -> Preferences {
+    PREFERENCES.with(std::cell::Cell::get)
+}
+
+/// How long each scene plays: longer when calm, shorter when playful.
+fn scene_seconds() -> f32 {
+    [22.0, SCENE_SECONDS, 9.0][usize::from(preferences().liveliness)]
+}
+
+/// Stretches or shortens the gaps between nudges and festive moments with liveliness.
+fn pace() -> f32 {
+    [1.5, 1.0, 0.75][usize::from(preferences().liveliness)]
+}
+
+/// Whether the Robot settings allow `reaction`'s group.
+fn allowed(reaction: Reaction) -> bool {
+    let preferences = preferences();
+    match reaction {
+        Reaction::Water | Reaction::StretchBreak | Reaction::Lunch | Reaction::WrapUp => {
+            preferences.nudges
+        }
+        Reaction::MouseArrived
+        | Reaction::Charging
+        | Reaction::Surprised
+        | Reaction::Copied
+        | Reaction::Drive
+        | Reaction::Offline
+        | Reaction::Online
+        | Reaction::HotCpu
+        | Reaction::Downloaded => preferences.pc_reactions,
+        Reaction::Diwali
+        | Reaction::Holi
+        | Reaction::Christmas
+        | Reaction::NewYear
+        | Reaction::Birthday => preferences.festive,
+        Reaction::Celebrate | Reaction::Trophy | Reaction::WelcomeBack | Reaction::Jump => true,
+    }
+}
+
+/// Every reaction, in the order the Settings preview plays them.
+const ALL_REACTIONS: [Reaction; 22] = [
+    Reaction::MouseArrived,
+    Reaction::Charging,
+    Reaction::Surprised,
+    Reaction::Copied,
+    Reaction::Drive,
+    Reaction::Celebrate,
+    Reaction::WelcomeBack,
+    Reaction::Water,
+    Reaction::StretchBreak,
+    Reaction::Lunch,
+    Reaction::WrapUp,
+    Reaction::Jump,
+    Reaction::Offline,
+    Reaction::Online,
+    Reaction::HotCpu,
+    Reaction::Downloaded,
+    Reaction::Trophy,
+    Reaction::Diwali,
+    Reaction::Holi,
+    Reaction::Christmas,
+    Reaction::NewYear,
+    Reaction::Birthday,
+];
+
+/// Plays the next reaction in turn right away, ignoring settings and cooldowns.
+pub(crate) fn preview_next() {
+    thread_local! {
+        static NEXT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+    let index = NEXT.with(|next| {
+        let index = next.get();
+        next.set((index + 1) % ALL_REACTIONS.len());
+        index
+    });
+    REACTION.with(|cell| cell.set(Some((ALL_REACTIONS[index], None))));
+}
+
+/// Holi dates.
+const HOLI: [(i32, u32, u32); 2] = [(2027, 3, 22), (2028, 3, 11)];
+
+/// The festival being celebrated today, if any, and days until its main day (negative
+/// after). A birthday wins on the day itself.
+fn festival_today() -> Option<(Reaction, i32)> {
+    let clock = crate::platform::shell().local_datetime();
+    let (year, month, day) = (
+        i32::from(clock.year),
+        u32::from(clock.month),
+        u32::from(clock.day),
+    );
+    let today = days_from_civil(year, month, day);
+    if preferences().birthday == Some((month, day)) {
+        return Some((Reaction::Birthday, 0));
+    }
+    if let Some(offset) = diwali_offset(year, month, day) {
+        return Some((Reaction::Diwali, offset));
+    }
+    let around = |dates: &[(i32, u32, u32)], before: i32, after: i32| {
+        dates
+            .iter()
+            .map(|&(y, m, d)| days_from_civil(y, m, d) - today)
+            .find(|offset| (-after..=before).contains(offset))
+    };
+    if let Some(offset) = around(&HOLI, 2, 1) {
+        return Some((Reaction::Holi, offset));
+    }
+    if let Some(offset) = around(&[(year, 12, 25)], 5, 1) {
+        return Some((Reaction::Christmas, offset));
+    }
+    if let Some(offset) = around(&[(year, 12, 31), (year - 1, 12, 31)], 0, 1) {
+        return Some((Reaction::NewYear, offset));
+    }
+    None
+}
+
+thread_local! {
+    /// When the robot last came back into view after a card, for its walk back in, the
+    /// last frame's opacity, and whether the current scene is slow enough for fewer frames.
+    static VIEW: std::cell::Cell<(Option<f32>, u8, bool)> =
+        const { std::cell::Cell::new((None, 255, false)) };
+}
+
+/// The robot walks back in from the side for the first moments after reappearing.
+const WALK_IN_SECONDS: f32 = 0.9;
+
+/// Notes this frame's opacity and returns the walk-in offset in robot units, 0 once in place.
+fn walk_in(time: f32, alpha: u8) -> f32 {
+    VIEW.with(|cell| {
+        let (mut since, last_alpha, slow) = cell.get();
+        if last_alpha < 80 && alpha > 200 {
+            since = Some(time);
+        }
+        cell.set((since, alpha, slow));
+        since.map_or(0.0, |start| {
+            -(1.0 - ease((time - start) / WALK_IN_SECONDS)) * 34.0
+        })
+    })
+}
+
+fn set_slow(slow: bool) {
+    VIEW.with(|cell| {
+        let (since, alpha, _) = cell.get();
+        cell.set((since, alpha, slow));
+    });
+}
+
+/// How soon to draw the robot again: fewer frames for slow, quiet scenes.
+pub(super) fn frame_interval() -> Duration {
+    if VIEW.with(std::cell::Cell::get).2 {
+        Duration::from_millis(110)
+    } else {
+        FRAME
+    }
+}
+
 /// Water every hour of continuous activity (first after half an hour), a stretch every 55
 /// minutes, lunch around 1 pm and a wrap-up around 6 pm. Never during a Focus session.
 fn nudge(away: bool, focus_running: bool) {
-    const WATER_EVERY: f32 = 3600.0;
-    const STRETCH_EVERY: f32 = 3300.0;
+    let water_every = 3600.0 * pace();
+    let stretch_every = 3300.0 * pace();
     let now = seconds();
     let due = CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
@@ -403,18 +628,18 @@ fn nudge(away: bool, focus_running: bool) {
         }
         if context.active_since.is_none() {
             context.active_since = Some(now);
-            context.next_water = now + WATER_EVERY / 2.0;
-            context.next_stretch = now + STRETCH_EVERY;
+            context.next_water = now + water_every / 2.0;
+            context.next_stretch = now + stretch_every;
         }
         if focus_running {
             return None;
         }
         if now >= context.next_water {
-            context.next_water = now + WATER_EVERY;
+            context.next_water = now + water_every;
             return Some(Reaction::Water);
         }
         if now >= context.next_stretch {
-            context.next_stretch = now + STRETCH_EVERY;
+            context.next_stretch = now + stretch_every;
             return Some(Reaction::StretchBreak);
         }
         None
@@ -430,11 +655,11 @@ fn nudge(away: bool, focus_running: bool) {
     }
     // Festive moments every 20 minutes, every 10 on Diwali itself and the day either side,
     // the first a minute after starting.
-    if let Some(offset) = diwali_today()
+    if let Some((festival, offset)) = festival_today()
         && !away
         && !focus_running
     {
-        let interval = if offset.abs() <= 1 { 600.0 } else { 1200.0 };
+        let interval = if offset.abs() <= 1 { 600.0 } else { 1200.0 } * pace();
         let fire = CONTEXT.with(|context| {
             let mut context = context.borrow_mut();
             let next = *context.next_diwali.get_or_insert(now + 60.0);
@@ -445,7 +670,7 @@ fn nudge(away: bool, focus_running: bool) {
             fire
         });
         if fire {
-            react(Reaction::Diwali);
+            react(festival);
         }
     }
 }
@@ -493,8 +718,8 @@ fn current_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
     if focus_running {
         return (Scene::Laptop, time);
     }
-    let index = (time / SCENE_SECONDS) as usize;
-    (DAY[index % DAY.len()], time % SCENE_SECONDS)
+    let index = (time / scene_seconds()) as usize;
+    (DAY[index % DAY.len()], time % scene_seconds())
 }
 
 fn greeting(name: &str) -> String {
@@ -510,7 +735,7 @@ fn scene_fade(scene: Scene, elapsed: f32) -> f32 {
     if matches!(scene, Scene::Night) {
         return 1.0;
     }
-    ease(elapsed / FADE_SECONDS) * ease((SCENE_SECONDS - elapsed) / FADE_SECONDS)
+    ease(elapsed / FADE_SECONDS) * ease((scene_seconds() - elapsed) / FADE_SECONDS)
 }
 
 #[derive(Clone, Copy)]
@@ -565,6 +790,7 @@ fn blink(eyes: Eyes, time: f32) -> Eyes {
 /// The idle notch: the robot and its current scene.
 pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     let time = seconds();
+    let walk = walk_in(time, alpha);
     let hour = crate::platform::shell().local_datetime().hour;
     let (name, focus_running) = CONTEXT.with(|context| {
         let context = context.borrow();
@@ -572,7 +798,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     });
     let away = CONTEXT.with(|context| context.borrow().away);
     let (scene, elapsed) = match dancing(time) {
-        _ if away => (Scene::Nap, SCENE_SECONDS / 2.0),
+        _ if away => (Scene::Nap, scene_seconds() / 2.0),
         Some(elapsed) => (Scene::Dance, elapsed),
         None => current_scene(time, hour, focus_running),
     };
@@ -584,6 +810,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     // The robot stands nearly the full height of the notch.
     let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
     if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
+        set_slow(false);
         // Centre the robot and its caption together.
         let caption = reaction.caption_key().map_or(0.0, |key| {
             11.0 * unit
@@ -638,13 +865,21 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         painter,
         unit,
         alpha,
-        x: rect.left + (offset + left_reach) * unit,
+        // After a card it walks back in from the side, carrying its scene.
+        x: rect.left + (offset + left_reach + walk) * unit,
         floor: rect.center_y() + 11.0 * unit,
         mid: rect.center_y(),
         time,
         elapsed,
         fade,
     };
+    set_slow(
+        walk == 0.0
+            && matches!(
+                scene,
+                Scene::Nap | Scene::Night | Scene::Read | Scene::LookAround
+            ),
+    );
     match scene {
         Scene::Wave => stage.wave(&name),
         Scene::Chai => stage.chai(),
@@ -1111,7 +1346,7 @@ impl Stage<'_> {
             }
         }
         // The plant grows through the scene.
-        let growth = 0.5 + 0.5 * ease(self.elapsed / (SCENE_SECONDS * 0.7));
+        let growth = 0.5 + 0.5 * ease(self.elapsed / (scene_seconds() * 0.7));
         let stem_base = self.at(22.0, -4.4);
         let stem_top = self.at(22.0, -4.4 - 6.0 * growth);
         self.line(stem_base, stem_top, 0.9, self.prop(1.0, LEAF));
@@ -1231,7 +1466,7 @@ impl Stage<'_> {
             self.prop(1.0, (250, 248, 240)),
         );
         // The picture appears a layer at a time: sky, sun, hills, then a little house.
-        let progress = ease(self.elapsed / (SCENE_SECONDS * 0.8));
+        let progress = ease(self.elapsed / (scene_seconds() * 0.8));
         let inner = Rect::from_ltrb(
             canvas.left + 0.8 * self.unit,
             canvas.top + 0.8 * self.unit,
@@ -1616,6 +1851,9 @@ impl Stage<'_> {
                 self.caption("reaction_trophy", t);
             }
             Reaction::Diwali => self.diwali(rect),
+            Reaction::Holi | Reaction::Christmas | Reaction::NewYear | Reaction::Birthday => {
+                self.festival(reaction, rect);
+            }
             Reaction::MouseArrived => self.mouse_chase(rect),
             Reaction::WelcomeBack => {
                 // Eyes open, a big stretch, then a wave.
@@ -1851,6 +2089,209 @@ impl Stage<'_> {
         self.sparkle(self.at(-10.0, -16.0), 0.5 + 0.5 * (t * 3.0).sin());
         self.sparkle(self.at(11.0, -18.0), 0.5 + 0.5 * (t * 3.7).cos());
         if let Some(key) = Reaction::Diwali.caption_key() {
+            self.caption(key, t);
+        }
+    }
+
+    /// A filled triangle through three points.
+    fn triangle(&self, a: Point, b: Point, c: Point, color: Rgba) {
+        let svg = format!("M{} {} L{} {} L{} {} Z", a.x, a.y, b.x, b.y, c.x, c.y);
+        if let Some(path) = winisland_render::Path::from_svg(&svg) {
+            self.painter.fill_path(&path, color);
+        }
+    }
+
+    /// A burst that blooms and fades over `period` seconds.
+    fn firework(&self, center: Point, period: f32, delay: f32, colors: &[(u8, u8, u8)]) {
+        let t = self.elapsed + delay;
+        let phase = (t % period) / period;
+        let radius = ease(phase / 0.6) * 6.0 * self.unit;
+        let fade = 1.0 - ease((phase - 0.4) / 0.6);
+        let color = colors[(t / period) as usize % colors.len()];
+        for ray in 0..10 {
+            let (sin, cos) = (ray as f32 / 10.0 * TAU).sin_cos();
+            self.line(
+                Point::new(
+                    center.x + cos * radius * 0.45,
+                    center.y + sin * radius * 0.45,
+                ),
+                Point::new(center.x + cos * radius, center.y + sin * radius),
+                0.6,
+                self.prop(fade, color),
+            );
+        }
+    }
+
+    /// A pointed hat sitting on the robot's head.
+    fn hat(&self, rise: f32, cone: (u8, u8, u8), trim: (u8, u8, u8)) {
+        let top = self.floor - (22.0 + rise) * self.unit;
+        let left = Point::new(self.x - 5.6 * self.unit, top + 1.2 * self.unit);
+        let right = Point::new(self.x + 5.6 * self.unit, top + 1.2 * self.unit);
+        let tip = Point::new(self.x + 3.0 * self.unit, top - 6.0 * self.unit);
+        self.triangle(left, right, tip, self.prop(1.0, cone));
+        self.painter.fill_round_rect(
+            Rect::from_xywh(
+                left.x - 0.6 * self.unit,
+                left.y - 0.4 * self.unit,
+                12.4 * self.unit,
+                1.6 * self.unit,
+            ),
+            Radius::uniform(0.8 * self.unit),
+            self.prop(1.0, trim),
+        );
+        self.painter
+            .fill_circle(tip, 1.1 * self.unit, self.prop(1.0, trim));
+    }
+
+    fn festival(&self, reaction: Reaction, rect: Rect) {
+        let t = self.elapsed;
+        let u = self.unit;
+        match reaction {
+            Reaction::Holi => {
+                // Puffs of coloured powder bloom around a delighted robot.
+                let colors = [
+                    (255, 90, 170),
+                    (90, 210, 120),
+                    (255, 210, 60),
+                    (90, 160, 255),
+                    (190, 110, 255),
+                ];
+                for index in 0..6 {
+                    let seed = index as f32 * 7.31;
+                    let phase = ((t * 0.7 + (seed.sin() * 99.0).fract().abs()) % 1.0).abs();
+                    let x = rect.left + ((seed.cos() * 431.7).fract().abs()) * rect.width();
+                    let y = rect.top + (0.25 + 0.5 * (seed * 1.7).sin().abs()) * rect.height();
+                    self.painter.fill_circle(
+                        Point::new(x, y),
+                        (1.5 + phase * 5.0) * u,
+                        self.prop(0.55 * (1.0 - phase), colors[index % colors.len()]),
+                    );
+                }
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = -1.2 + (t * 4.0).sin() * 0.6;
+                pose.rise = (t * 3.0).sin().abs() * 1.0;
+                self.robot(pose);
+                // Colour smudges on its shell.
+                for (dx, dy, color) in [
+                    (-3.0, -6.0, colors[0]),
+                    (2.5, -4.6, colors[1]),
+                    (-5.0, -17.0, colors[2]),
+                ] {
+                    self.painter
+                        .fill_circle(self.at(dx, dy), 0.9 * u, self.prop(0.9, color));
+                }
+            }
+            Reaction::Christmas => {
+                // Snow drifts down past a little tree.
+                for index in 0..16 {
+                    let seed = index as f32 * 3.77;
+                    let column = (seed.sin() * 917.3).fract().abs();
+                    let fall = ((t * (0.25 + column * 0.2) + column) % 1.0).abs();
+                    let sway = (t * 2.0 + seed).sin() * 1.2 * u;
+                    self.painter.fill_circle(
+                        Point::new(
+                            rect.left + column * rect.width() + sway,
+                            rect.top + fall * rect.height(),
+                        ),
+                        0.55 * u,
+                        self.prop(0.9, WHITE),
+                    );
+                }
+                let base = self.at(20.0, 0.0);
+                for (level, width) in [(0.0, 7.0), (4.5, 5.6), (8.5, 4.0)] {
+                    self.triangle(
+                        Point::new(base.x - width * u, base.y - (2.0 + level) * u),
+                        Point::new(base.x + width * u, base.y - (2.0 + level) * u),
+                        Point::new(base.x, base.y - (8.0 + level) * u),
+                        self.prop(1.0, (60, 160, 90)),
+                    );
+                }
+                self.painter.fill_rect(
+                    Rect::from_xywh(base.x - 0.8 * u, base.y - 2.0 * u, 1.6 * u, 2.0 * u),
+                    self.prop(1.0, (140, 90, 60)),
+                );
+                self.sparkle(
+                    Point::new(base.x, base.y - 16.6 * u),
+                    0.7 + 0.3 * (t * 3.0).sin(),
+                );
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = -0.45 + (t / 0.9 * TAU).sin() * 0.45;
+                self.robot(pose);
+                self.hat(0.0, (220, 50, 60), (250, 250, 250));
+            }
+            Reaction::NewYear => {
+                let colors = [
+                    (255, 210, 90),
+                    (120, 200, 255),
+                    (255, 130, 180),
+                    (150, 255, 170),
+                ];
+                self.firework(
+                    Point::new(self.x - 22.0 * u, self.mid - 3.0 * u),
+                    1.8,
+                    0.0,
+                    &colors,
+                );
+                self.firework(
+                    Point::new(self.x + 24.0 * u, self.mid - 5.0 * u),
+                    1.8,
+                    0.9,
+                    &colors,
+                );
+                self.confetti(rect, t);
+                let hop = (t * 1.5 * TAU).sin();
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.rise = hop.abs() * 2.0;
+                pose.right_arm = -1.5 + hop * 0.3;
+                pose.left_arm = -1.5 - hop * 0.3;
+                self.robot(pose);
+            }
+            Reaction::Birthday => {
+                self.confetti(rect, t);
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = 0.2;
+                pose.left_arm = 0.2;
+                let hands = self.robot(pose);
+                self.hat(0.0, (120, 170, 255), (255, 210, 90));
+                // A cake with three flickering candles.
+                let cake = Rect::from_xywh(
+                    (hands.left.x + hands.right.x) / 2.0 - 4.4 * u,
+                    hands.right.y - 3.0 * u,
+                    8.8 * u,
+                    4.2 * u,
+                );
+                self.painter.fill_round_rect(
+                    cake,
+                    Radius::uniform(0.8 * u),
+                    self.prop(1.0, (250, 225, 235)),
+                );
+                self.painter.fill_rect(
+                    Rect::from_xywh(cake.left, cake.top + 1.6 * u, cake.width(), 0.9 * u),
+                    self.prop(1.0, (240, 120, 160)),
+                );
+                for index in 0..3 {
+                    let x = cake.left + (2.0 + index as f32 * 2.4) * u;
+                    self.line(
+                        Point::new(x, cake.top),
+                        Point::new(x, cake.top - 2.0 * u),
+                        0.5,
+                        self.prop(1.0, (130, 190, 255)),
+                    );
+                    let flicker = 1.0 + (t * 15.0 + index as f32).sin() * 0.15;
+                    self.painter.fill_oval(
+                        Rect::from_xywh(
+                            x - 0.5 * u,
+                            cake.top - (3.4 * flicker) * u,
+                            1.0 * u,
+                            1.4 * flicker * u,
+                        ),
+                        self.prop(1.0, (255, 200, 70)),
+                    );
+                }
+            }
+            _ => {}
+        }
+        if let Some(key) = reaction.caption_key() {
             self.caption(key, t);
         }
     }

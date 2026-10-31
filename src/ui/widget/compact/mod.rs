@@ -329,6 +329,6 @@ pub(crate) fn next_refresh_delay(layout: &[CompactWidgetSlot]) -> Option<std::ti
     let mascot = layout
         .iter()
         .any(|entry| entry.widget == Some(CompactWidgetKind::Mascot))
-        .then_some(mascot::FRAME);
+        .then(mascot::frame_interval);
     [time, resource, focus, mascot].into_iter().flatten().min()
 }
