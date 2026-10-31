@@ -191,3 +191,13 @@ pub(crate) fn tray_labels(visible: bool) -> TrayLabels {
 pub(crate) fn battery() -> Option<(u8, bool)> {
     backend::battery_status()
 }
+
+/// Whether Windows asks apps not to interrupt (presenting, full-screen games, quiet time).
+pub(crate) fn do_not_disturb() -> bool {
+    backend::do_not_disturb()
+}
+
+/// Whether some app is using the microphone and the camera right now.
+pub(crate) fn capture_in_use() -> (bool, bool) {
+    backend::capture_in_use()
+}

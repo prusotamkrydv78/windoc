@@ -211,6 +211,7 @@ pub fn draw_island(
     }
     painter.restore();
     draw_island_border(painter, &params);
+    draw_privacy_dots(painter, &params, rect);
     if let Some(color) = edge_color {
         painter.stroke_path(
             &island_path,
@@ -575,4 +576,41 @@ fn island_shape(params: &DrawIslandParams<'_>, rect: Rect) -> Path {
     let shoulder = (layout.current_r * 0.6).clamp(6.0 * scale, 14.0 * scale);
     let top = rect.top.min(0.0);
     Path::notch(rect, top, layout.current_r, shoulder)
+}
+
+thread_local! {
+    /// Microphone and camera in-use flags for the privacy dots.
+    static CAPTURE_IN_USE: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((false, false)) };
+}
+
+/// Shows an orange dot while the microphone is in use and a green one for the camera.
+pub fn set_capture_in_use(microphone: bool, camera: bool) {
+    CAPTURE_IN_USE.with(|cell| cell.set((microphone, camera)));
+}
+
+/// Privacy dots at the right end of the notch, like the iPhone recording indicator.
+fn draw_privacy_dots(painter: Painter<'_>, params: &DrawIslandParams<'_>, rect: Rect) {
+    let (microphone, camera) = CAPTURE_IN_USE.with(std::cell::Cell::get);
+    if !microphone && !camera {
+        return;
+    }
+    let layout = &params.layout;
+    let scale = layout.compact_scale;
+    let alpha = (1.0 - layout.hide_progress).clamp(0.0, 1.0);
+    let radius = 3.0 * scale;
+    let center_y = layout.stable_island_y + layout.base_h.min(rect.height()) / 2.0;
+    let mut x = rect.right - 7.0 * scale;
+    for (on, color) in [
+        (camera, Rgba::from_argb(255, 52, 199, 89)),
+        (microphone, Rgba::from_argb(255, 255, 159, 10)),
+    ] {
+        if on {
+            painter.fill_circle(
+                Point::new(x, center_y),
+                radius,
+                color.with_alpha((255.0 * alpha) as u8),
+            );
+            x -= radius * 2.0 + 3.0 * scale;
+        }
+    }
 }

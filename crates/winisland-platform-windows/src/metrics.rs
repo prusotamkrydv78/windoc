@@ -186,3 +186,61 @@ pub fn battery_status() -> Option<(u8, bool)> {
     }
     Some((status.BatteryLifePercent, status.ACLineStatus == 1))
 }
+
+/// Whether Windows says the user should not be interrupted: presenting, running a
+/// full-screen Direct3D app, or in quiet time.
+pub fn do_not_disturb() -> bool {
+    use windows::Win32::UI::Shell::{
+        QUERY_USER_NOTIFICATION_STATE, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_QUIET_TIME,
+        QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
+    };
+    let state: QUERY_USER_NOTIFICATION_STATE = match unsafe { SHQueryUserNotificationState() } {
+        Ok(state) => state,
+        Err(_) => return false,
+    };
+    [
+        QUNS_BUSY,
+        QUNS_RUNNING_D3D_FULL_SCREEN,
+        QUNS_PRESENTATION_MODE,
+        QUNS_QUIET_TIME,
+    ]
+    .contains(&state)
+}
+
+/// Whether any app is currently using the microphone and the camera, from the Windows
+/// privacy consent store (an app is in use while its `LastUsedTimeStop` is 0).
+pub fn capture_in_use() -> (bool, bool) {
+    const STORE: &str =
+        "Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
+    fn in_use(capability: &str) -> bool {
+        let Ok(root) = windows_registry::CURRENT_USER.open(format!("{STORE}\{capability}"))
+        else {
+            return false;
+        };
+        let active = |key: &windows_registry::Key| {
+            key.get_u64("LastUsedTimeStart").is_ok_and(|start| start > 0)
+                && key.get_u64("LastUsedTimeStop").is_ok_and(|stop| stop == 0)
+        };
+        let Ok(names) = root.keys() else {
+            return false;
+        };
+        for name in names {
+            let Ok(app) = root.open(&name) else {
+                continue;
+            };
+            if name == "NonPackaged" {
+                if let Ok(children) = app.keys() {
+                    for child in children {
+                        if app.open(&child).is_ok_and(|key| active(&key)) {
+                            return true;
+                        }
+                    }
+                }
+            } else if active(&app) {
+                return true;
+            }
+        }
+        false
+    }
+    (in_use("microphone"), in_use("webcam"))
+}

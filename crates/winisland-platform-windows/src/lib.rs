@@ -30,7 +30,7 @@ pub use file::replace_file;
 pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};
 pub use input::WindowsInput;
 pub use media::WindowsMedia;
-pub use metrics::{WindowsMetrics, battery_status};
+pub use metrics::{WindowsMetrics, battery_status, capture_in_use, do_not_disturb};
 pub use notify::WindowsNotifications;
 pub use shell::WindowsShell;
 pub use timezone::{TimeZoneEntry, now_in_zone, time_zones};

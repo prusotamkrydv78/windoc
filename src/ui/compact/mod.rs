@@ -39,6 +39,7 @@ pub struct CompactOverlay {
     last_level_is_brightness: bool,
     notification_monitor: NotificationMonitor,
     activity_indicator: ActivityIndicator,
+    quiet: bool,
 }
 
 enum ActiveCompactOverlay<'a> {
@@ -82,6 +83,7 @@ impl CompactOverlay {
             notification_monitor: NotificationMonitor::default(),
             notification_indicator: NotificationIndicator::default(),
             activity_indicator: ActivityIndicator::default(),
+            quiet: false,
         }
     }
 
@@ -111,7 +113,7 @@ impl CompactOverlay {
         } else {
             CompactOverlayState::Discard
         };
-        let notification_display = notification_display && caps.toast_events;
+        let notification_display = notification_display && caps.toast_events && !self.quiet;
         self.volume_monitor.set_key_handling_enabled(
             caps.input_hooks && !matches!(volume_state, CompactOverlayState::Discard),
         );
@@ -210,7 +212,15 @@ impl CompactOverlay {
 
     /// Shows a short live activity in the collapsed notch.
     pub fn push_activity(&mut self, activity: Activity) {
-        self.activity_indicator.push(activity);
+        if !self.quiet {
+            self.activity_indicator.push(activity);
+        }
+    }
+
+    /// While quiet (presenting, full-screen, quiet time) activities and notifications are
+    /// suppressed; volume and brightness still show because the user caused them.
+    pub fn set_quiet(&mut self, quiet: bool) {
+        self.quiet = quiet;
     }
 
     pub fn is_notification_visible(&self) -> bool {
