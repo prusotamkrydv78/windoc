@@ -100,7 +100,9 @@ pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
 }
 
 fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
-    draw_mini_cover(params, alpha);
+    if !params.robot_beside {
+        draw_mini_cover(params, alpha);
+    }
     draw_dot_row(params, alpha);
     let no_lyrics = params.current_lyric.is_empty() && params.old_lyric.is_empty();
     let show_text = !params.robot_beside;

@@ -330,7 +330,12 @@ impl App {
                         let mini_content = if compact_components_hidden {
                             None
                         } else {
-                            self.ctx_mgr.current_mini()
+                            self.ctx_mgr.current_mini().filter(|content| {
+                                // Beside the robot, music shows only while it dances to a new song.
+                                !(matches!(content, winisland_core::context::MiniContent::Music)
+                                    && self.robot_beside_music()
+                                    && !crate::ui::widget::compact::mascot::music_spotlight())
+                            })
                         };
                         let attention_alpha = if self.fullscreen_hide_active()
                             && self.hide.fullscreen

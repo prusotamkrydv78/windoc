@@ -707,13 +707,23 @@ fn music_scene(elapsed: f32) -> (Scene, f32, f32) {
     (Scene::Dance, 0.0, 18.0)
 }
 
-/// Seconds since the current track started, while music plays.
+/// How long the robot dances, with the waveform beside it, when a song starts. After
+/// that the music steps aside and the robot goes back to its day.
+const MUSIC_DANCE_SECONDS: f32 = 18.0;
+
+/// Whether the robot is dancing to a song that just started, so the waveform shows.
+pub(crate) fn music_spotlight() -> bool {
+    dancing(seconds()).is_some()
+}
+
+/// Seconds since the current track started, during its opening dance.
 fn dancing(time: f32) -> Option<f32> {
     CONTEXT.with(|context| {
         context
             .borrow()
             .dance_started
             .map(|start| (time - start).max(0.0))
+            .filter(|elapsed| *elapsed < MUSIC_DANCE_SECONDS)
     })
 }
 

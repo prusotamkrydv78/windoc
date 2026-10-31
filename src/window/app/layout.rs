@@ -416,9 +416,9 @@ impl App {
                 });
         let target_base_w =
             if music_active && robot_beside && !self.expanded && !self.is_width_hiding() {
-                // Only the cover and waveform show beside the robot.
+                // Beside the robot music is only a waveform, and only during its dance.
                 self.lyrics.scroll_offset = 0.0;
-                self.config.base_width
+                56.0
             } else if music_active && !self.expanded && !self.is_width_hiding() {
                 let has_visible_lyrics = self.config.show_lyrics
                     && (!self.lyrics.current_text.is_empty()
@@ -495,6 +495,17 @@ impl App {
 }
 
 impl App {
+    /// Whether the robot shares the notch with music: then music shows only the waveform,
+    /// and only while the robot dances to a new song.
+    pub(super) fn robot_beside_music(&self) -> bool {
+        self.config.robot_enabled
+            && self
+                .config
+                .compact_widget_layout
+                .iter()
+                .any(|slot| slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot))
+    }
+
     /// Configured compact widgets, plus a Focus countdown while the timer runs so the
     /// collapsed island shows it as a live activity even when it was not added.
     pub(super) fn compact_layout(&self) -> Vec<winisland_core::config::CompactWidgetSlot> {
