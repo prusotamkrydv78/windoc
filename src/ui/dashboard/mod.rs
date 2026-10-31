@@ -855,6 +855,13 @@ pub fn apply(hit: DashboardHit) {
                     crate::core::focus_store::save(&page.focus);
                 }
             }
+            // Handled above by `apply_card_badge` and `apply_workspace_hit`.
+            DashboardHit::Workspace(_)
+            | DashboardHit::AddWorkspace
+            | DashboardHit::Arrange
+            | DashboardHit::CardMove(_)
+            | DashboardHit::CardResize(_)
+            | DashboardHit::CardRemove(_) => {}
         }
     });
 }

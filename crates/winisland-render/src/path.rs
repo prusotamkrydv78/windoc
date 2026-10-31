@@ -249,7 +249,7 @@ impl Path {
             return Self::default();
         };
         let mut builder = SkPathBuilder::new();
-        if contour.segment(
+        if contour.get_segment(
             start.max(0.0),
             end.min(contour.length()),
             &mut builder,

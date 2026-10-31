@@ -38,6 +38,7 @@ pub struct CompactOverlay {
     brightness_overlay_enabled: bool,
     last_level_is_brightness: bool,
     notification_monitor: NotificationMonitor,
+    notification_indicator: NotificationIndicator,
     activity_indicator: ActivityIndicator,
     quiet: bool,
     activities_enabled: bool,
