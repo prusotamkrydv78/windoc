@@ -9,6 +9,9 @@ use winisland_render::text::FontManager;
 
 use super::{App, DEFAULT_ANIMATION_REFRESH_RATE_MILLIHERTZ, IslandLayout};
 
+/// Widest the collapsed island grows to show a track title, in logical pixels.
+const MAX_TITLE_WIDTH: f32 = 260.0;
+
 impl App {
     pub(super) fn expanded_content_height(&self) -> f32 {
         self.config.expanded_height
@@ -461,7 +464,13 @@ impl App {
                     w.clamp(min_w.min(MAX_LYRIC_WIDTH), MAX_LYRIC_WIDTH)
                 }
             } else {
-                self.config.base_width + 35.0
+                // No lyrics: size the island to show the track title instead.
+                let (left_inset, right_inset) =
+                    crate::ui::island::mini_lyric_insets(self.config.lyrics_side_gap);
+                let title = self.current_media_info().title.clone();
+                let title_w = self.measure_lyric_text_width(&title);
+                let min_w = self.config.base_width + 35.0;
+                (left_inset + right_inset + title_w).clamp(min_w, MAX_TITLE_WIDTH.max(min_w))
             }
         } else {
             self.lyrics.scroll_offset = 0.0;

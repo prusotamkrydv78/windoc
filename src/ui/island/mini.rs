@@ -97,6 +97,17 @@ pub(super) fn draw_mini_content(params: MiniContentParams<'_>) {
 
 fn draw_music_content(params: &MiniContentParams<'_>, alpha: u8) {
     draw_mini_cover(params, alpha);
+    let no_lyrics = params.current_lyric.is_empty() && params.old_lyric.is_empty();
+    if no_lyrics {
+        draw_mini_title(params, alpha);
+    }
+    // With audio capture off the spectrum is silent; draw no idle bars.
+    if params.media.spectrum.iter().all(|level| *level <= 0.0) {
+        if !no_lyrics {
+            draw_mini_lyrics(params, alpha);
+        }
+        return;
+    }
     draw_visualizer(DrawVisualizerParams {
         painter: params.painter,
         x: params.offset_x + params.current_w - MINI_VISUALIZER_RIGHT_INSET * params.global_scale,
@@ -538,4 +549,37 @@ fn draw_highlighted_lyric(
         x + completed_width,
         x + completed_width + current_width,
     );
+}
+
+/// Track title (and artist, when it fits) between the cover and the right edge, used when
+/// there are no lyrics, so the collapsed island always says what is playing.
+fn draw_mini_title(params: &MiniContentParams<'_>, alpha: u8) {
+    let (left_inset, right_inset) = lyric_insets(params.lyric_side_gap);
+    let scale = params.global_scale;
+    let left = params.offset_x + left_inset * scale;
+    let right = params.offset_x + params.current_w - right_inset * scale;
+    if right - left < 20.0 * scale {
+        return;
+    }
+    let size = lyric_font_size(params.font_size, scale);
+    let fonts = FontManager::global();
+    let style = winisland_render::FontStyle::normal();
+    let title = crate::utils::settings_ui::ellipsize_text(
+        fonts,
+        &params.media.title,
+        size,
+        style,
+        right - left,
+    );
+    let width = fonts.measure_text_cached(&title, size, style);
+    fonts.draw_text_cached(DrawTextCachedParams {
+        painter: params.painter,
+        text: &title,
+        x: left + ((right - left) - width).max(0.0) / 2.0,
+        y: params.stable_offset_y + params.base_h / 2.0 + size * 0.36,
+        size,
+        bold: false,
+        color: params.text_color.with_alpha(alpha),
+        blur: None,
+    });
 }
