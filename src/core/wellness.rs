@@ -22,7 +22,8 @@ impl Reminder {
         }
     }
 
-    fn poll(&mut self, minutes: f32, now: Instant) {
+    /// Shows the reminder when it is due; returns whether it fired.
+    fn poll(&mut self, minutes: f32, now: Instant) -> bool {
         let interval = (minutes >= 1.0).then(|| Duration::from_secs_f32(minutes * 60.0));
         if interval != self.interval {
             self.interval = interval;
@@ -33,7 +34,9 @@ impl Reminder {
         {
             crate::platform::notify().show_toast(&tr(self.title_key), &tr(self.body_key));
             self.due = Some(now + interval);
+            return true;
         }
+        false
     }
 }
 
@@ -50,8 +53,11 @@ impl WellnessReminders {
         }
     }
 
-    pub fn poll(&mut self, config: &AppConfig, now: Instant) {
-        self.water.poll(config.water_reminder_minutes, now);
-        self.stretch.poll(config.stretch_reminder_minutes, now);
+    /// Returns which reminders fired: `(water, stretch)`.
+    pub fn poll(&mut self, config: &AppConfig, now: Instant) -> (bool, bool) {
+        (
+            self.water.poll(config.water_reminder_minutes, now),
+            self.stretch.poll(config.stretch_reminder_minutes, now),
+        )
     }
 }

@@ -86,6 +86,10 @@ struct Context {
     dance_started: Option<f32>,
     /// No keyboard or mouse input for a while: the robot naps until the user is back.
     away: bool,
+    /// When the current stretch of activity began, and when its next nudges are due.
+    active_since: Option<f32>,
+    next_water: f32,
+    next_stretch: f32,
 }
 
 thread_local! {
@@ -106,6 +110,7 @@ pub(crate) fn set_context(
     if returned {
         react(Reaction::WelcomeBack);
     }
+    nudge(away, focus_running);
     CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.name != name {
@@ -140,6 +145,14 @@ pub(crate) enum Reaction {
     Celebrate,
     /// The user is back after a while away: it wakes, stretches and waves.
     WelcomeBack,
+    /// A water break: it sips from a glass.
+    Water,
+    /// A stretch break: arms up and a big stretch.
+    StretchBreak,
+    /// Around 1 pm: a steaming bowl of noodles.
+    Lunch,
+    /// Around 6 pm: it closes its laptop and waves.
+    WrapUp,
 }
 
 impl Reaction {
@@ -148,6 +161,7 @@ impl Reaction {
             Self::MouseArrived => 6.0,
             Self::Celebrate => 4.5,
             Self::WelcomeBack => 4.5,
+            Self::Water | Self::StretchBreak | Self::Lunch | Self::WrapUp => 6.0,
             Self::Charging | Self::Drive => 4.0,
             Self::Copied => 3.0,
             Self::Surprised => 2.6,
@@ -170,6 +184,8 @@ impl Reaction {
             Self::MouseArrived | Self::Drive => 30.0,
             Self::Charging | Self::Surprised => 20.0,
             Self::WelcomeBack => 60.0,
+            Self::Water | Self::StretchBreak => 600.0,
+            Self::Lunch | Self::WrapUp => 3600.0,
             Self::Celebrate => 0.0,
         }
     }
@@ -180,7 +196,7 @@ impl Reaction {
 }
 
 thread_local! {
-    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 7]> = const { std::cell::Cell::new([None; 7]) };
+    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 11]> = const { std::cell::Cell::new([None; 11]) };
 }
 
 /// Whether `reaction` may play now; records it as played if so.
@@ -208,7 +224,11 @@ pub(crate) fn react(reaction: Reaction) {
         Reaction::Celebrate => play(Sound::Done),
         Reaction::WelcomeBack | Reaction::Charging => play(Sound::Hello),
         Reaction::Drive | Reaction::Surprised => play(Sound::Pop),
-        Reaction::Copied => {}
+        Reaction::Copied
+        | Reaction::Water
+        | Reaction::StretchBreak
+        | Reaction::Lunch
+        | Reaction::WrapUp => {}
     }
     REACTION.with(|cell| cell.set(Some((reaction, None))));
 }
@@ -233,6 +253,57 @@ fn active_reaction(time: f32, alpha: u8) -> Option<(Reaction, f32)> {
         }
         Some((reaction, elapsed))
     })
+}
+
+/// Water every hour of continuous activity (first after half an hour), a stretch every 55
+/// minutes, lunch around 1 pm and a wrap-up around 6 pm. Never during a Focus session.
+fn nudge(away: bool, focus_running: bool) {
+    const WATER_EVERY: f32 = 3600.0;
+    const STRETCH_EVERY: f32 = 3300.0;
+    let now = seconds();
+    let due = CONTEXT.with(|context| {
+        let mut context = context.borrow_mut();
+        if away {
+            context.active_since = None;
+            return None;
+        }
+        if context.active_since.is_none() {
+            context.active_since = Some(now);
+            context.next_water = now + WATER_EVERY / 2.0;
+            context.next_stretch = now + STRETCH_EVERY;
+        }
+        if focus_running {
+            return None;
+        }
+        if now >= context.next_water {
+            context.next_water = now + WATER_EVERY;
+            return Some(Reaction::Water);
+        }
+        if now >= context.next_stretch {
+            context.next_stretch = now + STRETCH_EVERY;
+            return Some(Reaction::StretchBreak);
+        }
+        None
+    });
+    let clock = crate::platform::shell().local_datetime();
+    let daily = match (clock.hour, clock.minute) {
+        (13, 0..30) => Some(Reaction::Lunch),
+        (18, 0..30) => Some(Reaction::WrapUp),
+        _ => None,
+    };
+    if let Some(reaction) = due.or(if focus_running || away { None } else { daily }) {
+        react(reaction);
+    }
+}
+
+thread_local! {
+    /// Where the cursor is relative to the notch, as an eye offset, while it is near.
+    static GAZE: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Lets open eyes follow the cursor; `None` when it is far from the notch.
+pub(crate) fn set_gaze(gaze: Option<(f32, f32)>) {
+    GAZE.with(|cell| cell.set(gaze));
 }
 
 /// Seconds into the current dance, while one is going.
@@ -593,16 +664,19 @@ impl Stage<'_> {
                         );
                     }
                 }
-                Eyes::Open(dx, dy) => painter.fill_round_rect(
-                    Rect::from_xywh(
-                        eye_x + (dx - 0.9) * unit,
-                        eye_y + (dy - 1.5) * unit,
-                        1.8 * unit,
-                        3.0 * unit,
-                    ),
-                    Radius::uniform(0.9 * unit),
-                    self.color(1.0, SHELL),
-                ),
+                Eyes::Open(dx, dy) => {
+                    let (dx, dy) = GAZE.with(std::cell::Cell::get).unwrap_or((dx, dy));
+                    painter.fill_round_rect(
+                        Rect::from_xywh(
+                            eye_x + (dx - 0.9) * unit,
+                            eye_y + (dy - 1.5) * unit,
+                            1.8 * unit,
+                            3.0 * unit,
+                        ),
+                        Radius::uniform(0.9 * unit),
+                        self.color(1.0, SHELL),
+                    );
+                }
             }
         }
         painter.restore_to(save);
@@ -1121,6 +1195,17 @@ impl Stage<'_> {
         }
     }
 
+    /// A short line of text beside the robot, fading in.
+    fn caption(&self, key: &str, t: f32) {
+        self.text(
+            &winisland_core::i18n::tr(key),
+            self.x + 11.0 * self.unit,
+            self.mid + 3.0 * self.unit,
+            9.0,
+            self.prop(ease((t - 0.3) / 0.4), WHITE),
+        );
+    }
+
     fn exclaim(&self, at: Point, strength: f32) {
         self.text("!", at.x, at.y, 12.0, self.prop(strength, (255, 214, 90)));
     }
@@ -1129,6 +1214,94 @@ impl Stage<'_> {
         let t = self.elapsed;
         let u = self.unit;
         match reaction {
+            Reaction::Water => {
+                // Sips from a glass every couple of seconds.
+                let sip = ease(((t % 2.4) - 1.2) / 0.3) * ease((2.4 - (t % 2.4)) / 0.3);
+                let mut pose = Pose::new(if sip > 0.5 {
+                    Eyes::Happy
+                } else {
+                    Eyes::Open(1.0, 0.0)
+                });
+                pose.right_arm = 0.55 + (-2.1 - 0.55) * sip;
+                let hands = self.robot(pose);
+                let glass = Rect::from_xywh(
+                    hands.right.x - 1.4 * u,
+                    hands.right.y - 4.0 * u,
+                    3.6 * u,
+                    4.6 * u,
+                );
+                self.painter.fill_rect(
+                    Rect::from_ltrb(glass.left, glass.top + 1.6 * u, glass.right, glass.bottom),
+                    self.prop(0.9, WATER),
+                );
+                self.painter
+                    .stroke_rect(glass, 0.5 * u, self.prop(1.0, WHITE));
+                self.caption("nudge_water", t);
+            }
+            Reaction::StretchBreak => {
+                self.stretch();
+                self.caption("nudge_stretch", t);
+            }
+            Reaction::Lunch => {
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = 0.5 + (t * 3.0).sin() * 0.15;
+                pose.left_arm = 0.6;
+                let hands = self.robot(pose);
+                let bowl = Rect::from_xywh(
+                    (hands.left.x + hands.right.x) / 2.0 - 4.6 * u,
+                    hands.right.y - 1.6 * u,
+                    9.2 * u,
+                    3.8 * u,
+                );
+                self.painter
+                    .fill_round_rect(bowl, Radius::uniform(1.8 * u), self.prop(1.0, POT));
+                self.painter.fill_oval(
+                    Rect::from_xywh(bowl.left, bowl.top - 0.8 * u, bowl.width(), 1.8 * u),
+                    self.prop(1.0, (250, 214, 150)),
+                );
+                let wood = self.prop(1.0, (200, 160, 110));
+                self.line(
+                    hands.right,
+                    Point::new(bowl.center_x() + 1.0 * u, bowl.top),
+                    0.5,
+                    wood,
+                );
+                self.line(
+                    Point::new(hands.right.x + 0.8 * u, hands.right.y),
+                    Point::new(bowl.center_x() + 2.0 * u, bowl.top),
+                    0.5,
+                    wood,
+                );
+                self.steam(Point::new(bowl.center_x(), bowl.top - 0.6 * u), 1.0);
+                self.caption("nudge_lunch", t);
+            }
+            Reaction::WrapUp => {
+                // The laptop lid comes down, then a wave goodbye.
+                let close = ease(t / 1.4);
+                let mut pose = Pose::new(if close < 1.0 {
+                    Eyes::Open(1.2, 0.6)
+                } else {
+                    Eyes::Happy
+                });
+                pose.right_arm = if t > 1.6 {
+                    -0.45 + (t / 0.9 * TAU).sin() * 0.45
+                } else {
+                    0.4
+                };
+                self.robot(pose);
+                let lid = (1.0 - close) * 11.0;
+                self.painter.fill_round_rect(
+                    self.rect(9.0, -3.0 - lid, 16.0, lid.max(0.6)),
+                    Radius::uniform(1.0 * u),
+                    self.prop(1.0, LAPTOP),
+                );
+                self.painter.fill_round_rect(
+                    self.rect(5.0, -3.2, 21.0, 2.2),
+                    Radius::uniform(1.0 * u),
+                    self.prop(1.0, (150, 150, 160)),
+                );
+                self.caption("nudge_wrap_up", t);
+            }
             Reaction::MouseArrived => self.mouse_chase(rect),
             Reaction::WelcomeBack => {
                 // Eyes open, a big stretch, then a wave.

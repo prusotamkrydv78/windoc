@@ -170,7 +170,17 @@ impl App {
         crate::ui::dashboard::set_now_playing(
             playing.then(|| self.current_media_info().title.clone()),
         );
-        self.wellness.poll(&self.config, now);
+        let (water, stretch) = self.wellness.poll(&self.config, now);
+        if water {
+            crate::ui::widget::compact::mascot::react(
+                crate::ui::widget::compact::mascot::Reaction::Water,
+            );
+        }
+        if stretch {
+            crate::ui::widget::compact::mascot::react(
+                crate::ui::widget::compact::mascot::Reaction::StretchBreak,
+            );
+        }
         self.poll_image_job();
         self.poll_drop(now);
         self.calendar.poll(&self.config.calendar_feeds, now);
@@ -1858,6 +1868,19 @@ impl App {
         use winisland_render::Rgba;
         crate::core::chime::set_enabled(
             self.config.robot_sounds && !crate::core::system_watch::snapshot().do_not_disturb,
+        );
+        // The robot's eyes follow the cursor while it is near the top centre of the screen.
+        let cursor = crate::utils::mouse::get_global_cursor_pos();
+        let from_centre =
+            (cursor.0 - self.geom.monitor_pos.0) as f32 - self.geom.monitor_size.0 as f32 / 2.0;
+        let below_top = (cursor.1 - self.geom.monitor_pos.1) as f32;
+        crate::ui::widget::compact::mascot::set_gaze(
+            (from_centre.abs() < 520.0 && below_top < 360.0).then(|| {
+                (
+                    (from_centre / 160.0).clamp(-1.6, 1.6),
+                    ((below_top - 24.0) / 140.0).clamp(-0.6, 1.2),
+                )
+            }),
         );
         let media = self.current_media_info();
         let playing_track = media.is_playing.then(|| media.title.clone());
