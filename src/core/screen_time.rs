@@ -238,3 +238,25 @@ impl ScreenTimeService {
         rows
     }
 }
+
+impl ScreenTimeService {
+    /// `(day label, minutes)` for the last seven days, oldest first, today last.
+    pub fn week_minutes(&self, now: Instant) -> Vec<(String, f32)> {
+        let today = self.today.day_number();
+        let mut days = Vec::new();
+        for offset in (0..7).rev() {
+            let number = today - offset;
+            let date = self
+                .tracker
+                .dates()
+                .into_iter()
+                .find(|date| date.day_number() == number);
+            let minutes = date
+                .and_then(|date| self.tracker.day(date, now))
+                .map_or(0.0, |day| day.total.as_secs_f32() / 60.0);
+            let label = date.map_or_else(String::new, |date| date.day.to_string());
+            days.push((label, minutes));
+        }
+        days
+    }
+}

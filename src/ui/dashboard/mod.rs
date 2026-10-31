@@ -2095,3 +2095,70 @@ fn draw_temperature_chart(
         );
     }
 }
+
+const WEEK_CHART_HEIGHT: f32 = 70.0;
+
+thread_local! {
+    static SCREEN_TIME_WEEK: RefCell<Vec<(String, f32)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Publishes the last seven days of screen time, oldest first.
+pub fn set_screen_time_week(days: Vec<(String, f32)>) {
+    SCREEN_TIME_WEEK.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != days {
+            *current = days;
+        }
+    });
+}
+
+/// Seven rounded bars with day labels; today (the last bar) uses the accent colour.
+fn draw_week_chart(
+    painter: Painter<'_>,
+    rect: Rect,
+    days: &[(String, f32)],
+    colors: &SemanticColors,
+) {
+    if days.is_empty() {
+        return;
+    }
+    let label_h = typography::CAPTION.size + space::S1;
+    let plot = Rect::from_ltrb(rect.left, rect.top, rect.right, rect.bottom - label_h);
+    let max = days
+        .iter()
+        .map(|(_, minutes)| *minutes)
+        .fold(1.0f32, f32::max);
+    let slot = plot.width() / days.len() as f32;
+    let bar_width = (slot * 0.5).min(18.0);
+    for (index, (label, minutes)) in days.iter().enumerate() {
+        let center = plot.left + slot * (index as f32 + 0.5);
+        let height = (minutes / max * plot.height()).max(3.0);
+        let today = index + 1 == days.len();
+        painter.fill_round_rect(
+            Rect::from_xywh(
+                center - bar_width / 2.0,
+                plot.bottom - height,
+                bar_width,
+                height,
+            ),
+            Radius::uniform(bar_width / 2.0),
+            if today {
+                colors.accent_primary
+            } else {
+                colors.border_strong
+            },
+        );
+        draw_text(
+            painter,
+            label,
+            typography::CAPTION,
+            Rect::from_xywh(center - slot / 2.0, plot.bottom + 2.0, slot, label_h),
+            Align::Center,
+            if today {
+                colors.text_primary
+            } else {
+                colors.text_secondary
+            },
+        );
+    }
+}

@@ -62,6 +62,7 @@ impl App {
             .check_limit(self.config.screen_time_limit_minutes, now);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::ScreenTime) {
             crate::ui::dashboard::set_screen_time_rows(self.screen_time.report_rows(now));
+            crate::ui::dashboard::set_screen_time_week(self.screen_time.week_minutes(now));
         }
         self.clipboard.apply_settings(
             crate::core::clipboard_history::settings_for(&self.config),
