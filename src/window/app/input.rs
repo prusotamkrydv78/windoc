@@ -35,6 +35,9 @@ impl App {
         }
         let rel_x = px - self.geom.win_x;
         let rel_y = py - self.geom.win_y;
+        if state == InputState::Pressed && self.handle_popover_click(rel_x, rel_y) {
+            return;
+        }
         // Top bar items act on release-free press, like the taskbar.
         if state == InputState::Pressed
             && let Some(hit) =
@@ -45,7 +48,7 @@ impl App {
                 crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
                 crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
                 crate::ui::top_bar::BarHit::Clock => {
-                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
+                    toggle_popover(crate::ui::top_bar::popover::Popover::Calendar, hit)
                 }
                 crate::ui::top_bar::BarHit::Tray => {
                     // Briefly show the taskbar so its overflow can open, then hide it again
@@ -57,13 +60,16 @@ impl App {
                     std::thread::spawn(shell_bar::open_tray_overflow);
                 }
                 crate::ui::top_bar::BarHit::Status => {
-                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_A]);
+                    toggle_popover(crate::ui::top_bar::popover::Popover::ControlCentre, hit)
                 }
                 crate::ui::top_bar::BarHit::Notifications => {
-                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
+                    toggle_popover(crate::ui::top_bar::popover::Popover::Notifications, hit)
                 }
             }
             self.refresh_top_bar_apps();
+            if crate::ui::top_bar::popover::is_open() {
+                self.refresh_popover_data(None);
+            }
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
@@ -584,5 +590,56 @@ impl App {
         if over_island && !self.toggle_call_mute() {
             self.smtc.request_toggle_play();
         }
+    }
+}
+
+/// Opens or closes a bar panel anchored under the clicked item.
+fn toggle_popover(popover: crate::ui::top_bar::popover::Popover, hit: crate::ui::top_bar::BarHit) {
+    let anchor = crate::ui::top_bar::target_rect(hit).map_or(0.0, |rect| rect.right);
+    crate::ui::top_bar::popover::toggle(popover, anchor);
+}
+
+impl App {
+    /// Handles a press while a bar panel is open: acts on its controls, keeps it open for
+    /// clicks inside, and closes it for clicks anywhere else except the bar itself (whose
+    /// buttons toggle panels). Returns `true` when the click was consumed.
+    fn handle_popover_click(&mut self, rel_x: i32, rel_y: i32) -> bool {
+        use crate::ui::top_bar::popover::{self, PopHit};
+        if !popover::is_open() {
+            return false;
+        }
+        let point = winisland_render::Point::new(rel_x as f32, rel_y as f32);
+        let redraw = |app: &Self| {
+            if let Some(window) = &app.window {
+                window.request_redraw();
+            }
+        };
+        match popover::hit(point) {
+            Some(PopHit::Settings(uri)) => {
+                let _ = crate::platform::shell().open_url(uri);
+                popover::close();
+            }
+            Some(PopHit::Volume(level)) => {
+                std::thread::spawn(move || {
+                    let _ = crate::platform::audio().set_volume(level);
+                });
+                self.refresh_popover_data(Some(level));
+            }
+            Some(PopHit::PlayPause) => self.smtc.request_toggle_play(),
+            Some(PopHit::WindowsNotifications) => {
+                use winisland_platform_windows::shell_bar;
+                shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
+                popover::close();
+            }
+            Some(PopHit::Panel) => {}
+            None => {
+                if crate::ui::top_bar::hit(point).is_some() {
+                    return false; // let the bar button toggle panels
+                }
+                popover::close();
+            }
+        }
+        redraw(self);
+        true
     }
 }

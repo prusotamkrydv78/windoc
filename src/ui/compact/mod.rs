@@ -214,6 +214,7 @@ impl CompactOverlay {
 
     /// Shows a short live activity in the collapsed notch.
     pub fn push_activity(&mut self, activity: Activity) {
+        crate::ui::top_bar::popover::record(&activity.primary, &activity.secondary);
         if !self.quiet && self.activities_enabled {
             self.activity_indicator.push(activity);
         }

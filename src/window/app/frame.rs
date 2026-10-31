@@ -329,6 +329,9 @@ impl App {
         }
 
         // The top bar strip is always clickable; its items highlight under the pointer.
+        let over_popover = crate::ui::top_bar::popover::rect().is_some_and(|rect| {
+            rect.contains(winisland_render::Point::new(rel_x as f32, rel_y as f32))
+        });
         let over_top_bar = crate::ui::top_bar::is_active()
             && rel_x >= 0
             && (rel_x as u32) < self.geom.os_w
@@ -357,6 +360,7 @@ impl App {
             window.set_cursor_hittest(
                 is_hovering_visible
                     || over_top_bar
+                    || over_popover
                     || is_on_hidden_reveal
                     || self.compact_overlay.is_volume_dragging()
                     || self.compact_overlay.is_brightness_dragging(),
@@ -1561,6 +1565,9 @@ impl App {
         if active {
             self.refresh_top_bar_apps();
             crate::ui::top_bar::set_battery(crate::platform::battery());
+            if crate::ui::top_bar::popover::is_open() {
+                self.refresh_popover_data(None);
+            }
             window_ref.request_redraw();
         }
         if active != was_active {
@@ -1798,5 +1805,26 @@ impl App {
                 progress: None,
             });
         }
+    }
+}
+
+impl App {
+    /// Publishes the data the bar's panels show. `volume` overrides the measured level right
+    /// after the slider is used.
+    pub(super) fn refresh_popover_data(&mut self, volume: Option<f32>) {
+        let media = self.current_media_info();
+        let track = (!media.title.is_empty())
+            .then(|| (media.title.clone(), media.artist.clone(), media.is_playing));
+        crate::ui::top_bar::popover::set_data(crate::ui::top_bar::popover::PopoverData {
+            volume: volume.or_else(|| {
+                crate::platform::audio()
+                    .volume()
+                    .ok()
+                    .map(|state| state.level)
+            }),
+            battery: crate::platform::battery(),
+            track,
+            agenda: self.calendar.agenda_rows(),
+        });
     }
 }

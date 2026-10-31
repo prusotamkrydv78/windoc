@@ -3,6 +3,8 @@
 //!
 //! The app publishes state with the `set_*` functions; drawing and hit testing read it.
 
+pub mod popover;
+
 use std::cell::RefCell;
 
 use winisland_render::text::{DrawTextCachedParams, FontManager};
@@ -630,4 +632,16 @@ pub fn draw_preview_card(painter: Painter<'_>, scale: f32) {
         1.0,
         Rgba::WHITE.with_alpha(30),
     );
+}
+
+/// The rectangle of a bar item from the last drawn frame.
+pub fn target_rect(target: BarHit) -> Option<Rect> {
+    STATE.with(|state| {
+        state
+            .borrow()
+            .targets
+            .iter()
+            .find(|(_, hit)| *hit == target)
+            .map(|(rect, _)| *rect)
+    })
 }

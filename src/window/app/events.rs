@@ -527,6 +527,12 @@ impl App {
                                 );
                                 if top_bar_height > 0.0 {
                                     crate::ui::top_bar::draw_preview_card(painter, top_bar_scale);
+                                    crate::ui::top_bar::popover::draw(
+                                        painter,
+                                        top_bar_height,
+                                        self.geom.os_w as f32,
+                                        top_bar_scale,
+                                    );
                                 }
                                 if top_bar_height > 0.0 && top_bar_edge_live {
                                     let notch = winisland_render::Rect::from_xywh(
