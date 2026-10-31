@@ -16,7 +16,7 @@ This document describes what the **current code** stores, observes and sends. It
 | `~/.winisland/screen_time.json` | Per-day active time by app executable (titles only if enabled), category rules | Every 5 minutes while tracking, on settings change and on exit |
 | `~/.winisland/clipboard.bin` | Clipboard history (text, links, file paths, source app), JSON encrypted with DPAPI for the current Windows user | About 10 seconds after a change while history is on, and on exit |
 
-No clipboard, notes, screen-time, location or credential data is collected by the current code.
+Clipboard and screen-time data are collected only after the user turns those features on. No notes, location or credential data is collected by the current code.
 
 ## What the app observes
 
