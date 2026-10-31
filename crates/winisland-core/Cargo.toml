@@ -5,10 +5,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
+argon2 = "0.5"
 base64 = "0.23.1"
+chacha20poly1305 = "0.10"
 educe = { version = "0.7", default-features = false, features = ["Default"] }
 encoding_rs = "0.8"
 fuzzengine = "0.2.1"
+getrandom = "0.3"
 log = { version = "0.4", features = ["std"] }
 lrc = "0.2.0"
 parking_lot = "0.12"

@@ -22,6 +22,7 @@
 //! platform results this crate operates on.
 
 pub mod anim;
+pub mod backup;
 pub mod clipboard;
 pub mod config;
 pub mod context;

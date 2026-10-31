@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod backup_service;
 pub mod clipboard_history;
 pub mod data_inventory;
 pub mod focus_store;

@@ -17,6 +17,8 @@ pub(super) enum BehaviorAction {
     WeatherLocation,
     ClearData(crate::core::data_inventory::DataKind),
     AddWorldClock,
+    ExportBackup,
+    RestoreBackup,
     RemoveWorldClock(usize),
     HideIsland,
     Exit,
@@ -152,6 +154,27 @@ impl SettingsApp {
             BehaviorAction::AddWorldClock,
         );
         page.group_end();
+        page.section(tr("section_backup"));
+        page.group_start();
+        page.row_text_field(
+            tr("backup_export"),
+            String::new(),
+            tr("backup_passphrase_placeholder"),
+            true,
+            BehaviorAction::ExportBackup,
+        );
+        page.row_text_field(
+            tr("backup_restore"),
+            String::new(),
+            tr("backup_passphrase_placeholder"),
+            true,
+            BehaviorAction::RestoreBackup,
+        );
+        if let Some(status) = &self.backup_status {
+            page.row_label(status.clone());
+        }
+        page.row_label(tr("backup_hint"));
+        page.group_end();
         page.section(tr("section_local_data"));
         page.group_start();
         for kind in crate::core::data_inventory::DataKind::ALL {
@@ -259,6 +282,16 @@ impl SettingsApp {
                     self.config.world_clocks.remove(index);
                 }
                 true
+            }
+            (BehaviorAction::ExportBackup, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.begin_text_input(rect, "", 128, commit_export_backup);
+                false
+            }
+            (BehaviorAction::RestoreBackup, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.begin_text_input(rect, "", 128, commit_restore_backup);
+                false
             }
             (BehaviorAction::AddWorldClock, ClickResult::TextField(index)) => {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
@@ -452,4 +485,49 @@ fn select_world_clock(app: &mut SettingsApp, key: &str) {
         app.config.world_clocks.push(key.to_string());
     }
     app.mark_items_dirty();
+}
+
+fn commit_export_backup(app: &mut SettingsApp, passphrase: &str) {
+    if passphrase.is_empty() {
+        return;
+    }
+    let Some(path) = rfd::FileDialog::new()
+        .set_file_name("winisland-backup.wibk")
+        .add_filter("Backup", &["wibk"])
+        .save_file()
+    else {
+        return;
+    };
+    app.backup_status = Some(
+        match crate::core::backup_service::export(&path, passphrase) {
+            Ok(()) => tr("backup_export_done"),
+            Err(error) => {
+                log::warn!("Backup export failed: {error}");
+                winisland_core::i18n::tr_args("backup_failed", &[&error])
+            }
+        },
+    );
+    app.mark_items_dirty();
+}
+
+fn commit_restore_backup(app: &mut SettingsApp, passphrase: &str) {
+    if passphrase.is_empty() {
+        return;
+    }
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter("Backup", &["wibk"])
+        .pick_file()
+    else {
+        return;
+    };
+    match crate::core::backup_service::restore(&path, passphrase) {
+        Ok(()) => {
+            app.plugin_request = Some(crate::window::settings::PluginSettingsRequest::Restart);
+        }
+        Err(error) => {
+            log::warn!("Backup restore failed: {error}");
+            app.backup_status = Some(winisland_core::i18n::tr_args("backup_failed", &[&error]));
+            app.mark_items_dirty();
+        }
+    }
 }
