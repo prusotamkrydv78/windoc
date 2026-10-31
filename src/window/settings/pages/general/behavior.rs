@@ -136,6 +136,11 @@ impl SettingsApp {
         }
         page.row_label(tr("weather_hint"));
         page.group_end();
+        page.section(tr("section_ai_usage"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::AiUsageEnabled, true);
+        page.row_label(tr("ai_usage_hint"));
+        page.group_end();
         page.section(tr("section_world_clocks"));
         page.group_start();
         for (index, key) in self.config.world_clocks.iter().enumerate() {

@@ -74,6 +74,7 @@ pub struct App {
     weather: crate::core::weather_service::WeatherService,
     shelf: crate::core::shelf_store::ShelfService,
     palette_focused: bool,
+    ai_usage: crate::core::ai_usage_service::AiUsageService,
     compact_overlay: CompactOverlay,
     config: AppConfig,
     expanded: bool,
@@ -227,6 +228,7 @@ impl Default for App {
             weather: crate::core::weather_service::WeatherService::load(),
             shelf: crate::core::shelf_store::ShelfService::load(),
             palette_focused: false,
+            ai_usage: crate::core::ai_usage_service::AiUsageService::new(),
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,
                 config.brightness_overlay_enabled,

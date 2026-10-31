@@ -21,6 +21,7 @@
 //! The `WinIsland` application crate, which owns every platform-specific detail and injects the
 //! platform results this crate operates on.
 
+pub mod ai_usage;
 pub mod anim;
 pub mod backup;
 pub mod clipboard;

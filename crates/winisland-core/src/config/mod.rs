@@ -85,6 +85,9 @@ pub struct AppConfig {
     pub weather_imperial: bool,
     /// Chosen by searching a city name; coordinates are rounded to about 1 km.
     pub weather_place: Option<crate::weather::Place>,
+    /// Reads token counts from local Claude Code and Codex logs. Off by default.
+    #[setting(toggle, label = "ai_usage_enabled")]
+    pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
     #[educe(Default = true)]

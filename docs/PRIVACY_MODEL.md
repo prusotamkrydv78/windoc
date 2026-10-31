@@ -29,6 +29,7 @@ Clipboard and screen-time data are collected only after the user turns those fea
 | Foreground and fullscreen state | Whether a fullscreen app is active | On, for auto-hide | Never |
 | Screen time (`EVENT_SYSTEM_FOREGROUND` hook, input idle time) | Foreground app executable and active duration per day; window titles only if `screen_time_titles` is on | Off by default (`screen_time_enabled`); stored in `screen_time.json` for 7 days | Never |
 | Clipboard (`WM_CLIPBOARDUPDATE`) | Copied text (up to 1 MiB) and file paths, skipped entirely when password-manager exclusion markers are present | Off by default (`clipboard_history_enabled`); unpinned items kept 7 days, 200 items, 64 MB | Never |
+| AI coding logs (`~/.claude/projects`, `~/.codex/sessions`) | Token counts, model names, dates and session ids only; prompt and response text is not kept | Off by default (`ai_usage_enabled`); read-only, held in memory, never written | Never |
 | System metrics | CPU, memory, disk and network rates for widgets | Only while those widgets are shown | Never |
 
 ## Network access

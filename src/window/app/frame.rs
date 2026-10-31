@@ -74,6 +74,16 @@ impl App {
         crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
         crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
+        self.ai_usage.poll(
+            self.config.ai_usage_enabled && !crate::core::safe_mode::active(),
+            now,
+        );
+        crate::ui::dashboard::sync_ai_usage(
+            self.config.ai_usage_enabled,
+            self.ai_usage.revision(),
+            self.ai_usage.report(),
+            self.ai_usage.active_sessions(),
+        );
         let accessible = if self.expanded && self.page_visible(ExpandedPage::Home) {
             let layout = self.compute_island_layout();
             crate::ui::dashboard::accessible_elements(

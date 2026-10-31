@@ -700,6 +700,8 @@ pub enum Destination {
     Notes,
     /// World clocks; reached from More.
     Clock,
+    /// AI coding usage report; reached from More.
+    AiUsage,
 }
 
 impl Destination {
@@ -714,13 +716,14 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 6] = [
+    pub const MORE_ITEMS: [Self; 7] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
         Self::Focus,
         Self::Notes,
         Self::Clock,
+        Self::AiUsage,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -733,6 +736,7 @@ impl Destination {
             Self::More => "dashboard_more",
             Self::Notes => "dashboard_notes",
             Self::Clock => "dashboard_clock",
+            Self::AiUsage => "dashboard_ai_usage",
         }
     }
 }
@@ -797,6 +801,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_notes_page(painter, layout.grid, colors);
     } else if active == Destination::Clock {
         draw_clock_page(painter, layout.grid, colors);
+    } else if active == Destination::AiUsage {
+        draw_ai_usage_page(painter, layout.grid, colors);
     } else if active == Destination::Shelf {
         draw_shelf_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if cards.is_empty() {
@@ -1158,4 +1164,111 @@ pub fn accessible_elements(
         stack.extend(node.children.into_iter().rev());
     }
     elements
+}
+
+struct AiUsageView {
+    key: Option<(bool, u64)>,
+    /// `(title, detail)` rows: today, live sessions, top models, then recent days.
+    rows: Vec<(String, String)>,
+}
+
+thread_local! {
+    static AI_USAGE: RefCell<AiUsageView> = const {
+        RefCell::new(AiUsageView {
+            key: None,
+            rows: Vec::new(),
+        })
+    };
+}
+
+/// Publishes the AI usage report, rebuilding rows only when it changed.
+pub fn sync_ai_usage(
+    enabled: bool,
+    revision: u64,
+    report: &winisland_core::ai_usage::UsageReport,
+    active_sessions: usize,
+) {
+    use winisland_core::ai_usage::format_tokens;
+    use winisland_core::i18n::tr_args;
+    AI_USAGE.with(|cell| {
+        let mut view = cell.borrow_mut();
+        if view.key == Some((enabled, revision)) {
+            return;
+        }
+        view.key = Some((enabled, revision));
+        view.rows.clear();
+        if !enabled {
+            return;
+        }
+        if let Some((date, today)) = report.days.iter().next_back() {
+            view.rows.push((
+                tr_args("ai_usage_tokens", &[&format_tokens(today.tokens)]),
+                tr_args(
+                    "ai_usage_today_detail",
+                    &[
+                        date,
+                        &today.sessions.to_string(),
+                        &today.responses.to_string(),
+                    ],
+                ),
+            ));
+        }
+        view.rows.push((
+            tr_args("ai_usage_live", &[&active_sessions.to_string()]),
+            tr("ai_usage_live_detail"),
+        ));
+        for (model, tokens) in report.models.iter().take(3) {
+            view.rows.push((model.clone(), format_tokens(*tokens)));
+        }
+        for (tool, tokens) in &report.tools {
+            view.rows
+                .push((tool.label().to_string(), format_tokens(*tokens)));
+        }
+        for (date, day) in report.days.iter().rev().skip(1).take(6) {
+            view.rows.push((
+                date.clone(),
+                tr_args(
+                    "ai_usage_day_detail",
+                    &[&format_tokens(day.tokens), &day.sessions.to_string()],
+                ),
+            ));
+        }
+    });
+}
+
+fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    use crate::ui::components::list_row::draw_list_row;
+    AI_USAGE.with(|cell| {
+        let view = cell.borrow();
+        let empty = match view.key {
+            Some((false, _)) | None => Some("ai_usage_off_hint"),
+            Some((true, _)) if view.rows.len() <= 1 => Some("ai_usage_empty_hint"),
+            _ => None,
+        };
+        if let Some(key) = empty {
+            draw_text(
+                painter,
+                &tr(key),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (title, detail)) in view.rows.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            draw_list_row(
+                painter,
+                &row,
+                title,
+                Some(detail.as_str()),
+                colors,
+                InteractionState::default(),
+            );
+        }
+    });
 }

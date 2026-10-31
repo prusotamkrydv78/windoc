@@ -1,3 +1,4 @@
+pub mod ai_usage_service;
 pub mod audio;
 pub mod backup_service;
 pub mod clipboard_history;
