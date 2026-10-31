@@ -335,6 +335,16 @@ impl App {
         ) {
             window.request_redraw();
         }
+        let hovered_app = over_top_bar
+            .then(|| {
+                crate::ui::top_bar::hit(winisland_render::Point::new(rel_x as f32, rel_y as f32))
+            })
+            .flatten()
+            .and_then(|hit| match hit {
+                crate::ui::top_bar::BarHit::App(handle) => Some(handle),
+                _ => None,
+            });
+        self.update_bar_preview(&window, hovered_app, now);
         if interaction_suppressed {
             window.set_cursor_hittest(false);
         } else {
@@ -1584,5 +1594,62 @@ impl App {
                 .collect::<Vec<_>>(),
         );
         crate::ui::top_bar::set_apps(apps);
+    }
+}
+
+impl App {
+    /// Shows a live preview of an app window after the pointer rests on its bar button for
+    /// 450 ms, and removes it when the pointer moves on.
+    fn update_bar_preview(&mut self, window: &WindowRef, hovered: Option<isize>, now: Instant) {
+        const DELAY: Duration = Duration::from_millis(450);
+        let current = self.bar_preview.as_ref().map(|(handle, ..)| *handle);
+        if current != hovered {
+            self.bar_preview = hovered.map(|handle| (handle, now, None));
+            crate::ui::top_bar::set_preview_card(None);
+            window.request_redraw();
+            return;
+        }
+        let Some((handle, since, thumbnail)) = &mut self.bar_preview else {
+            return;
+        };
+        if thumbnail.is_some() || now.duration_since(*since) < DELAY {
+            return;
+        }
+        let Some(surface) = crate::platform::window().native_surface(window.id()) else {
+            return;
+        };
+        let Some(preview) = winisland_platform_windows::shell_bar::WindowThumbnail::new(
+            surface.handle() as isize,
+            *handle,
+        ) else {
+            return;
+        };
+        let scale = crate::platform::window().scale_factor(window.id()) as f32;
+        let Some(button) = crate::ui::top_bar::app_rect(*handle) else {
+            return;
+        };
+        let (source_w, source_h) = preview.source_size().unwrap_or((16, 10));
+        let max_w = 260.0 * scale;
+        let max_h = 160.0 * scale;
+        let fit = (max_w / source_w.max(1) as f32).min(max_h / source_h.max(1) as f32);
+        let (w, h) = (source_w as f32 * fit, source_h as f32 * fit);
+        let pad = 8.0 * scale;
+        let top = crate::core::top_bar::BAR_HEIGHT * scale + 6.0 * scale;
+        let left = button
+            .left
+            .clamp(pad, (self.geom.os_w as f32 - w - pad * 3.0).max(pad));
+        let card = winisland_render::Rect::from_xywh(left, top, w + pad * 2.0, h + pad * 2.0);
+        preview.place(
+            winisland_platform_windows::shell_bar::ScreenRect {
+                left: (card.left + pad) as i32,
+                top: (card.top + pad) as i32,
+                right: (card.left + pad + w) as i32,
+                bottom: (card.top + pad + h) as i32,
+            },
+            255,
+        );
+        crate::ui::top_bar::set_preview_card(Some(card));
+        *thumbnail = Some(preview);
+        window.request_redraw();
     }
 }

@@ -577,3 +577,43 @@ pub fn refresh_icons(handles: &[isize]) {
 fn icon_for(handle: isize) -> Option<winisland_render::Image> {
     ICONS.with(|icons| icons.borrow().get(&handle).cloned().flatten())
 }
+
+thread_local! {
+    /// Card behind the live window preview, in window pixels.
+    static PREVIEW_CARD: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_preview_card(card: Option<Rect>) {
+    PREVIEW_CARD.with(|cell| cell.set(card));
+}
+
+/// The button rectangle of the app with `handle`, from the last drawn frame.
+pub fn app_rect(handle: isize) -> Option<Rect> {
+    STATE.with(|state| {
+        state
+            .borrow()
+            .targets
+            .iter()
+            .find(|(_, hit)| *hit == BarHit::App(handle))
+            .map(|(rect, _)| *rect)
+    })
+}
+
+/// Draws the card that frames a live window preview; the preview itself is composited on
+/// top by Windows.
+pub fn draw_preview_card(painter: Painter<'_>, scale: f32) {
+    let Some(card) = PREVIEW_CARD.with(std::cell::Cell::get) else {
+        return;
+    };
+    painter.fill_round_rect(
+        card,
+        Radius::uniform(12.0 * scale),
+        Rgba::from_argb(240, 28, 28, 30),
+    );
+    painter.stroke_round_rect(
+        card,
+        Radius::uniform(12.0 * scale),
+        1.0,
+        Rgba::WHITE.with_alpha(30),
+    );
+}

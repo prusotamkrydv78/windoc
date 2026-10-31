@@ -576,3 +576,66 @@ pub fn window_icon_rgba(handle: isize) -> Option<(i32, i32, Vec<u8>)> {
         Some((width, height, pixels))
     }
 }
+
+/// A live DWM preview of one window, composited by Windows into a rectangle of another
+/// window (ours). Unregistered on drop.
+pub struct WindowThumbnail {
+    thumbnail: isize,
+}
+
+impl WindowThumbnail {
+    /// Registers a preview of `source` inside `destination` (both raw HWNDs).
+    pub fn new(destination: isize, source: isize) -> Option<Self> {
+        use windows::Win32::Graphics::Dwm::DwmRegisterThumbnail;
+        // SAFETY: both handles are top-level windows; failure just means no preview.
+        let thumbnail = unsafe {
+            DwmRegisterThumbnail(HWND(destination as *mut _), HWND(source as *mut _)).ok()?
+        };
+        Some(Self { thumbnail })
+    }
+
+    /// The source window's size in pixels.
+    pub fn source_size(&self) -> Option<(i32, i32)> {
+        use windows::Win32::Graphics::Dwm::DwmQueryThumbnailSourceSize;
+        // SAFETY: querying a thumbnail registered by this value.
+        unsafe { DwmQueryThumbnailSourceSize(self.thumbnail).ok() }.map(|size| (size.cx, size.cy))
+    }
+
+    /// Shows the preview in `rect`, given in the destination window's client pixels.
+    pub fn place(&self, rect: ScreenRect, opacity: u8) {
+        use windows::Win32::Graphics::Dwm::{
+            DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION,
+            DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE, DwmUpdateThumbnailProperties,
+        };
+        let properties = DWM_THUMBNAIL_PROPERTIES {
+            dwFlags: DWM_TNP_RECTDESTINATION
+                | DWM_TNP_VISIBLE
+                | DWM_TNP_OPACITY
+                | DWM_TNP_SOURCECLIENTAREAONLY,
+            rcDestination: RECT {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            },
+            opacity,
+            fVisible: true.into(),
+            fSourceClientAreaOnly: false.into(),
+            ..Default::default()
+        };
+        // SAFETY: updating a thumbnail registered by this value with valid properties.
+        unsafe {
+            let _ = DwmUpdateThumbnailProperties(self.thumbnail, &properties);
+        }
+    }
+}
+
+impl Drop for WindowThumbnail {
+    fn drop(&mut self) {
+        use windows::Win32::Graphics::Dwm::DwmUnregisterThumbnail;
+        // SAFETY: unregisters the thumbnail registered in `new`.
+        unsafe {
+            let _ = DwmUnregisterThumbnail(self.thumbnail);
+        }
+    }
+}

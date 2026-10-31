@@ -138,6 +138,12 @@ pub struct App {
     battery_checked_at: Option<Instant>,
     file_drag_hover: bool,
     top_bar: Option<crate::core::top_bar::TopBarSession>,
+    /// Hovered app window, when the hover started, and its live preview once shown.
+    bar_preview: Option<(
+        isize,
+        Instant,
+        Option<winisland_platform_windows::shell_bar::WindowThumbnail>,
+    )>,
     onboarding_tick: u8,
     is_cursor_suppressed: bool,
     hidden_reveal_click: HiddenRevealClick,
@@ -295,6 +301,7 @@ impl Default for App {
             battery_checked_at: None,
             file_drag_hover: false,
             top_bar: None,
+            bar_preview: None,
             onboarding_tick: 0,
             is_cursor_suppressed: false,
             hidden_reveal_click: HiddenRevealClick::default(),
