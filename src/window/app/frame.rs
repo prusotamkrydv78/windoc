@@ -1897,7 +1897,9 @@ impl App {
                 .map_or(0.0, |idle| idle.as_secs_f32()),
         );
         let system = crate::core::system_watch::snapshot();
-        crate::ui::widget::compact::mascot::set_system(system.online, system.cpu_percent);
+        if system.sampled {
+            crate::ui::widget::compact::mascot::set_system(system.online, system.cpu_percent);
+        }
         if crate::core::screenshot_watch::poll_downloads(std::time::Instant::now()).is_some() {
             crate::ui::widget::compact::mascot::react(
                 crate::ui::widget::compact::mascot::Reaction::Downloaded,

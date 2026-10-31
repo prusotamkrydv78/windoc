@@ -14,7 +14,7 @@ use winisland_render::{Painter, Point, Radius, Rect, Rgba, StrokeCap, Vec2};
 /// Room for the robot and the props of its current scene.
 pub(super) const WIDTH: f32 = 132.0;
 /// About 20 frames a second keeps the motion smooth without busy redraws.
-pub(super) const FRAME: Duration = Duration::from_millis(50);
+pub(super) const FRAME: Duration = Duration::from_millis(66);
 /// How long each daytime scene plays before the next one.
 const SCENE_SECONDS: f32 = 14.0;
 /// Props and captions fade in and out over this long at each scene change.
@@ -54,6 +54,10 @@ enum Scene {
     Nap,
     Paint,
     Dance,
+    /// A sip of water between dances.
+    SipWater,
+    /// Headphones on, nodding along.
+    Groove,
     Night,
 }
 
@@ -75,9 +79,6 @@ const AWAY_SECONDS: f32 = 300.0;
 
 /// Caption text size, in robot units.
 const CAPTION_SIZE: f32 = 8.5;
-
-/// How long the robot dances when a song starts.
-const DANCE_SECONDS: f32 = 8.0;
 
 #[derive(Default)]
 struct Context {
@@ -608,7 +609,7 @@ fn set_slow(slow: bool) {
 /// How soon to draw the robot again: fewer frames for slow, quiet scenes.
 pub(super) fn frame_interval() -> Duration {
     if VIEW.with(std::cell::Cell::get).2 {
-        Duration::from_millis(110)
+        Duration::from_millis(140)
     } else {
         FRAME
     }
@@ -685,14 +686,34 @@ pub(crate) fn set_gaze(gaze: Option<(f32, f32)>) {
     GAZE.with(|cell| cell.set(gaze));
 }
 
-/// Seconds into the current dance, while one is going.
+/// While music plays, dancing is the main thing: dance, a sip of water, dance again, then
+/// groove with headphones, round and round. Returns the scene, seconds into it and its
+/// length.
+fn music_scene(elapsed: f32) -> (Scene, f32, f32) {
+    const ROUTINE: [(Scene, f32); 4] = [
+        (Scene::Dance, 18.0),
+        (Scene::SipWater, 6.0),
+        (Scene::Dance, 18.0),
+        (Scene::Groove, 10.0),
+    ];
+    let total: f32 = ROUTINE.iter().map(|(_, length)| length).sum();
+    let mut at = elapsed % total;
+    for (scene, length) in ROUTINE {
+        if at < length {
+            return (scene, at, length);
+        }
+        at -= length;
+    }
+    (Scene::Dance, 0.0, 18.0)
+}
+
+/// Seconds since the current track started, while music plays.
 fn dancing(time: f32) -> Option<f32> {
     CONTEXT.with(|context| {
         context
             .borrow()
             .dance_started
-            .map(|start| time - start)
-            .filter(|elapsed| (0.0..DANCE_SECONDS).contains(elapsed))
+            .map(|start| (time - start).max(0.0))
     })
 }
 
@@ -731,11 +752,11 @@ fn greeting(name: &str) -> String {
 }
 
 /// How visible the props are at `elapsed` seconds into a scene.
-fn scene_fade(scene: Scene, elapsed: f32) -> f32 {
+fn scene_fade(scene: Scene, elapsed: f32, length: f32) -> f32 {
     if matches!(scene, Scene::Night) {
         return 1.0;
     }
-    ease(elapsed / FADE_SECONDS) * ease((scene_seconds() - elapsed) / FADE_SECONDS)
+    ease(elapsed / FADE_SECONDS) * ease((length - elapsed) / FADE_SECONDS)
 }
 
 #[derive(Clone, Copy)]
@@ -797,16 +818,16 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         (context.name.clone(), context.focus_running)
     });
     let away = CONTEXT.with(|context| context.borrow().away);
-    let (scene, elapsed) = match dancing(time) {
-        _ if away => (Scene::Nap, scene_seconds() / 2.0),
-        Some(elapsed) => (Scene::Dance, elapsed),
-        None => current_scene(time, hour, focus_running),
+    let (scene, elapsed, length) = match dancing(time) {
+        _ if away => (Scene::Nap, scene_seconds() / 2.0, scene_seconds()),
+        Some(elapsed) => music_scene(elapsed),
+        None => {
+            let (scene, elapsed) = current_scene(time, hour, focus_running);
+            (scene, elapsed, scene_seconds())
+        }
     };
-    let fade = if scene == Scene::Dance {
-        ease(elapsed / FADE_SECONDS) * ease((DANCE_SECONDS - elapsed) / FADE_SECONDS)
-    } else {
-        scene_fade(scene, elapsed)
-    };
+    let fade = scene_fade(scene, elapsed, length);
+    let evening = !(5..18).contains(&hour);
     // The robot stands nearly the full height of the notch.
     let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
     if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
@@ -854,10 +875,11 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::Plant => 27.0,
         Scene::Read => 10.0,
         Scene::Stretch | Scene::LookAround => 13.0,
-        Scene::Nap => 24.0,
-        Scene::Night => 49.0,
+        Scene::Nap => 26.0,
+        Scene::Night => 38.0,
         Scene::Paint => 31.0,
         Scene::Dance => 13.0,
+        Scene::SipWater | Scene::Groove => 13.0,
     };
     let left_reach = 10.0;
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
@@ -888,10 +910,12 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::Plant => stage.plant(),
         Scene::Stretch => stage.stretch(),
         Scene::LookAround => stage.look_around(),
-        Scene::Nap => stage.sleep(false),
+        Scene::Nap => stage.sleep(evening),
         Scene::Night => stage.sleep(true),
         Scene::Paint => stage.paint(),
         Scene::Dance => stage.dance(),
+        Scene::SipWater => stage.sip_water(),
+        Scene::Groove => stage.groove(),
     }
 }
 
@@ -1071,12 +1095,12 @@ impl Stage<'_> {
                     let (dx, dy) = GAZE.with(std::cell::Cell::get).unwrap_or((dx, dy));
                     painter.fill_round_rect(
                         Rect::from_xywh(
-                            eye_x + (dx - 0.9) * unit,
-                            eye_y + (dy - 1.5) * unit,
-                            1.8 * unit,
-                            3.0 * unit,
+                            eye_x + (dx - 1.15) * unit,
+                            eye_y + (dy - 2.0) * unit,
+                            2.3 * unit,
+                            3.9 * unit,
                         ),
-                        Radius::uniform(0.9 * unit),
+                        Radius::uniform(1.15 * unit),
                         self.color(1.0, SHELL),
                     );
                 }
@@ -1565,29 +1589,123 @@ impl Stage<'_> {
         }
     }
 
-    fn dance(&self) {
-        // Two beats a second: arms swap, the body bounces and sways.
-        let beat = (self.elapsed * 2.0 * TAU).sin();
-        let mut pose = Pose::new(Eyes::Happy);
-        pose.right_arm = -0.9 + beat * 0.8;
-        pose.left_arm = -0.9 - beat * 0.8;
-        pose.rise = beat.abs() * 1.4;
-        pose.lean = (self.elapsed * TAU).sin() * 8.0;
-        self.robot(pose);
-        // Notes float up on either side.
+    /// Sips from a glass every couple of seconds.
+    fn sip_water(&self) {
+        let u = self.unit;
+        let t = self.elapsed;
+        let sip = ease(((t % 2.4) - 1.2) / 0.3) * ease((2.4 - (t % 2.4)) / 0.3);
+        let mut pose = Pose::new(if sip > 0.5 {
+            Eyes::Happy
+        } else {
+            Eyes::Open(1.0, 0.0)
+        });
+        pose.right_arm = 0.55 + (-2.1 - 0.55) * sip;
+        let hands = self.robot(pose);
+        let glass = Rect::from_xywh(
+            hands.right.x - 1.4 * u,
+            hands.right.y - 4.0 * u,
+            3.6 * u,
+            4.6 * u,
+        );
+        self.painter.fill_rect(
+            Rect::from_ltrb(glass.left, glass.top + 1.6 * u, glass.right, glass.bottom),
+            self.prop(0.9, WATER),
+        );
+        self.painter
+            .stroke_rect(glass, 0.5 * u, self.prop(1.0, WHITE));
+    }
+
+    /// Notes rising on either side, in turn.
+    fn notes(&self) {
         let colors = [(130, 220, 255), (255, 160, 210), (255, 220, 120)];
         for index in 0..3 {
-            let phase = (self.elapsed / 1.6 + index as f32 / 3.0).fract();
+            let phase = (self.time / 1.6 + index as f32 / 3.0).fract();
             let side = if index % 2 == 0 { 1.0 } else { -1.0 };
+            let x = self.x + side * (10.0 + phase * 2.0) * self.unit
+                - if side < 0.0 { 5.0 * self.unit } else { 0.0 };
             self.text(
                 if index == 1 { "♫" } else { "♪" },
-                self.x + side * (10.0 + phase * 2.0) * self.unit
-                    - if side < 0.0 { 5.0 * self.unit } else { 0.0 },
+                x,
                 self.floor - (6.0 + phase * 12.0) * self.unit,
                 7.5,
                 self.prop((phase * PI).sin(), colors[index]),
             );
         }
+    }
+
+    /// Headphones on, eyes shut, nodding to the beat.
+    fn groove(&self) {
+        let u = self.unit;
+        let nod = (self.time * 2.0 * TAU).sin();
+        let mut pose = Pose::new(Eyes::Happy);
+        pose.lean = nod * 5.0;
+        pose.rise = nod.abs() * 0.5;
+        pose.right_arm = 0.9 + nod * 0.2;
+        pose.left_arm = 0.9 - nod * 0.2;
+        self.robot(pose);
+        let save = self.painter.save();
+        let pivot = self.at(0.0, 0.0);
+        self.painter.translate(Vec2::new(pivot.x, pivot.y));
+        self.painter.rotate_degrees(pose.lean);
+        self.painter.translate(Vec2::new(-pivot.x, -pivot.y));
+        let band = self.at(0.0, -14.5);
+        let clip = self.painter.save();
+        self.painter.clip_rect(Rect::from_ltrb(
+            band.x - 10.0 * u,
+            band.y - 10.0 * u,
+            band.x + 10.0 * u,
+            band.y,
+        ));
+        self.painter
+            .stroke_circle(band, 8.6 * u, 1.2 * u, self.prop(1.0, (60, 60, 70)));
+        self.painter.restore_to(clip);
+        for side in [-1.0, 1.0] {
+            self.painter.fill_round_rect(
+                Rect::from_xywh(
+                    band.x + side * 8.6 * u - 1.6 * u,
+                    band.y - 1.4 * u,
+                    3.2 * u,
+                    4.6 * u,
+                ),
+                Radius::uniform(1.2 * u),
+                self.prop(1.0, (232, 104, 96)),
+            );
+        }
+        self.painter.restore_to(save);
+        self.notes();
+    }
+
+    fn dance(&self) {
+        // Three moves, six seconds each: arm swaps with a bounce, a side-step with claps,
+        // and arms up swaying side to side.
+        let beat = (self.time * 2.0 * TAU).sin();
+        let step = (self.time * TAU).sin();
+        let mut pose = Pose::new(Eyes::Happy);
+        let mut dx = 0.0;
+        match ((self.time / 6.0) as usize) % 3 {
+            0 => {
+                pose.right_arm = -0.9 + beat * 0.8;
+                pose.left_arm = -0.9 - beat * 0.8;
+                pose.rise = beat.abs() * 1.4;
+                pose.lean = step * 8.0;
+            }
+            1 => {
+                dx = step * 3.0;
+                let clap = beat.abs();
+                pose.right_arm = 0.2 + clap * 0.9;
+                pose.left_arm = pose.right_arm;
+                pose.lean = -step * 6.0;
+                pose.rise = clap * 0.8;
+            }
+            _ => {
+                pose.right_arm = -1.6 + beat * 0.25;
+                pose.left_arm = -1.6 - beat * 0.25;
+                pose.lean = step * 12.0;
+                pose.rise = (beat * 0.5 + 0.5) * 1.6;
+            }
+        }
+        self.shifted(dx).robot(pose);
+        self.notes();
     }
 
     /// The robot `dx` units to the side, for running about.
@@ -1618,27 +1736,7 @@ impl Stage<'_> {
         let u = self.unit;
         match reaction {
             Reaction::Water => {
-                // Sips from a glass every couple of seconds.
-                let sip = ease(((t % 2.4) - 1.2) / 0.3) * ease((2.4 - (t % 2.4)) / 0.3);
-                let mut pose = Pose::new(if sip > 0.5 {
-                    Eyes::Happy
-                } else {
-                    Eyes::Open(1.0, 0.0)
-                });
-                pose.right_arm = 0.55 + (-2.1 - 0.55) * sip;
-                let hands = self.robot(pose);
-                let glass = Rect::from_xywh(
-                    hands.right.x - 1.4 * u,
-                    hands.right.y - 4.0 * u,
-                    3.6 * u,
-                    4.6 * u,
-                );
-                self.painter.fill_rect(
-                    Rect::from_ltrb(glass.left, glass.top + 1.6 * u, glass.right, glass.bottom),
-                    self.prop(0.9, WATER),
-                );
-                self.painter
-                    .stroke_rect(glass, 0.5 * u, self.prop(1.0, WHITE));
+                self.sip_water();
                 self.caption("nudge_water", t);
             }
             Reaction::StretchBreak => {
@@ -2512,42 +2610,48 @@ impl Stage<'_> {
         );
     }
 
+    /// Sits on a cushion asleep while a "z z Z" climbs; in the evening a crescent moon
+    /// and a star keep it company.
     fn sleep(&self, night: bool) {
+        let u = self.unit;
         let mut pose = Pose::new(Eyes::Closed);
-        pose.lean = if night { 4.0 } else { 0.0 };
+        pose.rise = -1.2;
+        pose.right_arm = 1.4;
+        pose.left_arm = 1.4;
         self.robot(pose);
-        // "z" and "Z" each keep their own lane, rising and fading half a cycle apart.
-        for (offset, text, size, lane_x, lane_y) in
-            [(0.0, "z", 7.0, 11.0, -12.0), (0.5, "Z", 9.5, 18.0, -17.0)]
-        {
-            let phase = (self.time / 2.4 + offset).fract();
+        self.painter.fill_round_rect(
+            self.rect(-8.5, -3.2, 17.0, 3.4),
+            Radius::uniform(1.7 * u),
+            self.color(1.0, (206, 202, 214)),
+        );
+        self.painter.fill_round_rect(
+            self.rect(-7.5, -3.2, 15.0, 1.0),
+            Radius::uniform(0.5 * u),
+            self.color(1.0, (230, 228, 236)),
+        );
+        // Three letters, growing, each rising and fading in turn.
+        for (index, (text, size)) in [("z", 6.0), ("z", 7.5), ("Z", 9.5)].iter().enumerate() {
+            let phase = (self.time / 2.7 + index as f32 / 3.0).fract();
             let fade = (phase * PI).sin();
             self.text(
                 text,
-                self.x + (lane_x + phase * 2.0) * self.unit,
-                self.floor + (lane_y - phase * 4.0) * self.unit,
-                size,
-                self.prop(fade * 0.9, WHITE),
+                self.x + (10.0 + index as f32 * 4.6 + phase * 1.5) * u,
+                self.floor - (9.0 + index as f32 * 3.4 + phase * 3.0) * u,
+                *size,
+                self.color(fade * 0.95, WHITE),
             );
         }
         if night {
-            // A crescent moon and a couple of twinkling stars.
-            let moon = self.at(32.0, -17.0);
+            let moon = self.at(30.0, -15.0);
             self.painter
-                .fill_circle(moon, 3.6 * self.unit, self.color(1.0, (250, 232, 170)));
+                .fill_circle(moon, 4.2 * u, self.color(1.0, (255, 208, 80)));
             self.painter.fill_circle(
-                Point::new(moon.x + 1.6 * self.unit, moon.y - 1.0 * self.unit),
-                3.2 * self.unit,
+                Point::new(moon.x + 2.0 * u, moon.y - 1.2 * u),
+                3.8 * u,
                 self.color(1.0, (0, 0, 0)),
             );
-            for (index, (dx, dy)) in [(40.0, -9.0), (26.0, -6.0), (46.0, -18.0)]
-                .iter()
-                .enumerate()
-            {
-                let twinkle =
-                    ((self.time * 1.3 + index as f32 * 1.7) * TAU / 3.0).sin() * 0.5 + 0.5;
-                self.sparkle(self.at(*dx, *dy), 0.4 + 0.6 * twinkle);
-            }
+            let twinkle = (self.time * 2.1).sin() * 0.5 + 0.5;
+            self.sparkle(self.at(35.5, -9.0), 0.5 + 0.5 * twinkle);
         }
     }
 }
@@ -2592,8 +2696,8 @@ mod tests {
 
     #[test]
     fn props_fade_at_scene_edges() {
-        assert!(scene_fade(Scene::Chai, 0.0) < 0.01);
-        assert!(scene_fade(Scene::Chai, SCENE_SECONDS / 2.0) > 0.99);
-        assert!(scene_fade(Scene::Chai, SCENE_SECONDS) < 0.01);
+        assert!(scene_fade(Scene::Chai, 0.0, SCENE_SECONDS) < 0.01);
+        assert!(scene_fade(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS) > 0.99);
+        assert!(scene_fade(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS) < 0.01);
     }
 }

@@ -23,6 +23,8 @@ pub struct SystemSnapshot {
     pub cpu_percent: f32,
     /// Whether Windows reports an internet connection.
     pub online: bool,
+    /// False for the empty snapshot before the first sample.
+    pub sampled: bool,
 }
 
 static SNAPSHOT: Mutex<Option<SystemSnapshot>> = Mutex::new(None);
@@ -61,6 +63,7 @@ fn sample() -> SystemSnapshot {
         apps: shell_bar::app_windows(),
         cpu_percent: 0.0,
         online: online(),
+        sampled: true,
     }
 }
 

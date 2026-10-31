@@ -193,7 +193,8 @@ mod tests {
         assert_eq!(layout.destinations, standard().destinations);
         assert!(layout.overflows());
         assert!(
-            DashboardLayout::columns(SizeClass::Compact) < DashboardLayout::columns(SizeClass::Standard)
+            DashboardLayout::columns(SizeClass::Compact)
+                < DashboardLayout::columns(SizeClass::Standard)
         );
     }
 
