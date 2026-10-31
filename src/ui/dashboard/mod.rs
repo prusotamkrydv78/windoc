@@ -938,9 +938,21 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             focused: interaction.focused_card == Some(index),
             ..InteractionState::default()
         };
-        draw_card(painter, &card_layout, &tr(card.title_key), colors, state);
+        draw_card(
+            painter,
+            &card_layout,
+            &tr(card.title_key),
+            Some(card.kind.icon()),
+            colors,
+            state,
+        );
         let (value, detail) = card_text(card, focus.as_ref());
         draw_card_value(painter, &card_layout, &value, &detail, colors);
+        if card.kind == CardKind::Focus
+            && let Some(progress) = focus.as_ref().and_then(|view| view.progress)
+        {
+            draw_progress_ring(painter, card_layout.content, 1.0 - progress, colors);
+        }
     }
     if active == Destination::Clipboard {
         draw_clipboard_page(painter, layout.grid, colors);
@@ -1813,4 +1825,39 @@ fn draw_drop_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
             );
         }
     });
+}
+
+/// A ring at the right edge of `content` showing `fraction` (0–1) remaining.
+fn draw_progress_ring(painter: Painter<'_>, content: Rect, fraction: f32, colors: &SemanticColors) {
+    use winisland_render::{Angle, StrokeCap};
+    let size = content.height().min(content.width() * 0.4).min(56.0);
+    if size < 16.0 {
+        return;
+    }
+    let stroke = (size * 0.1).max(3.0);
+    let ring = Rect::from_xywh(
+        content.right - size + stroke / 2.0,
+        content.center_y() - size / 2.0 + stroke / 2.0,
+        size - stroke,
+        size - stroke,
+    );
+    painter.stroke_arc(
+        ring,
+        Angle::from_degrees(0.0),
+        Angle::from_degrees(360.0),
+        stroke,
+        colors.border_strong,
+        StrokeCap::Round,
+    );
+    let sweep = 360.0 * fraction.clamp(0.0, 1.0);
+    if sweep > 0.5 {
+        painter.stroke_arc(
+            ring,
+            Angle::from_degrees(0.0),
+            Angle::from_degrees(sweep),
+            stroke,
+            colors.accent_primary,
+            StrokeCap::Round,
+        );
+    }
 }

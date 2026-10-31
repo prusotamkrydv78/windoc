@@ -93,6 +93,7 @@ pub fn draw_card(
     painter: Painter<'_>,
     layout: &CardLayout,
     title: &str,
+    icon: Option<super::icon::Icon>,
     colors: &SemanticColors,
     state: InteractionState,
 ) {
@@ -106,16 +107,33 @@ pub fn draw_card(
     };
     painter.fill_round_rect(layout.bounds, shape, fill);
     painter.stroke_round_rect(layout.bounds, shape, 1.0, colors.border_subtle);
+    // A quiet label with an icon keeps the value below as the focus of the card.
     let title_color = if state.disabled {
         colors.text_disabled
     } else {
-        colors.text_primary
+        colors.text_secondary
     };
+    let mut title_rect = layout.header;
+    if let Some(icon) = icon {
+        let size = typography::LABEL.size + 4.0;
+        super::icon::draw_icon(
+            painter,
+            icon,
+            Rect::from_xywh(
+                title_rect.left,
+                title_rect.center_y() - size / 2.0,
+                size,
+                size,
+            ),
+            colors.accent_primary,
+        );
+        title_rect.left += size + space::S2;
+    }
     draw_text(
         painter,
         title,
-        typography::SECTION_TITLE,
-        layout.header,
+        typography::LABEL,
+        title_rect,
         Align::Start,
         title_color,
     );

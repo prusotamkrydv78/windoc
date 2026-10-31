@@ -12,6 +12,19 @@ pub enum CardKind {
     Notes,
 }
 
+impl CardKind {
+    pub const fn icon(self) -> crate::ui::components::icon::Icon {
+        use crate::ui::components::icon::Icon;
+        match self {
+            Self::ScreenTime => Icon::Chart,
+            Self::Weather => Icon::Weather,
+            Self::Focus => Icon::Focus,
+            Self::Clipboard => Icon::Clipboard,
+            Self::Notes => Icon::Notes,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SampleCard {
     pub kind: CardKind,
