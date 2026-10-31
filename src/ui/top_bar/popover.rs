@@ -207,14 +207,22 @@ fn draw_control_centre(
         let y = area.top + (index / 2) as f32 * (tile_h + gap);
         let tile = Rect::from_xywh(x, y, tile_w, tile_h);
         painter.fill_round_rect(tile, Radius::uniform(12.0 * s), TILE);
+        let bubble = Point::new(tile.left + 22.0 * s, tile.center_y());
         painter.fill_circle(
-            Point::new(tile.left + 22.0 * s, tile.center_y()),
+            bubble,
             13.0 * s,
             if index == 0 {
                 BLUE
             } else {
                 Rgba::WHITE.with_alpha(36)
             },
+        );
+        let glyph = [super::WIFI, super::BLUETOOTH, super::MOON, super::SUN][index];
+        super::draw_glyph(
+            painter,
+            glyph,
+            Rect::from_xywh(bubble.x - 11.0 * s, bubble.y - 11.0 * s, 22.0 * s, 22.0 * s),
+            s * 0.8,
         );
         text(
             painter,

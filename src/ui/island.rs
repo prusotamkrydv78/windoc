@@ -127,7 +127,12 @@ pub fn expanded_content_alpha(
     if compact_overlay_visible {
         0.0
     } else {
-        expansion_progress.powi(2).clamp(0.0, 1.0) * (1.0 - hide_progress)
+        // Content waits until the shape is about a third open, then eases in, so the panel
+        // grows first and its contents arrive after (as in the design prototype).
+        ((expansion_progress - 0.35) / 0.65)
+            .clamp(0.0, 1.0)
+            .powf(1.5)
+            * (1.0 - hide_progress)
     }
 }
 

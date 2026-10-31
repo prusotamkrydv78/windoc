@@ -45,7 +45,11 @@ impl App {
                 .compact_overlay
                 .activity_action_at(winisland_render::Point::new(rel_x as f32, rel_y as f32))
         {
-            let _ = crate::platform::shell().open_url(&target);
+            if target == super::frame::CALL_MUTE_ACTION {
+                self.toggle_call_mute();
+            } else {
+                let _ = crate::platform::shell().open_url(&target);
+            }
             return;
         }
         // Top bar items act on release-free press, like the taskbar.

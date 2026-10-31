@@ -1739,7 +1739,10 @@ impl App {
             primary: name.clone(),
             secondary: format!("{} · {mic}", format_call_time(now.duration_since(*started))),
             progress: None,
-            action: None,
+            action: Some((
+                if self.call_muted { "Unmute" } else { "Mute" }.to_string(),
+                CALL_MUTE_ACTION.to_string(),
+            )),
         };
         self.compact_overlay.push_activity(activity);
     }
@@ -1853,3 +1856,6 @@ impl App {
         });
     }
 }
+
+/// Activity action that toggles the call microphone instead of opening a URL.
+pub(super) const CALL_MUTE_ACTION: &str = "winisland:call-mute";

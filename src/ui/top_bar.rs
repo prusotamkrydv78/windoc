@@ -439,16 +439,19 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
 }
 
 /// 24x24 line glyphs for the status area (original artwork).
-const WIFI: &str =
+pub(crate) const WIFI: &str =
     "M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a4.7 4.7 0 0 1 6.4 0M12 19.3h.01";
 const SPEAKER: &str =
     "M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10";
 const BELL: &str = "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15zM10 20.5a2.2 2.2 0 0 0 4 0";
 const CHEVRON: &str = "M7 14.5l5-5 5 5";
 const SEARCH: &str = "M11 4.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM16 16l4.5 4.5";
+pub(crate) const BLUETOOTH: &str = "M7 7l10 10-5 4V3l5 4L7 17";
+pub(crate) const MOON: &str = "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z";
+pub(crate) const SUN: &str = "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4";
 
 /// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
-fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
+pub(crate) fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
     thread_local! {
         static CACHE: RefCell<Vec<(&'static str, Option<winisland_render::Path>)>> = const { RefCell::new(Vec::new()) };
     }
@@ -457,6 +460,9 @@ fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
         SPEAKER => SPEAKER,
         CHEVRON => CHEVRON,
         SEARCH => SEARCH,
+        BLUETOOTH => BLUETOOTH,
+        MOON => MOON,
+        SUN => SUN,
         _ => BELL,
     };
     let path = CACHE.with(|cache| {
