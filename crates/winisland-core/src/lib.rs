@@ -36,4 +36,5 @@ pub mod screen_time;
 pub mod shelf;
 pub mod text_edit;
 pub mod units;
+pub mod weather;
 pub mod widgets;
