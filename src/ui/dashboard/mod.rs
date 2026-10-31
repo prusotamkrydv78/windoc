@@ -597,7 +597,7 @@ fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
                 }
                 (summary.temperature.clone(), detail)
             }
-            None => (tr("card_off"), tr("weather_turn_on")),
+            None => (String::new(), tr("weather_turn_on")),
         });
     }
     if card.kind == CardKind::Notes {
@@ -609,7 +609,7 @@ fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
             if view.enabled || view.count > 0 {
                 (view.count.to_string(), tr("card_clipboard_items"))
             } else {
-                (tr("card_off"), tr("clipboard_turn_on"))
+                (String::new(), tr("clipboard_turn_on"))
             }
         });
     }
@@ -618,11 +618,15 @@ fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
             Some(total) => {
                 let minutes = total.as_secs() / 60;
                 (
-                    format!("{}:{:02}", minutes / 60, minutes % 60),
+                    if minutes >= 60 {
+                        format!("{}h {}m", minutes / 60, minutes % 60)
+                    } else {
+                        format!("{minutes}m")
+                    },
                     tr(card.detail_key),
                 )
             }
-            None => (tr("card_off"), tr("screen_time_turn_on")),
+            None => (String::new(), tr("screen_time_turn_on")),
         };
     }
     match (card.kind, focus) {
@@ -1496,6 +1500,18 @@ fn draw_card_value(
         content.right,
         (content.top + value_h).min(content.bottom),
     );
+    if value.is_empty() {
+        // An empty state: the hint takes the figure's place, quietly.
+        draw_text(
+            painter,
+            detail,
+            typography::BODY,
+            value_rect,
+            Align::Start,
+            colors.text_secondary,
+        );
+        return;
+    }
     draw_text(
         painter,
         value,
@@ -3104,7 +3120,8 @@ fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)
         winisland_render::FontStyle::bold(),
     );
     let mut x = if active == Destination::Home {
-        header.left - 8.0
+        // After the robot in the corner.
+        header.left + header.height().min(28.0) + space::S2 - 8.0
     } else {
         header.left + icon_size + space::S2 + title_width + space::S3 * 2.0 + 1.0
     };

@@ -30,7 +30,7 @@ impl FontStyle {
 
     pub const fn bold() -> Self {
         Self {
-            weight: FontWeight(700),
+            weight: FontWeight(600),
             width: FontWidth(5),
             slant: Slant::Upright,
         }

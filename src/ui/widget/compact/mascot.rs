@@ -745,9 +745,9 @@ fn current_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
 
 fn greeting(name: &str) -> String {
     if name.is_empty() {
-        "Hi!".to_string()
+        "Hi".to_string()
     } else {
-        format!("Hi, {name}!")
+        format!("Hi, {name}")
     }
 }
 
