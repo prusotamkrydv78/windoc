@@ -335,3 +335,6 @@ ai_usage_cost=本周约 ${}
 ai_usage_cost_detail=按 API 标价估算，订阅计费方式不同
 ai_usage_streak=连续 {} 天
 ai_usage_streak_detail=连续有 Claude Code 或 Codex 活动的天数
+palette_rates_date={} 汇率
+palette_rates_loading=正在获取汇率…
+palette_currency_unknown=未知的货币代码

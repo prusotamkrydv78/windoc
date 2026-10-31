@@ -80,6 +80,13 @@ impl App {
         crate::ui::widget::compact::message::set(&self.config.status_message);
         crate::ui::dashboard::set_links(&self.config.links);
         self.wellness.poll(&self.config, now);
+        if let Some(rates) = self
+            .currency
+            .poll(crate::ui::dashboard::palette::take_rates_request(), now)
+        {
+            crate::ui::dashboard::palette::set_rates(rates);
+            window.request_redraw();
+        }
         crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
         self.ai_usage.poll(
             self.config.ai_usage_enabled && !crate::core::safe_mode::active(),

@@ -335,3 +335,6 @@ ai_usage_cost=About ${} this week
 ai_usage_cost_detail=Estimate at API list prices; subscriptions are billed differently
 ai_usage_streak={}-day streak
 ai_usage_streak_detail=Consecutive days with Claude Code or Codex activity
+palette_rates_date=rates of {}
+palette_rates_loading=Fetching exchange rates…
+palette_currency_unknown=Unknown currency code

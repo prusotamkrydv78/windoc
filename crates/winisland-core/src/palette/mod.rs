@@ -47,6 +47,12 @@ pub enum Command {
         to: &'static str,
         result: f64,
     },
+    /// `10 usd to inr`; converted with cached rates once available.
+    ConvertCurrency {
+        value: f64,
+        from: String,
+        to: String,
+    },
     /// `note buy milk`
     QuickNote(String),
     /// `open downloads`
@@ -154,6 +160,9 @@ pub fn parse(query: &str) -> Option<Command> {
                 result,
             });
         }
+    }
+    if let Some((value, from, to)) = crate::currency::parse_query(trimmed) {
+        return Some(Command::ConvertCurrency { value, from, to });
     }
     let target = if word == "open" { rest } else { lower.as_str() };
     MODULES

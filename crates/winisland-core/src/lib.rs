@@ -27,6 +27,7 @@ pub mod backup;
 pub mod clipboard;
 pub mod config;
 pub mod context;
+pub mod currency;
 pub mod focus;
 pub mod i18n;
 pub mod lyrics;

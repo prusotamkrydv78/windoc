@@ -24,6 +24,18 @@ struct PaletteState {
 
 thread_local! {
     static PALETTE: RefCell<Option<PaletteState>> = const { RefCell::new(None) };
+    static RATES: RefCell<Option<winisland_core::currency::Rates>> = const { RefCell::new(None) };
+    static RATES_WANTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Publishes fetched currency rates.
+pub fn set_rates(rates: winisland_core::currency::Rates) {
+    RATES.with(|cell| *cell.borrow_mut() = Some(rates));
+}
+
+/// Whether a currency query asked for rates since the last call.
+pub fn take_rates_request() -> bool {
+    RATES_WANTED.with(std::cell::Cell::take)
 }
 
 pub fn open() {
@@ -55,6 +67,23 @@ fn preview(query: &str) -> Option<String> {
             winisland_core::units::format_value(value, 4),
             winisland_core::units::format_value(result, 4)
         )),
+        Command::ConvertCurrency { value, from, to } => {
+            Some(RATES.with(|cell| match cell.borrow().as_ref() {
+                Some(rates) => match rates.convert(value, &from, &to) {
+                    Some(result) => format!(
+                        "{} {from} = {} {to} · {}",
+                        winisland_core::units::format_value(value, 2),
+                        winisland_core::units::format_value(result, 2),
+                        winisland_core::i18n::tr_args("palette_rates_date", &[&rates.date])
+                    ),
+                    None => tr("palette_currency_unknown"),
+                },
+                None => {
+                    RATES_WANTED.with(|wanted| wanted.set(true));
+                    tr("palette_rates_loading")
+                }
+            }))
+        }
         Command::StartTimer(duration) => Some(winisland_core::i18n::tr_args(
             "palette_timer",
             &[&(duration.as_secs() / 60).to_string()],
@@ -83,7 +112,10 @@ pub fn handle_key(key: &Key) -> Option<Command> {
             }
             Key::Enter => {
                 let command = palette::parse(state.query.text());
-                if matches!(command, Some(Command::Convert { .. })) {
+                if matches!(
+                    command,
+                    Some(Command::Convert { .. } | Command::ConvertCurrency { .. })
+                ) {
                     state.result = preview(state.query.text());
                     return None;
                 }

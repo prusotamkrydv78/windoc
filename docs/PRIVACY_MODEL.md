@@ -40,6 +40,7 @@ Clipboard and screen-time data are collected only after the user turns those fea
 | GitHub (upstream PluginMarketplace) | Plugin catalog, icons and packages | **Disabled** by `MARKETPLACE_ENABLED = false` in `crates/winisland-plugin-package/src/marketplace.rs` |
 | LRCLIB, AMLL, NetEase, QQ Music, Kugou | Lyrics lookup (sends title, artist and duration) | **Opt-in.** `lyrics_mode` defaults to `lrc` (local files only). Online lookup happens only when the user selects online mode. |
 | Open-Meteo (`geocoding-api.open-meteo.com`, `api.open-meteo.com`) | Place search (the typed city name and UI language) and forecasts (coordinates rounded to about 1 km) | **Opt-in.** `weather_enabled` defaults to off. Search runs only when the user presses Enter in the location field; forecasts refresh every 30 minutes while enabled and a place is set. |
+| Frankfurter (`api.frankfurter.app`) | Currency reference rates (no query data is sent) | Only after the user types a currency conversion in the palette; cached 12 hours; off in safe mode |
 | Native plugins | Anything | Plugins run as native code with the user's privileges and are not network-restricted |
 
 No telemetry, analytics or crash reports are sent.

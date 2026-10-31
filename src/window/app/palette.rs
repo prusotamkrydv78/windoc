@@ -60,7 +60,7 @@ impl App {
                 "clock" => dashboard::show(Destination::Clock),
                 _ => dashboard::show(Destination::Home),
             },
-            Command::Convert { .. } => {}
+            Command::Convert { .. } | Command::ConvertCurrency { .. } => {}
         }
         if let Some(window_ref) = &self.window {
             window_ref.request_redraw();
