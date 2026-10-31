@@ -21,6 +21,8 @@ pub const STEPPER_GAP: f32 = 0.0;
 
 pub const POPUP_BTN_W: f32 = 112.0;
 pub const POPUP_BTN_H: f32 = 28.0;
+/// Width of the trailing box in a text field row.
+pub const TEXT_FIELD_W: f32 = 200.0;
 pub const POPUP_BTN_R: f32 = 7.0;
 pub const POPUP_ITEM_H: f32 = 32.0;
 pub const POPUP_MENU_R: f32 = 10.0;
@@ -93,6 +95,12 @@ pub enum SettingsItem {
         btn_label: String,
         enabled: bool,
     },
+    RowTextField {
+        label: String,
+        value: String,
+        placeholder: String,
+        enabled: bool,
+    },
     RowAppItem {
         label: String,
         active: bool,
@@ -158,6 +166,7 @@ impl SettingsItem {
                 | SettingsItem::RowFolderPicker { .. }
                 | SettingsItem::RowSourceSelect { .. }
                 | SettingsItem::RowButton { .. }
+                | SettingsItem::RowTextField { .. }
                 | SettingsItem::RowAppItem { .. }
                 | SettingsItem::RowLabel { .. }
         )

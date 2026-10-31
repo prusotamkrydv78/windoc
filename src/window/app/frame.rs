@@ -68,6 +68,10 @@ impl App {
             self.clipboard.revision(),
             self.clipboard.items(),
         );
+        if self.weather.poll(&self.config, now) {
+            window.request_redraw();
+        }
+        crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
         crate::ui::dashboard::set_screen_time_total(self.config.screen_time_enabled.then(|| {
             self.screen_time
                 .today(now)

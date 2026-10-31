@@ -1,7 +1,7 @@
 use super::items::{
     CONTENT_PADDING, GROUP_INNER_PAD, POPUP_BTN_H, POPUP_BTN_W, ROW_HEIGHT, STEPPER_BTN_SIZE,
-    STEPPER_GAP, STEPPER_VALUE_W, SettingsItem, TOGGLE_H, TOGGLE_W, picker_button_rects,
-    trailing_control_rect,
+    STEPPER_GAP, STEPPER_VALUE_W, SettingsItem, TEXT_FIELD_W, TOGGLE_H, TOGGLE_W,
+    picker_button_rects, trailing_control_rect,
 };
 use crate::ui::widget::compact::widget_width;
 use crate::ui::widget::expanded::{WidgetGridLayout, widget_corner_radius, widget_grid_layout};
@@ -42,6 +42,7 @@ pub enum ClickResult {
     CenterLink(usize),
     SourceButton(usize),
     RowButton(usize),
+    TextField(usize),
     AppItem(usize),
     FolderSelect(usize),
     FolderClear(usize),
@@ -92,6 +93,7 @@ impl ClickResult {
             | ClickResult::CenterLink(index)
             | ClickResult::SourceButton(index)
             | ClickResult::RowButton(index)
+            | ClickResult::TextField(index)
             | ClickResult::AppItem(index)
             | ClickResult::FolderSelect(index)
             | ClickResult::FolderClear(index) => Some(*index),
@@ -681,6 +683,19 @@ pub fn hit_test(items: &[SettingsItem], mx: f32, my: f32, start_y: f32, width: f
                     .contains(point) =>
             {
                 return ClickResult::RowButton(idx);
+            }
+            SettingsItem::RowTextField { enabled, .. }
+                if *enabled
+                    && trailing_control_rect(
+                        y,
+                        ROW_HEIGHT,
+                        content_w,
+                        TEXT_FIELD_W,
+                        POPUP_BTN_H,
+                    )
+                    .contains(point) =>
+            {
+                return ClickResult::TextField(idx);
             }
             SettingsItem::RowAppItem { enabled, .. }
                 if *enabled && in_rect(mx, my, CONTENT_PADDING, y, content_w, ROW_HEIGHT) =>

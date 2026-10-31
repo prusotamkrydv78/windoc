@@ -1,14 +1,18 @@
 use crate::utils::settings_ui::hover_test;
 use crate::utils::settings_ui::items::SIDEBAR_PAD;
+use winisland_core::text_edit::{EditKey, TextBuffer};
 use winisland_platform::Key;
 use winisland_render::{Point, Rect};
 
 use super::pages::PageInput;
 use super::{
-    NumberInput, NumberInputHandler, PAGE_NAV_GAP, PAGE_NAV_HEIGHT, PAGE_NAV_WIDTH, PAGE_NAV_X,
-    PAGE_NAV_Y, PLUGINS_PAGE_INDEX, POPUP_OPACITY_KEY, PageNavigation, SETTINGS_HEADER_H,
-    SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
+    InputMode, NumberInput, NumberInputHandler, PAGE_NAV_GAP, PAGE_NAV_HEIGHT, PAGE_NAV_WIDTH,
+    PAGE_NAV_X, PAGE_NAV_Y, PLUGINS_PAGE_INDEX, POPUP_OPACITY_KEY, PageNavigation,
+    SETTINGS_HEADER_H, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
 };
+
+/// Longest value a stepper accepts as typed text.
+const MAX_NUMBER_CHARS: usize = 32;
 
 impl SettingsApp {
     pub(crate) fn music_notice_button_hovered(&self) -> bool {
@@ -271,7 +275,26 @@ impl SettingsApp {
     ) {
         self.number_input = Some(NumberInput {
             rect,
-            text: value,
+            buffer: TextBuffer::with_text(&value, MAX_NUMBER_CHARS),
+            mode: InputMode::Number,
+            on_commit,
+        });
+        self.request_redraw();
+    }
+
+    /// Starts editing a text field row. Enter commits through `on_commit`; Escape cancels.
+    pub(crate) fn begin_text_input(
+        &mut self,
+        rect: Rect,
+        value: &str,
+        max_chars: usize,
+        on_commit: NumberInputHandler,
+    ) {
+        self.commit_number_input();
+        self.number_input = Some(NumberInput {
+            rect,
+            buffer: TextBuffer::with_text(value, max_chars),
+            mode: InputMode::Text,
             on_commit,
         });
         self.request_redraw();
@@ -282,7 +305,7 @@ impl SettingsApp {
             return;
         };
         let plugin_setting = self.pending_plugin_setting.is_some();
-        (input.on_commit)(self, &input.text);
+        (input.on_commit)(self, input.buffer.text());
         if !plugin_setting {
             self.persist_settings_change();
         }
@@ -292,10 +315,26 @@ impl SettingsApp {
         let Some(input) = &mut self.number_input else {
             return false;
         };
+        let text_mode = input.mode == InputMode::Text;
 
         match key {
             Key::Backspace => {
-                input.text.pop();
+                input.buffer.apply(EditKey::Backspace);
+            }
+            Key::Delete if text_mode => {
+                input.buffer.apply(EditKey::Delete);
+            }
+            Key::ArrowLeft if text_mode => {
+                input.buffer.apply(EditKey::Left);
+            }
+            Key::ArrowRight if text_mode => {
+                input.buffer.apply(EditKey::Right);
+            }
+            Key::Home if text_mode => {
+                input.buffer.apply(EditKey::Home);
+            }
+            Key::End if text_mode => {
+                input.buffer.apply(EditKey::End);
             }
             Key::Enter => {
                 self.commit_number_input();
@@ -305,12 +344,15 @@ impl SettingsApp {
                 self.number_input = None;
                 self.pending_plugin_setting = None;
             }
+            Key::Character(value) if text_mode => {
+                input.buffer.insert(value);
+            }
             Key::Character(value)
                 if value.chars().all(|character| {
                     character.is_ascii_digit() || matches!(character, '.' | '-')
                 }) =>
             {
-                input.text.push_str(value);
+                input.buffer.insert(value);
             }
             _ => return false,
         }

@@ -16,8 +16,8 @@ use crate::utils::color::settings_color;
 
 use super::super::items::{
     CONTENT_PADDING, GROUP_INNER_PAD, GROUP_RADIUS, POPUP_BTN_H, POPUP_BTN_R, POPUP_BTN_W,
-    ROW_HEIGHT, STEPPER_BTN_SIZE, STEPPER_GAP, STEPPER_VALUE_W, SettingsItem, TOGGLE_H, TOGGLE_W,
-    picker_button_rects, trailing_control_rect,
+    ROW_HEIGHT, STEPPER_BTN_SIZE, STEPPER_GAP, STEPPER_VALUE_W, SettingsItem, TEXT_FIELD_W,
+    TOGGLE_H, TOGGLE_W, picker_button_rects, trailing_control_rect,
 };
 use super::controls::{
     PillBtnParams, SettingsPainter, draw_pill_btn, draw_row_separator, draw_stepper_btn,
@@ -511,6 +511,115 @@ fn draw_row_button(
     advance_group_row(ctx, y + ROW_HEIGHT, groups, visible);
 }
 
+struct TextFieldRow<'a> {
+    y: f32,
+    label: &'a str,
+    value: &'a str,
+    placeholder: &'a str,
+    enabled: bool,
+}
+
+/// A label with a trailing text box. While it is being edited, the active input's text and
+/// caret replace the stored value.
+fn draw_row_text_field(
+    ctx: &ItemCtx,
+    row: TextFieldRow<'_>,
+    active_input: &Option<ActiveStepperValue>,
+    groups: &mut GroupRows,
+) {
+    let painter = ctx.painter;
+    let theme = ctx.theme;
+    let (cy, visible) = draw_row_text(
+        ctx,
+        row.y,
+        ROW_HEIGHT,
+        row.label,
+        row_text_color(ctx, row.enabled),
+    );
+    if visible {
+        let field =
+            trailing_control_rect(row.y, ROW_HEIGHT, ctx.content_w, TEXT_FIELD_W, POPUP_BTN_H);
+        let editing = active_input.as_ref().filter(|input| {
+            (input.rect.left - field.left).abs() < 0.5 && (input.rect.top - field.top).abs() < 0.5
+        });
+        painter.fill_round_rect(
+            field,
+            Radius::uniform(POPUP_BTN_R),
+            settings_color(if editing.is_some() {
+                theme.card_highlight
+            } else if row.enabled {
+                theme.control_bg
+            } else {
+                theme.control_disabled
+            }),
+        );
+        painter.stroke_round_rect(
+            field.inset(0.5),
+            Radius::uniform(POPUP_BTN_R),
+            1.0,
+            settings_color(if editing.is_some() {
+                theme.accent
+            } else {
+                theme.control_border
+            }),
+        );
+        let padding = 8.0;
+        let text_width = field.width() - padding * 2.0;
+        let (text, color) = match editing {
+            Some(input) => (input.text, theme.text_pri),
+            None if row.value.is_empty() => (row.placeholder, theme.text_sec),
+            None => (
+                row.value,
+                if row.enabled {
+                    theme.text_pri
+                } else {
+                    theme.text_sec
+                },
+            ),
+        };
+        let fonts = FontManager::global();
+        // While editing, show the end of long text so the caret stays visible.
+        let shown = if editing.is_some() {
+            text.to_string()
+        } else {
+            crate::utils::settings_ui::ellipsize_text(
+                fonts,
+                text,
+                13.0,
+                FontStyle::normal(),
+                text_width,
+            )
+        };
+        let save = painter.save();
+        painter.clip_rect(field.inset(2.0));
+        let full_width = fonts.measure_text_cached(&shown, 13.0, FontStyle::normal());
+        let scroll = (full_width - text_width).max(0.0);
+        let text_x = field.left + padding - scroll;
+        SettingsPainter::new(painter).text(
+            &shown,
+            (text_x, cy + 5.0),
+            13.0,
+            false,
+            settings_color(color),
+        );
+        if let Some(input) = editing.filter(|input| input.show_caret) {
+            let caret_x = text_x
+                + fonts.measure_text_cached(input.before_caret, 13.0, FontStyle::normal())
+                + 0.5;
+            painter.stroke_line(
+                Point::new(caret_x, field.top + 6.0),
+                Point::new(caret_x, field.bottom - 6.0),
+                1.0,
+                settings_color(theme.accent),
+                StrokeCap::Butt,
+            );
+        }
+        painter.restore_to(save);
+    }
+
+    advance_group_row(ctx, row.y + ROW_HEIGHT, groups, visible);
+}
+
 fn draw_row_app_item(
     ctx: &ItemCtx,
     y: f32,
@@ -817,6 +926,25 @@ pub fn draw_items(params: DrawItemsParams<'_>) {
                 enabled,
             } => {
                 draw_row_button(&ctx, y, label, btn_label, *enabled, &mut groups);
+            }
+            SettingsItem::RowTextField {
+                label,
+                value,
+                placeholder,
+                enabled,
+            } => {
+                draw_row_text_field(
+                    &ctx,
+                    TextFieldRow {
+                        y,
+                        label,
+                        value,
+                        placeholder,
+                        enabled: *enabled,
+                    },
+                    &active_stepper_value,
+                    &mut groups,
+                );
             }
             SettingsItem::RowAppItem {
                 label,

@@ -15,6 +15,7 @@ This document describes what the **current code** stores, observes and sends. It
 | `~/.winisland/focus.json` | Focus timer kind, phase, elapsed time and save time | Each timer state change |
 | `~/.winisland/screen_time.json` | Per-day active time by app executable (titles only if enabled), category rules | Every 5 minutes while tracking, on settings change and on exit |
 | `~/.winisland/clipboard.bin` | Clipboard history (text, links, file paths, source app), JSON encrypted with DPAPI for the current Windows user | About 10 seconds after a change while history is on, and on exit |
+| `~/.winisland/weather.json` | Last forecast for the chosen place (rounded coordinates, temperatures, condition) | After each successful refresh |
 
 Clipboard and screen-time data are collected only after the user turns those features on. No notes, location or credential data is collected by the current code.
 
@@ -37,6 +38,7 @@ Clipboard and screen-time data are collected only after the user turns those fea
 | GitHub (upstream WinIsland releases) | Update checks and installer download | **Disabled** by `UPDATE_ENDPOINTS_ENABLED = false` in `src/utils/updater.rs`. Update checks are also off by default in config. |
 | GitHub (upstream PluginMarketplace) | Plugin catalog, icons and packages | **Disabled** by `MARKETPLACE_ENABLED = false` in `crates/winisland-plugin-package/src/marketplace.rs` |
 | LRCLIB, AMLL, NetEase, QQ Music, Kugou | Lyrics lookup (sends title, artist and duration) | **Opt-in.** `lyrics_mode` defaults to `lrc` (local files only). Online lookup happens only when the user selects online mode. |
+| Open-Meteo (`geocoding-api.open-meteo.com`, `api.open-meteo.com`) | Place search (the typed city name and UI language) and forecasts (coordinates rounded to about 1 km) | **Opt-in.** `weather_enabled` defaults to off. Search runs only when the user presses Enter in the location field; forecasts refresh every 30 minutes while enabled and a place is set. |
 | Native plugins | Anything | Plugins run as native code with the user's privileges and are not network-restricted |
 
 No telemetry, analytics or crash reports are sent.

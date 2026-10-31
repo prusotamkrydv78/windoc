@@ -151,9 +151,19 @@ pub(crate) struct PendingPluginSetting {
     maximum: Option<f64>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputMode {
+    /// Digits, `.` and `-` only.
+    Number,
+    /// Any text, with caret movement.
+    Text,
+}
+
+/// An inline edit over a stepper value or text field row.
 pub(crate) struct NumberInput {
     pub(crate) rect: winisland_render::Rect,
-    pub(crate) text: String,
+    pub(crate) buffer: winisland_core::text_edit::TextBuffer,
+    pub(crate) mode: InputMode,
     pub(crate) on_commit: NumberInputHandler,
 }
 
@@ -210,6 +220,12 @@ pub struct SettingsApp {
     pub(crate) sidebar_scroll: f32,
     pub(crate) popup: Option<PopupState>,
     pub(crate) number_input: Option<NumberInput>,
+    /// Place search started from the weather location field.
+    pub(crate) weather_search:
+        Option<std::sync::mpsc::Receiver<Result<Vec<winisland_core::weather::Place>, String>>>,
+    pub(crate) weather_results: Vec<winisland_core::weather::Place>,
+    pub(crate) weather_search_rect: winisland_render::Rect,
+    pub(crate) weather_status: Option<String>,
     pub(crate) is_light: bool,
     pub(crate) cached_items: Vec<SettingsItem>,
     pub(crate) items_dirty: bool,
@@ -371,6 +387,10 @@ impl SettingsApp {
             sidebar_scroll: 0.0,
             popup: None,
             number_input: None,
+            weather_search: None,
+            weather_results: Vec::new(),
+            weather_search_rect: winisland_render::Rect::default(),
+            weather_status: None,
             is_light: false,
             cached_items: Vec::new(),
             items_dirty: true,
@@ -1197,6 +1217,7 @@ impl SettingsApp {
 
         self.frame_count += 1;
         self.poll_detected_apps();
+        self.poll_weather_search();
         self.poll_plugin_inventory();
         if self.frame_count.is_multiple_of(120) {
             self.update_detected_apps();
@@ -1218,7 +1239,11 @@ impl SettingsApp {
             is_widget_dragging,
             is_number_input_active,
         ) {
-            return None;
+            // Keep polling while a weather place search is in flight.
+            return self
+                .weather_search
+                .is_some()
+                .then(|| Instant::now() + Duration::from_millis(100));
         }
 
         let now = Instant::now();

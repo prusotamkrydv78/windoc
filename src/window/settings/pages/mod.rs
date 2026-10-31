@@ -3,7 +3,7 @@ use winisland_render::{Image, Rect, Rgba};
 
 use crate::utils::settings_ui::items::{
     CONTENT_PADDING, GROUP_INNER_PAD, POPUP_BTN_H, POPUP_BTN_W, ROW_HEIGHT, STEPPER_BTN_SIZE,
-    STEPPER_GAP, STEPPER_VALUE_W, SettingsItem,
+    STEPPER_GAP, STEPPER_VALUE_W, SettingsItem, TEXT_FIELD_W,
 };
 use crate::utils::settings_ui::{ClickResult, hit_test};
 
@@ -105,6 +105,25 @@ impl<A> SettingsPage<A> {
             SettingsItem::RowButton {
                 label,
                 btn_label,
+                enabled,
+            },
+            action,
+        );
+    }
+
+    pub(crate) fn row_text_field(
+        &mut self,
+        label: String,
+        value: String,
+        placeholder: String,
+        enabled: bool,
+        action: A,
+    ) {
+        self.push_action(
+            SettingsItem::RowTextField {
+                label,
+                value,
+                placeholder,
                 enabled,
             },
             action,
@@ -256,6 +275,17 @@ impl PageInput {
         let button_x = SIDEBAR_W + CONTENT_PADDING + self.width - GROUP_INNER_PAD - POPUP_BTN_W;
         let button_y = self.row_top(page, item_index, scroll_y) + (ROW_HEIGHT - POPUP_BTN_H) / 2.0;
         Rect::from_xywh(button_x, button_y, POPUP_BTN_W, POPUP_BTN_H)
+    }
+
+    pub(crate) fn text_field_rect<A>(
+        &self,
+        page: &SettingsPage<A>,
+        item_index: usize,
+        scroll_y: f32,
+    ) -> Rect {
+        let field_x = SIDEBAR_W + CONTENT_PADDING + self.width - GROUP_INNER_PAD - TEXT_FIELD_W;
+        let field_y = self.row_top(page, item_index, scroll_y) + (ROW_HEIGHT - POPUP_BTN_H) / 2.0;
+        Rect::from_xywh(field_x, field_y, TEXT_FIELD_W, POPUP_BTN_H)
     }
 
     pub(crate) fn stepper_value_rect<A>(

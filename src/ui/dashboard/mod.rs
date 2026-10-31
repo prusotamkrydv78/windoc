@@ -366,7 +366,35 @@ fn draw_notes_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
     });
 }
 
+thread_local! {
+    static WEATHER: RefCell<Option<crate::core::weather_service::WeatherSummary>> =
+        const { RefCell::new(None) };
+}
+
+/// Publishes the forecast for the Home card. `None` hides it behind the "off" state.
+pub fn set_weather(summary: Option<crate::core::weather_service::WeatherSummary>) {
+    WEATHER.with(|cell| {
+        let mut current = cell.borrow_mut();
+        if *current != summary {
+            *current = summary;
+        }
+    });
+}
+
 fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
+    if card.kind == CardKind::Weather {
+        return WEATHER.with(|cell| match cell.borrow().as_ref() {
+            Some(summary) => {
+                let mut detail = format!("{} · {}", tr(summary.condition_key), summary.place);
+                if summary.stale {
+                    detail.push_str(" · ");
+                    detail.push_str(&tr("weather_stale"));
+                }
+                (summary.temperature.clone(), detail)
+            }
+            None => (tr("card_off"), tr("weather_turn_on")),
+        });
+    }
     if card.kind == CardKind::Notes {
         return NOTE_ROWS.with(|rows| (rows.len().to_string(), tr("card_notes_count")));
     }

@@ -5,3 +5,4 @@ pub mod json_store;
 pub mod persistence;
 pub mod screen_time;
 pub mod smtc;
+pub mod weather_service;

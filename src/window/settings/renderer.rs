@@ -183,7 +183,8 @@ impl SettingsApp {
                     input.rect.width(),
                     input.rect.height(),
                 ),
-                text: &input.text,
+                text: input.buffer.text(),
+                before_caret: input.buffer.before_caret(),
                 show_caret: self.frame_count % 60 < 30,
             });
             draw_items(DrawItemsParams {

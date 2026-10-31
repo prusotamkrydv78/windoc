@@ -23,6 +23,8 @@ pub use items::{content_height, draw_items};
 pub struct ActiveStepperValue<'a> {
     pub rect: Rect,
     pub text: &'a str,
+    /// Text before the caret, so text fields can place it mid-string.
+    pub before_caret: &'a str,
     pub show_caret: bool,
 }
 

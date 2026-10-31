@@ -14,6 +14,7 @@ pub(super) enum BehaviorAction {
     Language,
     CheckUpdatesNow,
     ResetDefaults,
+    WeatherLocation,
     HideIsland,
     Exit,
 }
@@ -100,6 +101,36 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::ClipboardHistoryEnabled, true);
         page.row_label(tr("clipboard_history_hint"));
         page.group_end();
+        page.section(tr("section_weather"));
+        page.group_start();
+        page.setting(&self.config, AppConfigField::WeatherEnabled, true);
+        if self.config.weather_enabled {
+            let place = self
+                .config
+                .weather_place
+                .as_ref()
+                .map(|place| {
+                    if place.detail.is_empty() {
+                        place.name.clone()
+                    } else {
+                        format!("{}, {}", place.name, place.detail)
+                    }
+                })
+                .unwrap_or_default();
+            page.row_text_field(
+                tr("weather_location"),
+                place,
+                tr("weather_location_placeholder"),
+                true,
+                BehaviorAction::WeatherLocation,
+            );
+            if let Some(status) = &self.weather_status {
+                page.row_label(status.clone());
+            }
+            page.setting(&self.config, AppConfigField::WeatherImperial, true);
+        }
+        page.row_label(tr("weather_hint"));
+        page.group_end();
         page.section(tr("section_updates"));
         page.group_start();
         page.setting(&self.config, AppConfigField::CheckForUpdates, true);
@@ -164,6 +195,23 @@ impl SettingsApp {
                 FontManager::global().set_custom_font_path(self.config.custom_font_path.as_deref());
                 true
             }
+            (BehaviorAction::WeatherLocation, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.weather_search_rect = rect;
+                let current = self
+                    .config
+                    .weather_place
+                    .as_ref()
+                    .map(|place| place.name.clone())
+                    .unwrap_or_default();
+                self.begin_text_input(
+                    rect,
+                    &current,
+                    WEATHER_QUERY_MAX_CHARS,
+                    commit_weather_search,
+                );
+                false
+            }
             (BehaviorAction::CheckUpdatesNow, ClickResult::RowButton(_)) => {
                 crate::utils::updater::check_updates_manually();
                 false
@@ -208,4 +256,95 @@ fn select_language(app: &mut SettingsApp, value: &str) {
     app.config.language = value.to_string();
     set_lang(value);
     crate::ui::widget::expanded::calendar::clear_calendar_text_cache();
+}
+
+const WEATHER_QUERY_MAX_CHARS: usize = 80;
+
+/// Starts a place search for the typed city. This user action is what allows the
+/// network request; an empty query clears the location instead.
+fn commit_weather_search(app: &mut SettingsApp, query: &str) {
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        app.config.weather_place = None;
+        app.weather_status = None;
+        return;
+    }
+    let language = current_lang().split('_').next().unwrap_or("en").to_string();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    tokio::spawn(async move {
+        let result = winisland_core::weather::search_places(&query, &language)
+            .await
+            .map_err(|error| error.to_string());
+        let _ = sender.send(result);
+    });
+    app.weather_search = Some(receiver);
+    app.weather_status = Some(tr("weather_searching"));
+    app.mark_items_dirty();
+}
+
+fn select_weather_place(app: &mut SettingsApp, value: &str) {
+    if let Some(place) = value
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| app.weather_results.get(index).cloned())
+    {
+        app.config.weather_place = Some(place);
+    }
+    app.weather_results.clear();
+    app.weather_status = None;
+    app.mark_items_dirty();
+}
+
+impl SettingsApp {
+    pub(crate) fn poll_weather_search(&mut self) {
+        let Some(receiver) = &self.weather_search else {
+            return;
+        };
+        let result = match receiver.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("search was interrupted".to_string())
+            }
+        };
+        self.weather_search = None;
+        match result {
+            Ok(mut places) if places.len() == 1 => {
+                self.config.weather_place = places.pop();
+                self.weather_status = None;
+                self.persist_settings_change();
+            }
+            Ok(places) => {
+                let (win_w, win_h) = self.logical_window_size();
+                let labels = places
+                    .iter()
+                    .map(|place| {
+                        if place.detail.is_empty() {
+                            place.name.clone()
+                        } else {
+                            format!("{}, {}", place.name, place.detail)
+                        }
+                    })
+                    .collect();
+                let values = (0..places.len()).map(|index| index.to_string()).collect();
+                self.weather_results = places;
+                self.weather_status = None;
+                self.show_popup(PopupState::new(
+                    select_weather_place,
+                    self.weather_search_rect,
+                    labels,
+                    values,
+                    0,
+                    win_w,
+                    win_h,
+                ));
+            }
+            Err(error) => {
+                log::warn!("Weather place search failed: {error}");
+                self.weather_status = Some(tr("weather_search_failed"));
+            }
+        }
+        self.mark_items_dirty();
+        self.request_redraw();
+    }
 }
