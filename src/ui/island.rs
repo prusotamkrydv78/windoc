@@ -157,6 +157,7 @@ pub fn draw_island(
         None
     };
     draw_expanded_shadow(painter, &params, &island_path);
+    draw_album_glow(painter, &params, rect);
     let edge_color = edge_light_color(&params);
     if let Some(color) = edge_color {
         // Soft glow behind the island; only the part outside its edge stays visible.
@@ -662,4 +663,37 @@ fn idle_dim(dt: f32) -> f32 {
 /// Microphone and camera in-use flags, as last published.
 pub fn capture_in_use() -> (bool, bool) {
     CAPTURE_IN_USE.with(std::cell::Cell::get)
+}
+
+/// While music plays, a soft light in the album's accent colour spills out from under the
+/// notch, as on the macOS notch players. Drawn behind the island so only the spill shows.
+fn draw_album_glow(painter: Painter<'_>, params: &DrawIslandParams<'_>, rect: Rect) {
+    let media = params.media.media;
+    if !params.media.music_active || !media.is_playing || params.layout.hide_progress > 0.5 {
+        return;
+    }
+    let palette = get_media_palette(media);
+    let Some(accent) = crate::ui::expanded::music_view::readable_accent(&palette) else {
+        return;
+    };
+    let scale = params.layout.compact_scale.max(0.5);
+    // Fades out as the panel opens; the open panel has its own shadow.
+    let alpha = (70.0 * (1.0 - params.layout.expansion_progress).clamp(0.0, 1.0)) as u8;
+    if alpha == 0 {
+        return;
+    }
+    let glow = Rect::from_xywh(
+        rect.left + rect.width() * 0.12,
+        rect.bottom - 12.0 * scale,
+        rect.width() * 0.76,
+        22.0 * scale,
+    );
+    painter.fill_path_blurred(
+        &Path::continuous_rounded_rect(glow, 11.0 * scale),
+        accent.with_alpha(alpha),
+        BlurSpec {
+            sigma: (14.0 * scale, 10.0 * scale),
+            tile: None,
+        },
+    );
 }
