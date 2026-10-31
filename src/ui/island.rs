@@ -140,6 +140,10 @@ pub fn draw_island(
         layout.current_w,
         layout.current_h,
     );
+    let dim = idle_dim(params.style.dt);
+    if dim < 0.995 {
+        painter.save_alpha((dim * 255.0) as u8);
+    }
     let island_path = island_shape(&params, rect);
     let blur_filter = if layout.sigmas.0 > MIN_BLUR_SIGMA || layout.sigmas.1 > MIN_BLUR_SIGMA {
         Some(BlurSpec {
@@ -246,6 +250,9 @@ pub fn draw_island(
             winisland_render::StrokeCap::Butt,
             winisland_render::StrokeJoin::Miter,
         );
+    }
+    if dim < 0.995 {
+        painter.restore();
     }
     widget_animating
 }
@@ -613,4 +620,33 @@ fn draw_privacy_dots(painter: Painter<'_>, params: &DrawIslandParams<'_>, rect: 
             x -= radius * 2.0 + 3.0 * scale;
         }
     }
+}
+
+thread_local! {
+    /// Target and current opacity for idle dimming.
+    static IDLE_DIM: std::cell::Cell<(f32, f32)> = const { std::cell::Cell::new((1.0, 1.0)) };
+}
+
+/// Dims the notch to 40% after a long time without input so it does not burn into OLED
+/// panels; it brightens again on the next input.
+pub fn set_idle_dimmed(dimmed: bool) {
+    IDLE_DIM.with(|cell| {
+        let (_, current) = cell.get();
+        cell.set((if dimmed { 0.4 } else { 1.0 }, current));
+    });
+}
+
+/// Eases the idle opacity towards its target; `dt` is in 60 Hz frames.
+fn idle_dim(dt: f32) -> f32 {
+    IDLE_DIM.with(|cell| {
+        let (target, current) = cell.get();
+        let step = 0.02 * dt.max(0.0);
+        let next = if target < current {
+            (current - step).max(target)
+        } else {
+            (current + step * 4.0).min(target)
+        };
+        cell.set((target, next));
+        next
+    })
 }

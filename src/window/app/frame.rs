@@ -937,6 +937,9 @@ impl App {
         self.hover_speed = self.hover_speed * 0.6 + speed * 0.4;
         self.hover_last_cursor = Some((cursor, now));
         let at_top_edge = cursor.1 <= self.geom.monitor_pos.1 + 1;
+        if hovering {
+            crate::ui::island::set_idle_dimmed(false);
+        }
         if !self.config.hover_to_open || self.is_hidden() {
             self.hover_open_since = None;
             self.hover_leave_since = None;
@@ -1307,6 +1310,12 @@ impl App {
             .set_quiet(crate::platform::do_not_disturb());
         let (microphone, camera) = crate::platform::capture_in_use();
         crate::ui::island::set_capture_in_use(microphone, camera);
+        const IDLE_DIM_AFTER: Duration = Duration::from_secs(10 * 60);
+        crate::ui::island::set_idle_dimmed(
+            !self.expanded
+                && winisland_platform_windows::input_idle_duration()
+                    .is_some_and(|idle| idle >= IDLE_DIM_AFTER),
+        );
         if !self.expanded
             && !self.is_hidden()
             && let Some((title, minutes)) = self.calendar.take_starting_soon(5)
