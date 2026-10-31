@@ -22,6 +22,9 @@ pub enum BarHit {
     Start,
     App(isize),
     Clock,
+    /// Wi-Fi, volume and battery: opens Quick Settings.
+    Status,
+    Notifications,
 }
 
 #[derive(Default)]
@@ -264,8 +267,13 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
             x = button.right + 1.0 * scale;
         }
 
-        // ---- Right: battery and clock ----
+        // ---- Right: notifications, clock, then the Wi-Fi / volume / battery group ----
         let mut right = width - SIDE_PADDING * scale;
+        let bell = Rect::from_xywh(right - 28.0 * scale, item_top, 28.0 * scale, item_h);
+        hover_fill(painter, bell, BarHit::Notifications, false);
+        draw_glyph(painter, BELL, bell, scale);
+        targets.push((bell, BarHit::Notifications));
+        right = bell.left - 2.0 * scale;
         let now = crate::platform::shell().local_datetime();
         const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const MONTHS: [&str; 12] = [
@@ -305,6 +313,9 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
         targets.push((clock_rect, BarHit::Clock));
         right = clock_rect.left - 4.0 * scale;
 
+        // Status group: one button covering battery, volume and Wi-Fi, opening Quick Settings.
+        let group_right = right;
+        let mut group_left = right - 8.0 * scale;
         if let Some((level, charging)) = state.battery {
             let body = Rect::from_xywh(
                 right - 26.0 * scale,
@@ -357,7 +368,73 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
                 color: Rgba::WHITE,
                 blur: None,
             });
+            group_left = body.left - 6.0 * scale - label_w - 8.0 * scale;
         }
+        for glyph in [SPEAKER, WIFI] {
+            let rect = Rect::from_xywh(group_left - 20.0 * scale, item_top, 20.0 * scale, item_h);
+            draw_glyph(painter, glyph, rect, scale);
+            group_left = rect.left - 2.0 * scale;
+        }
+        let group = Rect::from_ltrb(
+            group_left - 4.0 * scale,
+            item_top,
+            group_right,
+            item_top + item_h,
+        );
+        if hovered == Some(BarHit::Status) {
+            painter.fill_round_rect(
+                group,
+                Radius::uniform(6.0 * scale),
+                Rgba::WHITE.with_alpha(26),
+            );
+        }
+        targets.push((group, BarHit::Status));
         state.targets = targets;
     });
+}
+
+/// 24x24 line glyphs for the status area (original artwork).
+const WIFI: &str =
+    "M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a4.7 4.7 0 0 1 6.4 0M12 19.3h.01";
+const SPEAKER: &str =
+    "M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10";
+const BELL: &str = "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15zM10 20.5a2.2 2.2 0 0 0 4 0";
+
+/// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
+fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
+    thread_local! {
+        static CACHE: RefCell<Vec<(&'static str, Option<winisland_render::Path>)>> = const { RefCell::new(Vec::new()) };
+    }
+    let svg: &'static str = match svg {
+        WIFI => WIFI,
+        SPEAKER => SPEAKER,
+        _ => BELL,
+    };
+    let path = CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, path)) = cache.iter().find(|(key, _)| *key == svg) {
+            return path.clone();
+        }
+        let path = winisland_render::Path::from_svg(svg);
+        cache.push((svg, path.clone()));
+        path
+    });
+    let Some(path) = path else {
+        return;
+    };
+    let size = 15.0 * scale;
+    painter.save();
+    painter.translate(winisland_render::Vec2::new(
+        rect.center_x() - size / 2.0,
+        rect.center_y() - size / 2.0,
+    ));
+    painter.scale(winisland_render::Vec2::new(size / 24.0, size / 24.0));
+    painter.stroke_path(
+        &path,
+        1.9,
+        Rgba::WHITE,
+        winisland_render::StrokeCap::Round,
+        winisland_render::StrokeJoin::Round,
+    );
+    painter.restore();
 }

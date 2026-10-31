@@ -45,7 +45,13 @@ impl App {
                 crate::ui::top_bar::BarHit::Start => shell_bar::open_start_menu(),
                 crate::ui::top_bar::BarHit::App(handle) => shell_bar::activate_window(handle),
                 crate::ui::top_bar::BarHit::Clock => {
-                    let _ = crate::platform::shell().open_url("ms-actioncenter:");
+                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
+                }
+                crate::ui::top_bar::BarHit::Status => {
+                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_A]);
+                }
+                crate::ui::top_bar::BarHit::Notifications => {
+                    shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
                 }
             }
             self.refresh_top_bar_apps();

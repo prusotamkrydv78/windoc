@@ -403,3 +403,32 @@ pub fn open_start_menu() {
         );
     }
 }
+
+/// Presses `keys` together and releases them in reverse order, for shell shortcuts such as
+/// Win+A (Quick Settings) and Win+N (notifications).
+pub fn press_shortcut(keys: &[u16]) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY,
+    };
+    let key = |vk: u16, flags| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(vk),
+                dwFlags: flags,
+                ..Default::default()
+            },
+        },
+    };
+    let mut inputs: Vec<INPUT> = keys.iter().map(|vk| key(*vk, Default::default())).collect();
+    inputs.extend(keys.iter().rev().map(|vk| key(*vk, KEYEVENTF_KEYUP)));
+    // SAFETY: well-formed keyboard inputs.
+    unsafe {
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+/// Virtual-key codes used with [`press_shortcut`].
+pub const VK_WIN: u16 = 0x5B;
+pub const VK_A: u16 = 0x41;
+pub const VK_N: u16 = 0x4E;

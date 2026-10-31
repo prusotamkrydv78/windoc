@@ -1531,6 +1531,7 @@ impl App {
         if active {
             self.refresh_top_bar_apps();
             crate::ui::top_bar::set_battery(crate::platform::battery());
+            window_ref.request_redraw();
         }
         if active != was_active {
             // The window grows to the monitor width (or back) and is re-anchored.
