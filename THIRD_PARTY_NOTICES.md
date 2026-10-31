@@ -77,3 +77,4 @@ cargo deny check licenses
 ```
 
 `cargo deny check licenses` fails when a dependency uses a licence not allowed in `deny.toml`. Allow only licences compatible with GPL-3.0.
+- Line icons in `src/ui/components/icon.rs` are original path data drawn for this project.

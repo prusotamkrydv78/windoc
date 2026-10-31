@@ -72,6 +72,7 @@ pub fn draw_dock(
     painter: Painter<'_>,
     layout: &DockLayout,
     labels: &[&str],
+    icons: &[super::icon::Icon],
     active: usize,
     hovered: Option<usize>,
     focused: Option<usize>,
@@ -87,38 +88,53 @@ pub fn draw_dock(
             );
         }
         let is_active = index == active;
+        if is_active {
+            // A soft pill marks the active tab; the bolder colour repeats it for clarity.
+            painter.fill_round_rect(cell, Radius::uniform(radius::CONTROL), colors.accent_soft);
+        }
         let color = if is_active {
-            colors.text_primary
+            colors.accent_primary
         } else {
             colors.text_secondary
         };
-        let label_rect = Rect::from_ltrb(
-            cell.left,
-            cell.top,
-            cell.right,
-            cell.bottom - INDICATOR_HEIGHT - space::S1,
-        );
-        draw_text(
-            painter,
-            label,
-            typography::LABEL,
-            label_rect,
-            Align::Center,
-            color,
-        );
-        if is_active {
-            // Shape plus color, so the active state never relies on color alone.
-            let indicator = Rect::from_xywh(
-                cell.center_x() - INDICATOR_WIDTH / 2.0,
-                cell.bottom - INDICATOR_HEIGHT,
-                INDICATOR_WIDTH,
-                INDICATOR_HEIGHT,
-            );
-            painter.fill_round_rect(
-                indicator,
-                Radius::uniform(INDICATOR_HEIGHT / 2.0),
-                colors.accent_primary,
-            );
+        match icons.get(index) {
+            Some(icon) => {
+                let icon_size = (cell.height() * 0.42).min(18.0);
+                let icon_top =
+                    cell.top + (cell.height() - icon_size - typography::CAPTION.size - 2.0) / 2.0;
+                super::icon::draw_icon(
+                    painter,
+                    *icon,
+                    Rect::from_xywh(
+                        cell.center_x() - icon_size / 2.0,
+                        icon_top,
+                        icon_size,
+                        icon_size,
+                    ),
+                    color,
+                );
+                draw_text(
+                    painter,
+                    label,
+                    typography::CAPTION,
+                    Rect::from_ltrb(
+                        cell.left,
+                        icon_top + icon_size + 2.0,
+                        cell.right,
+                        icon_top + icon_size + 2.0 + typography::CAPTION.size + 2.0,
+                    ),
+                    Align::Center,
+                    color,
+                );
+            }
+            None => draw_text(
+                painter,
+                label,
+                typography::LABEL,
+                cell,
+                Align::Center,
+                color,
+            ),
         }
         if focused == Some(index) {
             super::draw_focus_ring(painter, cell, radius::CONTROL, colors);

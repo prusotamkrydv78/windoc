@@ -9,6 +9,7 @@
 
 pub mod card;
 pub mod dock;
+pub mod icon;
 pub mod list_row;
 pub mod semantics;
 pub mod text;

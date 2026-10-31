@@ -286,14 +286,28 @@ fn draw_more_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::draw_list_row;
+    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec, draw_list_row};
+    use winisland_render::tokens::Density;
+    let spec = ListRowSpec {
+        density: Density::Compact,
+        has_leading: true,
+        has_subtitle: false,
+        trailing_width: 0.0,
+    };
     for (index, destination) in more_entries(layout).into_iter().enumerate() {
-        let row = list_row(layout.grid, index, false);
+        // Same height as `list_row`, so hit testing in `hit_more_row` still matches.
+        let row = ListRowLayout::new(
+            layout.grid.left,
+            layout.grid.top + index as f32 * spec.density.list_row_height(),
+            layout.grid.width(),
+            spec,
+        );
         if row.bounds.top >= layout.grid.bottom {
             break;
         }
+        let hovered = hovered_row == Some(index);
         let state = InteractionState {
-            hovered: hovered_row == Some(index),
+            hovered,
             ..InteractionState::default()
         };
         draw_list_row(
@@ -304,6 +318,18 @@ fn draw_more_page(
             colors,
             state,
         );
+        if let Some(leading) = row.leading {
+            crate::ui::components::icon::draw_icon(
+                painter,
+                destination.icon(),
+                leading.inset(3.0),
+                if hovered {
+                    colors.accent_primary
+                } else {
+                    colors.text_secondary
+                },
+            );
+        }
     }
 }
 
@@ -824,6 +850,26 @@ impl Destination {
         Self::Drop,
     ];
 
+    pub const fn icon(self) -> crate::ui::components::icon::Icon {
+        use crate::ui::components::icon::Icon;
+        match self {
+            Self::Home => Icon::Home,
+            Self::Media => Icon::Music,
+            Self::Clipboard => Icon::Clipboard,
+            Self::Shelf => Icon::Shelf,
+            Self::Focus => Icon::Focus,
+            Self::More => Icon::More,
+            Self::Notes => Icon::Notes,
+            Self::Clock => Icon::Clock,
+            Self::AiUsage => Icon::Chart,
+            Self::Links => Icon::Link,
+            Self::Weather => Icon::Weather,
+            Self::ScreenTime => Icon::Chart,
+            Self::Agenda => Icon::Agenda,
+            Self::Drop => Icon::Phone,
+        }
+    }
+
     pub const fn label_key(self) -> &'static str {
         match self {
             Self::Home => "dashboard_home",
@@ -953,6 +999,11 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         painter,
         &layout.dock,
         &label_refs,
+        &layout
+            .destinations
+            .iter()
+            .map(|destination| destination.icon())
+            .collect::<Vec<_>>(),
         active_index,
         interaction.hovered_dock,
         interaction.focused_dock,

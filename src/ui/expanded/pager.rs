@@ -4,14 +4,14 @@ use winisland_render::{
 };
 
 const GAP: f32 = 8.0;
-const HEIGHT: f32 = 14.0;
-const PADDING_X: f32 = 7.0;
-const DOT_SIZE: f32 = 5.0;
-const DOT_GAP: f32 = 5.0;
-const ACTIVE_WIDTH: f32 = 14.0;
-const CLOSE_SIZE: f32 = 20.0;
+const HEIGHT: f32 = 28.0;
+const PADDING_X: f32 = 4.0;
+const DOT_SIZE: f32 = 24.0;
+const DOT_GAP: f32 = 2.0;
+const ACTIVE_WIDTH: f32 = 40.0;
+const CLOSE_SIZE: f32 = 28.0;
 const CLOSE_GAP: f32 = 6.0;
-const CLOSE_ARM: f32 = 3.5;
+const CLOSE_ARM: f32 = 4.5;
 const HIT_SLOP: f32 = 4.0;
 const SHADOW_SIGMA: f32 = 4.0;
 const ENTER_OFFSET: f32 = 6.0;
@@ -31,6 +31,17 @@ pub struct PageAvailability {
 }
 
 impl ExpandedPage {
+    /// Icon shown for this page in the pager dock.
+    pub const fn icon(self) -> crate::ui::components::icon::Icon {
+        use crate::ui::components::icon::Icon;
+        match self {
+            Self::Home => Icon::Home,
+            Self::Music => Icon::Music,
+            Self::Widgets => Icon::Grid,
+            Self::Calendar => Icon::Calendar,
+        }
+    }
+
     pub const ALL: [Self; 4] = [Self::Home, Self::Music, Self::Widgets, Self::Calendar];
 
     pub fn is_available(self, availability: &PageAvailability) -> bool {
@@ -180,6 +191,8 @@ pub struct PagerParams<'a> {
     pub painter: Painter<'a>,
     pub island: Rect,
     pub count: usize,
+    /// Pages in order, for their icons.
+    pub pages: &'a [ExpandedPage],
     pub position: f32,
     pub scale: f32,
     pub above: bool,
@@ -195,6 +208,7 @@ pub fn draw(params: PagerParams<'_>) {
         painter,
         island,
         count,
+        pages,
         position,
         scale,
         above,
@@ -212,13 +226,30 @@ pub fn draw(params: PagerParams<'_>) {
     let layout = visible_layout(island, count, scale, above, alpha, bar_hover, close_hover);
     if let Some(bar) = layout.bar {
         draw_surface(painter, bar, scale, alpha, host_blur, backdrop);
-        for (dot, weight) in dots(bar, count, position, scale) {
-            let dot_alpha = INACTIVE_DOT_ALPHA + (1.0 - INACTIVE_DOT_ALPHA) * weight;
-            painter.fill_round_rect(
-                dot,
-                Radius::uniform(dot.height() / 2.0),
-                Rgba::WHITE.with_alpha_f(dot_alpha * alpha),
-            );
+        for (index, (slot, weight)) in dots(bar, count, position, scale).into_iter().enumerate() {
+            // The highlight pill widens and brightens as its page comes into view.
+            if weight > 0.01 {
+                painter.fill_round_rect(
+                    slot.inset(1.5 * scale),
+                    Radius::uniform(slot.height() / 2.0),
+                    Rgba::WHITE.with_alpha_f(0.16 * weight * alpha),
+                );
+            }
+            let icon_alpha = INACTIVE_DOT_ALPHA + (1.0 - INACTIVE_DOT_ALPHA) * weight;
+            if let Some(page) = pages.get(index) {
+                let icon_size = 14.0 * scale;
+                crate::ui::components::icon::draw_icon(
+                    painter,
+                    page.icon(),
+                    Rect::from_xywh(
+                        slot.center_x() - icon_size / 2.0,
+                        slot.center_y() - icon_size / 2.0,
+                        icon_size,
+                        icon_size,
+                    ),
+                    Rgba::WHITE.with_alpha_f(icon_alpha * alpha),
+                );
+            }
         }
     }
     draw_surface(painter, layout.close, scale, alpha, host_blur, backdrop);

@@ -455,6 +455,7 @@ fn draw_pager(
         painter,
         island: rect,
         count: pages.len(),
+        pages,
         position: params.layout.view_offset,
         scale: params.layout.expanded_scale,
         above: params.layout.pager_above,
