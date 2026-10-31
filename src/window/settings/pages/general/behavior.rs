@@ -19,6 +19,8 @@ pub(super) enum BehaviorAction {
     AddWorldClock,
     StatusMessage,
     AddLink,
+    AddFeed,
+    RemoveFeed(usize),
     AddShelf,
     DeleteShelf(u64),
     ToggleModule(crate::ui::dashboard::Destination),
@@ -190,6 +192,25 @@ impl SettingsApp {
             true,
             BehaviorAction::AddShelf,
         );
+        page.group_end();
+        page.section(tr("section_calendar_feeds"));
+        page.group_start();
+        for (index, feed) in self.config.calendar_feeds.iter().enumerate() {
+            page.row_button(
+                feed.clone(),
+                tr("world_clock_remove"),
+                true,
+                BehaviorAction::RemoveFeed(index),
+            );
+        }
+        page.row_text_field(
+            tr("calendar_feed_add"),
+            String::new(),
+            tr("calendar_feed_placeholder"),
+            self.config.calendar_feeds.len() < 8,
+            BehaviorAction::AddFeed,
+        );
+        page.row_label(tr("calendar_feed_hint"));
         page.group_end();
         page.section(tr("section_links"));
         page.group_start();
@@ -400,6 +421,17 @@ impl SettingsApp {
             (BehaviorAction::AddShelf, ClickResult::TextField(index)) => {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 self.begin_text_input(rect, "", 60, commit_add_shelf);
+                false
+            }
+            (BehaviorAction::RemoveFeed(index), ClickResult::RowButton(_)) => {
+                if index < self.config.calendar_feeds.len() {
+                    self.config.calendar_feeds.remove(index);
+                }
+                true
+            }
+            (BehaviorAction::AddFeed, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                self.begin_text_input(rect, "", 500, commit_add_feed);
                 false
             }
             (BehaviorAction::RemoveLink(index), ClickResult::RowButton(_)) => {
@@ -692,5 +724,16 @@ fn commit_add_shelf(app: &mut SettingsApp, name: &str) {
         app.plugin_request = Some(crate::window::settings::PluginSettingsRequest::CreateShelf(
             name.to_string(),
         ));
+    }
+}
+
+fn commit_add_feed(app: &mut SettingsApp, url: &str) {
+    let url = url.trim();
+    let valid = ["https://", "http://", "webcal://"]
+        .iter()
+        .any(|scheme| url.starts_with(scheme));
+    if valid && !app.config.calendar_feeds.iter().any(|feed| feed == url) {
+        app.config.calendar_feeds.push(url.to_string());
+        app.mark_items_dirty();
     }
 }

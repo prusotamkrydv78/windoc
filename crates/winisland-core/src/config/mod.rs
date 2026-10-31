@@ -104,6 +104,8 @@ pub struct AppConfig {
     pub hotkey_opens_island: bool,
     /// More-page modules the user has hidden, by label key.
     pub hidden_modules: Vec<String>,
+    /// Subscribed ICS or webcal feed links.
+    pub calendar_feeds: Vec<String>,
     /// Quick links as `(name, url)`.
     pub links: Vec<(String, String)>,
     /// Minutes between water reminders; 0 turns them off.

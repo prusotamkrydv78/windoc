@@ -24,6 +24,7 @@
 pub mod ai_usage;
 pub mod anim;
 pub mod backup;
+pub mod calendar_feed;
 pub mod clipboard;
 pub mod config;
 pub mod context;

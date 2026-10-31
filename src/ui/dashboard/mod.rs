@@ -791,6 +791,8 @@ pub enum Destination {
     Weather,
     /// Screen time report; reached from More.
     ScreenTime,
+    /// Upcoming events from calendar feeds; reached from More.
+    Agenda,
 }
 
 impl Destination {
@@ -805,7 +807,7 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 10] = [
+    pub const MORE_ITEMS: [Self; 11] = [
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -816,6 +818,7 @@ impl Destination {
         Self::Links,
         Self::Weather,
         Self::ScreenTime,
+        Self::Agenda,
     ];
 
     pub const fn label_key(self) -> &'static str {
@@ -832,6 +835,7 @@ impl Destination {
             Self::Links => "dashboard_links",
             Self::Weather => "dashboard_weather",
             Self::ScreenTime => "dashboard_screen_time",
+            Self::Agenda => "dashboard_agenda",
         }
     }
 }
@@ -900,6 +904,14 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_ai_usage_page(painter, layout.grid, colors);
     } else if active == Destination::Weather {
         draw_weather_page(painter, layout.grid, colors);
+    } else if active == Destination::Agenda {
+        draw_rows_page(
+            &AGENDA_ROWS,
+            "agenda_empty_hint",
+            painter,
+            layout.grid,
+            colors,
+        );
     } else if active == Destination::ScreenTime {
         draw_rows_page(
             &SCREEN_TIME_ROWS,
@@ -1616,4 +1628,18 @@ pub fn set_hidden_modules(keys: &[String]) {
             *current = keys.to_vec();
         }
     });
+}
+
+thread_local! {
+    static AGENDA_ROWS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+    static AGENDA_REVISION: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// Publishes agenda rows, rebuilding them only when the feeds changed.
+pub fn sync_agenda(revision: u64, rows: impl FnOnce() -> Vec<(String, String)>) {
+    if AGENDA_REVISION.with(Cell::get) != Some(revision) {
+        AGENDA_REVISION.with(|cell| cell.set(Some(revision)));
+        let rows = rows();
+        AGENDA_ROWS.with(|cell| *cell.borrow_mut() = rows);
+    }
 }
