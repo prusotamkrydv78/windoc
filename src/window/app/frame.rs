@@ -164,10 +164,16 @@ impl App {
             }
             None => {}
         }
-        let playing = self.media_active() && self.current_media_info().is_playing;
-        crate::ui::dashboard::set_now_playing(
-            playing.then(|| self.current_media_info().title.clone()),
-        );
+        let media = self.current_media_info();
+        let has_track = self.media_active() && !media.title.is_empty();
+        crate::ui::dashboard::set_now_playing(has_track.then(|| media.title.clone()));
+        crate::ui::dashboard::set_now_detail(media.artist.clone(), media.is_playing);
+        match crate::ui::dashboard::take_media_request() {
+            Some(0) => self.smtc.request_prev(),
+            Some(1) => self.smtc.request_toggle_play(),
+            Some(_) => self.smtc.request_next(),
+            None => {}
+        }
         let (water, stretch) = self.wellness.poll(&self.config, now);
         if water {
             crate::ui::widget::compact::mascot::react(
@@ -1354,6 +1360,27 @@ impl App {
         // Blocking system queries run on the watcher thread; this only reads the snapshot.
         crate::core::system_watch::start();
         let system = crate::core::system_watch::snapshot();
+        if self.config.auto_modes && !self.expanded {
+            // Modes follow what you are doing; never while the panel is open.
+            let clock = crate::platform::shell().local_datetime();
+            let foreground = system
+                .apps
+                .iter()
+                .find(|app| app.foreground)
+                .map_or("", |app| app.executable.as_str());
+            let mode = crate::ui::dashboard::mode_for(foreground, clock.day_of_week, clock.hour);
+            let target = self
+                .config
+                .workspaces
+                .iter()
+                .position(|space| space.name.eq_ignore_ascii_case(mode));
+            if let Some(target) = target
+                && target != self.config.active_workspace
+            {
+                self.config.active_workspace = target;
+                crate::core::persistence::save_config(&self.config);
+            }
+        }
         self.sync_top_bar(now, &system);
         self.show_shell_events();
         self.compact_overlay.set_quiet(system.do_not_disturb);

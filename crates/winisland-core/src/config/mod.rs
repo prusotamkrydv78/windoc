@@ -110,6 +110,10 @@ pub struct AppConfig {
     pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
+    /// Switches workspaces by what you are doing: Code, Work or Home.
+    #[educe(Default = true)]
+    #[setting(toggle, label = "auto_modes")]
+    pub auto_modes: bool,
     /// Shows the robot in the resting notch.
     #[educe(Default = true)]
     #[setting(toggle, label = "robot_enabled")]

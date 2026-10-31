@@ -222,6 +222,7 @@ impl SettingsApp {
         page.group_end();
         page.section(tr("section_robot"));
         page.group_start();
+        page.setting(&self.config, AppConfigField::AutoModes, true);
         page.setting(&self.config, AppConfigField::RobotEnabled, true);
         let robot = self.config.robot_enabled;
         page.setting(&self.config, AppConfigField::RobotLiveliness, robot);

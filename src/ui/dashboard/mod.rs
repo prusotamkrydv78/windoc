@@ -34,6 +34,8 @@ use winisland_core::focus::{
 pub enum DashboardHit {
     Card(usize),
     Destination(Destination),
+    /// Now playing controls: 0 previous, 1 play or pause, 2 next.
+    MediaButton(u8),
     /// Index of a row on the Shelf page.
     ShelfEntry(usize),
     /// The header outside its buttons (the search field while the palette is open).
@@ -165,6 +167,9 @@ struct ClipboardView {
 
 thread_local! {
     static CLIPBOARD_COPY: Cell<Option<usize>> = const { Cell::new(None) };
+    static MEDIA_REQUEST: Cell<Option<u8>> = const { Cell::new(None) };
+    /// Artist of the current track and whether it is playing, for the Now playing page.
+    static NOW_DETAIL: RefCell<(String, bool)> = RefCell::new((String::new(), false));
     static CLIPBOARD_VIEW: RefCell<ClipboardView> = RefCell::new(ClipboardView::default());
 }
 
@@ -786,6 +791,12 @@ pub fn hit_test(
             .position(|button| button.contains(local))
             .map(|index| DashboardHit::FocusButton(index as u8));
     }
+    if active == Destination::Media {
+        return media_buttons(layout.grid)
+            .iter()
+            .position(|button| button.contains(local))
+            .map(|index| DashboardHit::MediaButton(index as u8));
+    }
     if active == Destination::Links {
         return hit_link_row(&layout, local).map(DashboardHit::LinkRow);
     }
@@ -850,6 +861,7 @@ pub fn apply(hit: DashboardHit) {
             DashboardHit::NoteRow(index) => open_note_row(index),
             DashboardHit::LinkRow(index) => open_link(index),
             DashboardHit::ClipRow(index) => CLIPBOARD_COPY.with(|cell| cell.set(Some(index))),
+            DashboardHit::MediaButton(button) => MEDIA_REQUEST.with(|cell| cell.set(Some(button))),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -1003,20 +1015,16 @@ impl Destination {
         Self::More,
     ];
     /// The icon dock, in order: every module, like a launcher.
-    pub const DOCK: [Self; 13] = [
+    /// The pages people use every day; the rest wait on More.
+    pub const DOCK: [Self; 8] = [
         Self::Home,
         Self::Media,
         Self::Clipboard,
         Self::Notes,
         Self::Focus,
         Self::Shelf,
-        Self::Weather,
-        Self::Clock,
-        Self::Agenda,
         Self::ScreenTime,
-        Self::AiUsage,
-        Self::Links,
-        Self::Drop,
+        Self::More,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
@@ -1234,6 +1242,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             interaction.hovered_focus,
             colors,
         );
+    } else if active == Destination::Media {
+        draw_media_page(painter, layout.grid, colors);
     } else if active == Destination::Links {
         draw_links_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::Shelf {
@@ -1613,11 +1623,21 @@ fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
     WORLD_CLOCKS.with(|cell| {
         let keys = cell.borrow();
         if keys.is_empty() {
+            // Your own time, large, with how to add more cities under it.
+            let now = crate::platform::shell().local_datetime();
+            draw_text(
+                painter,
+                &format!("{:02}:{:02}", now.hour, now.minute),
+                typography::DISPLAY,
+                Rect::from_xywh(grid.left, grid.center_y() - 34.0, grid.width(), 40.0),
+                Align::Center,
+                colors.text_primary,
+            );
             draw_text(
                 painter,
                 &tr("world_clock_empty"),
                 typography::BODY,
-                grid,
+                Rect::from_xywh(grid.left, grid.center_y() + 14.0, grid.width(), 20.0),
                 Align::Center,
                 colors.text_secondary,
             );
@@ -1867,21 +1887,27 @@ pub fn sync_ai_usage(
             ));
         }
         view.rows.push((
-            tr_args("ai_usage_live", &[&active_sessions.to_string()]),
+            if active_sessions == 1 {
+                tr("ai_usage_live_one")
+            } else {
+                tr_args("ai_usage_live", &[&active_sessions.to_string()])
+            },
             tr("ai_usage_live_detail"),
         ));
         view.rows.push((
-            tr_args(
-                "ai_usage_cost",
-                &[&format!("{:.2}", report.total_cost_usd())],
-            ),
+            tr_args("ai_usage_cost", &[&thousands(report.total_cost_usd())]),
             tr("ai_usage_cost_detail"),
         ));
         view.rows.push((
             tr_args("ai_usage_streak", &[&report.streak_days().to_string()]),
             tr("ai_usage_streak_detail"),
         ));
-        for (model, tokens) in report.models.iter().take(3) {
+        for (model, tokens) in report
+            .models
+            .iter()
+            .filter(|(model, _)| !model.starts_with('<'))
+            .take(3)
+        {
             view.rows.push((model.clone(), format_tokens(*tokens)));
         }
         for (tool, tokens) in &report.tools {
@@ -2889,7 +2915,7 @@ fn draw_focus_page(
     };
     draw_text(
         painter,
-        &label.to_uppercase(),
+        &label,
         typography::LABEL,
         Rect::from_xywh(grid.left, grid.top, grid.width(), 20.0),
         Align::Center,
@@ -3111,6 +3137,10 @@ fn workspace_has(key: &str) -> bool {
 
 /// Header geometry: `(rect, hit)` for each workspace tab, then "+", then Arrange/Done.
 fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)> {
+    // Workspaces belong to Home; module pages keep the header for their own title.
+    if active != Destination::Home {
+        return Vec::new();
+    }
     let fonts = winisland_render::text::FontManager::global();
     let icon_size = 18.0;
     let title = tr(active.label_key());
@@ -3505,4 +3535,148 @@ fn apply_card_badge(hit: DashboardHit) -> bool {
     });
     WORKSPACES_DIRTY.with(|cell| cell.set(true));
     true
+}
+
+/// `2123.38` as `2,123.38`.
+fn thousands(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let (whole, cents) = text.split_once('.').unwrap_or((&text, "00"));
+    let mut grouped = String::new();
+    for (index, digit) in whole.chars().enumerate() {
+        if index > 0 && (whole.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    format!("{grouped}.{cents}")
+}
+
+/// Artist and playing state of the current track, for the Now playing page.
+pub fn set_now_detail(artist: String, playing: bool) {
+    NOW_DETAIL.with(|cell| {
+        let mut detail = cell.borrow_mut();
+        if detail.0 != artist || detail.1 != playing {
+            *detail = (artist, playing);
+        }
+    });
+}
+
+/// A Now playing button press: 0 previous, 1 play or pause, 2 next.
+pub fn take_media_request() -> Option<u8> {
+    MEDIA_REQUEST.with(Cell::take)
+}
+
+/// Previous, play or pause, and next, centred under the track.
+fn media_buttons(grid: Rect) -> [Rect; 3] {
+    const SIZE: f32 = 44.0;
+    const GAP: f32 = 24.0;
+    let top = grid.center_y() + 12.0;
+    let left = grid.center_x() - SIZE * 1.5 - GAP;
+    [0.0, 1.0, 2.0].map(|index| Rect::from_xywh(left + index * (SIZE + GAP), top, SIZE, SIZE))
+}
+
+/// The track title and artist, large, over three round controls.
+fn draw_media_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
+    let title = NOW_PLAYING.with(|cell| cell.borrow().clone());
+    let (artist, playing) = NOW_DETAIL.with(|cell| cell.borrow().clone());
+    let Some(title) = title else {
+        draw_text(
+            painter,
+            &tr("media_nothing_playing"),
+            typography::BODY,
+            grid,
+            Align::Center,
+            colors.text_secondary,
+        );
+        return;
+    };
+    draw_text(
+        painter,
+        &title,
+        typography::PAGE_TITLE,
+        Rect::from_xywh(grid.left, grid.center_y() - 52.0, grid.width(), 28.0),
+        Align::Center,
+        colors.text_primary,
+    );
+    draw_text(
+        painter,
+        &artist,
+        typography::BODY,
+        Rect::from_xywh(grid.left, grid.center_y() - 22.0, grid.width(), 20.0),
+        Align::Center,
+        colors.text_secondary,
+    );
+    let svgs = [
+        "M7 6v12M18 6l-8 6 8 6z",
+        if playing {
+            "M9 6v12M15 6v12"
+        } else {
+            "M9 6l9 6-9 6z"
+        },
+        "M17 6v12M6 6l8 6-8 6z",
+    ];
+    for (index, (rect, svg)) in media_buttons(grid).iter().zip(svgs).enumerate() {
+        let main = index == 1;
+        painter.fill_circle(
+            Point::new(rect.center_x(), rect.center_y()),
+            rect.width() / 2.0,
+            if main {
+                colors.text_primary
+            } else {
+                colors.surface_raised
+            },
+        );
+        let ink = if main {
+            colors.surface_base
+        } else {
+            colors.text_primary
+        };
+        if let Some(path) = winisland_render::Path::from_svg(svg) {
+            let size = 18.0;
+            painter.save();
+            painter.translate(Vec2::new(
+                rect.center_x() - size / 2.0,
+                rect.center_y() - size / 2.0,
+            ));
+            painter.scale(Vec2::new(size / 24.0, size / 24.0));
+            painter.fill_path(&path, ink);
+            painter.stroke_path(
+                &path,
+                2.2,
+                ink,
+                winisland_render::StrokeCap::Round,
+                winisland_render::StrokeJoin::Round,
+            );
+            painter.restore();
+        }
+    }
+}
+
+/// The mode that fits now: Code while an editor or terminal is in front, Work on
+/// weekdays from 9 to 6 or while a meeting or mail app is in front, Home otherwise.
+pub fn mode_for(foreground_executable: &str, weekday: u16, hour: u16) -> &'static str {
+    const CODE: [&str; 9] = [
+        "code",
+        "cursor",
+        "devenv",
+        "idea64",
+        "windowsterminal",
+        "wt",
+        "powershell",
+        "pwsh",
+        "cmd",
+    ];
+    const WORK: [&str; 5] = ["ms-teams", "teams", "olk", "outlook", "zoom"];
+    let app = foreground_executable
+        .trim_end_matches(".exe")
+        .to_ascii_lowercase();
+    if CODE.contains(&app.as_str()) {
+        "code"
+    } else if WORK.contains(&app.as_str())
+        || ((1..=5).contains(&weekday) && (9..18).contains(&hour))
+    {
+        "work"
+    } else {
+        "home"
+    }
 }

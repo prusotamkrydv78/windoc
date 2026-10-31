@@ -6,9 +6,7 @@ use winisland_core::config::LyricTransitionAnimation;
 use winisland_core::context::MiniContent;
 use winisland_core::lyrics::LyricHighlight;
 use winisland_render::text::{DrawTextCachedParams, FontManager};
-use winisland_render::{
-    BlurSpec, Image, ImageOptions, Painter, Point, Radius, Rect, Rgba, Sampling,
-};
+use winisland_render::{BlurSpec, Image, ImageOptions, Painter, Radius, Rect, Rgba, Sampling};
 
 const PENDING_LYRIC_CHANNEL: u8 = 190;
 const SECONDARY_LYRIC_SCALE: f32 = 0.85;
@@ -628,4 +626,3 @@ fn draw_playing_indicator(params: &MiniContentParams<'_>, alpha: u8) {
         );
     }
 }
-

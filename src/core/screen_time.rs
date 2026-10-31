@@ -212,7 +212,11 @@ impl ScreenTimeService {
     pub fn report_rows(&self, now: Instant) -> Vec<(String, String)> {
         fn clock(duration: Duration) -> String {
             let minutes = duration.as_secs() / 60;
-            format!("{}:{:02}", minutes / 60, minutes % 60)
+            if minutes >= 60 {
+                format!("{}h {}m", minutes / 60, minutes % 60)
+            } else {
+                format!("{minutes}m")
+            }
         }
         let mut rows = Vec::new();
         if let Some(today) = self.today(now) {
@@ -221,7 +225,7 @@ impl ScreenTimeService {
                 String::new(),
             ));
             for usage in today.apps.iter().take(5) {
-                rows.push((usage.app.name.clone(), clock(usage.active)));
+                rows.push((friendly_app_name(&usage.app.name), clock(usage.active)));
             }
         }
         for date in self.tracker.dates().into_iter().rev().take(7) {
@@ -259,4 +263,46 @@ impl ScreenTimeService {
         }
         days
     }
+}
+
+/// A readable name for common programs, from their executable name; others get a
+/// capital first letter.
+pub fn friendly_app_name(executable: &str) -> String {
+    let stem = executable.trim_end_matches(".exe").to_ascii_lowercase();
+    let known = match stem.as_str() {
+        "mstsc" => "Remote Desktop",
+        "explorer" => "File Explorer",
+        "msedge" => "Edge",
+        "chrome" => "Chrome",
+        "brave" => "Brave",
+        "firefox" => "Firefox",
+        "code" => "VS Code",
+        "cursor" => "Cursor",
+        "windowsterminal" | "wt" => "Terminal",
+        "powershell" | "pwsh" => "PowerShell",
+        "cmd" => "Command Prompt",
+        "whatsapp" | "whatsapp.root" => "WhatsApp",
+        "spotify" => "Spotify",
+        "discord" => "Discord",
+        "ms-teams" | "teams" => "Teams",
+        "olk" | "outlook" => "Outlook",
+        "winword" => "Word",
+        "excel" => "Excel",
+        "powerpnt" => "PowerPoint",
+        "notepad" => "Notepad",
+        "vlc" => "VLC",
+        "devenv" => "Visual Studio",
+        "slack" => "Slack",
+        "zoom" => "Zoom",
+        "telegram" => "Telegram",
+        _ => "",
+    };
+    if !known.is_empty() {
+        return known.to_string();
+    }
+    let mut chars = stem.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
