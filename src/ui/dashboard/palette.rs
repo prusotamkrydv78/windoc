@@ -20,6 +20,8 @@ const MAX_QUERY_CHARS: usize = 200;
 struct PaletteState {
     query: TextBuffer,
     result: Option<String>,
+    /// Hidden palettes keep their query so reopening continues the search.
+    visible: bool,
 }
 
 thread_local! {
@@ -38,12 +40,29 @@ pub fn take_rates_request() -> bool {
     RATES_WANTED.with(std::cell::Cell::take)
 }
 
+/// Shows the palette, restoring the previous query if it was only hidden.
 pub fn open() {
     PALETTE.with(|cell| {
-        *cell.borrow_mut() = Some(PaletteState {
-            query: TextBuffer::new(MAX_QUERY_CHARS),
-            result: None,
-        });
+        let mut slot = cell.borrow_mut();
+        match slot.as_mut() {
+            Some(state) => state.visible = true,
+            None => {
+                *slot = Some(PaletteState {
+                    query: TextBuffer::new(MAX_QUERY_CHARS),
+                    result: None,
+                    visible: true,
+                });
+            }
+        }
+    });
+}
+
+/// Hides the palette when it loses focus, keeping the query for the next open.
+pub fn hide() {
+    PALETTE.with(|cell| {
+        if let Some(state) = cell.borrow_mut().as_mut() {
+            state.visible = false;
+        }
     });
 }
 
@@ -52,7 +71,7 @@ pub fn close() {
 }
 
 pub fn is_open() -> bool {
-    PALETTE.with(|cell| cell.borrow().is_some())
+    PALETTE.with(|cell| cell.borrow().as_ref().is_some_and(|state| state.visible))
 }
 
 fn preview(query: &str) -> Option<String> {
@@ -111,10 +130,10 @@ fn preview(query: &str) -> Option<String> {
 pub fn handle_key(key: &Key) -> Option<Command> {
     PALETTE.with(|cell| {
         let mut slot = cell.borrow_mut();
-        let state = slot.as_mut()?;
+        let state = slot.as_mut().filter(|state| state.visible)?;
         match key {
             Key::Escape => {
-                *slot = None;
+                state.visible = false;
                 return None;
             }
             Key::Enter => {
@@ -163,7 +182,7 @@ pub fn handle_key(key: &Key) -> Option<Command> {
 pub fn draw(painter: Painter<'_>, header: Rect, colors: &SemanticColors, show_caret: bool) {
     PALETTE.with(|cell| {
         let slot = cell.borrow();
-        let Some(state) = slot.as_ref() else {
+        let Some(state) = slot.as_ref().filter(|state| state.visible) else {
             return;
         };
         let field = header.inset(-space::S1);

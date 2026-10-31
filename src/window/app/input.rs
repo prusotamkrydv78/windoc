@@ -369,6 +369,13 @@ impl App {
                 }
                 return;
             }
+            if crate::ui::dashboard::palette::is_open() {
+                // A click outside the search field takes focus away; the query is kept.
+                crate::ui::dashboard::palette::hide();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
 
             if self.page_focused(ExpandedPage::Calendar)
                 && let Some(action) = crate::ui::expanded::calendar_view::hit_test(

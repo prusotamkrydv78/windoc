@@ -36,8 +36,10 @@ pub enum DashboardHit {
     Destination(Destination),
     /// Index of a row on the Shelf page.
     ShelfEntry(usize),
-    /// The header, which opens the command palette.
+    /// The header outside its buttons (the search field while the palette is open).
     Header,
+    /// The header's search button, which opens the command palette.
+    Search,
     /// Focus page buttons: 0 reset, 1 play or pause, 2 skip.
     FocusButton(u8),
     /// The header's settings button.
@@ -726,6 +728,9 @@ pub fn hit_test(
     }
     if layout.header.contains(local) {
         let (settings, close) = header_buttons(layout.header);
+        if search_button(layout.header).contains(local) {
+            return Some(DashboardHit::Search);
+        }
         if settings.contains(local) {
             return Some(DashboardHit::OpenSettings);
         }
@@ -775,6 +780,9 @@ pub fn set_hover(hit: Option<DashboardHit>) -> bool {
 /// Applies a click. The Focus card toggles the timer; other cards have no action until
 /// their modules exist.
 pub fn apply(hit: DashboardHit) {
+    if !matches!(hit, DashboardHit::Search | DashboardHit::Header) {
+        palette::hide();
+    }
     PAGE.with(|page| {
         let mut page = page.borrow_mut();
         match hit {
@@ -785,7 +793,9 @@ pub fn apply(hit: DashboardHit) {
                 }
             }
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
-            DashboardHit::Header => palette::open(),
+            DashboardHit::Search => palette::open(),
+            // Clicks in the open search field keep it focused.
+            DashboardHit::Header => {}
             DashboardHit::FocusButton(button) => {
                 let now = Instant::now();
                 match button {
@@ -857,8 +867,12 @@ pub fn draw_page(
             Some(DashboardHit::FocusButton(button)) => Some(button),
             _ => None,
         },
-        hovered_header: hover
-            .filter(|hit| matches!(hit, DashboardHit::OpenSettings | DashboardHit::Close)),
+        hovered_header: hover.filter(|hit| {
+            matches!(
+                hit,
+                DashboardHit::Search | DashboardHit::OpenSettings | DashboardHit::Close
+            )
+        }),
         hovered_row: match hover {
             Some(DashboardHit::ShelfEntry(index)) => Some(index),
             Some(DashboardHit::NoteRow(index)) => Some(index),
@@ -1213,6 +1227,17 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
 /// Header button size and the two right-aligned buttons: settings, then close.
 const HEADER_BUTTON: f32 = 26.0;
 
+/// The search button, left of settings.
+fn search_button(header: Rect) -> Rect {
+    let (settings, _) = header_buttons(header);
+    Rect::from_xywh(
+        settings.left - HEADER_BUTTON - space::S1,
+        settings.top,
+        HEADER_BUTTON,
+        HEADER_BUTTON,
+    )
+}
+
 fn header_buttons(header: Rect) -> (Rect, Rect) {
     let top = header.center_y() - HEADER_BUTTON / 2.0;
     let close = Rect::from_xywh(
@@ -1315,7 +1340,9 @@ fn draw_header(
             pill_width,
             26.0,
         );
-        if pill.left > date_left + 150.0 && pill.right < settings.left - BATTERY_CHIP_WIDTH {
+        if pill.left > date_left + 150.0
+            && pill.right < search_button(header).left - BATTERY_CHIP_WIDTH
+        {
             painter.fill_round_rect(pill, Radius::uniform(13.0), colors.surface_raised);
             painter.stroke_round_rect(pill, Radius::uniform(13.0), 1.0, colors.accent_soft);
             draw_icon(
@@ -1334,9 +1361,11 @@ fn draw_header(
             );
         }
     }
-    draw_battery_chip(painter, header, settings.left - space::S2, colors);
-    // Right: settings and close.
+    let search = search_button(header);
+    draw_battery_chip(painter, header, search.left - space::S2, colors);
+    // Right: search, settings and close.
     for (rect, icon, hit) in [
+        (search, Icon::Search, DashboardHit::Search),
         (settings, Icon::Settings, DashboardHit::OpenSettings),
         (close, Icon::Plus, DashboardHit::Close),
     ] {

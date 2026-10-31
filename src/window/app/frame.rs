@@ -124,10 +124,14 @@ impl App {
         crate::ui::island::set_edge_light(&self.config.edge_light);
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
+        if !self.expanded {
+            // A collapsed panel cannot hold keyboard focus; the query is kept for later.
+            crate::ui::dashboard::palette::hide();
+        }
         match crate::ui::dashboard::take_header_request() {
             Some(true) => self.open_settings(),
             Some(false) => {
-                crate::ui::dashboard::palette::close();
+                crate::ui::dashboard::palette::hide();
                 crate::ui::dashboard::editor::close();
                 self.expanded = false;
                 self.reset_page();
@@ -559,10 +563,9 @@ impl App {
             crate::ui::dashboard::show(crate::ui::dashboard::Destination::Home);
             self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
             self.snap_to_current_page();
-            crate::ui::dashboard::palette::open();
             log::info!("Island opened by hotkey");
         } else if self.config.hotkey_opens_island {
-            crate::ui::dashboard::palette::close();
+            crate::ui::dashboard::palette::hide();
             crate::ui::dashboard::editor::close();
             self.expanded = false;
             log::info!("Island closed by hotkey");
