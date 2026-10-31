@@ -239,6 +239,16 @@ impl App {
     /// Scrolling over the collapsed notch changes the system volume in 2% steps; the volume
     /// live activity picks the change up on its own.
     fn handle_collapsed_wheel(&mut self, delta: MouseWheelDelta, px: i32, py: i32) -> bool {
+        if crate::ui::top_bar::is_active() {
+            let point = Point::new((px - self.geom.win_x) as f32, (py - self.geom.win_y) as f32);
+            let steps = match delta {
+                MouseWheelDelta::Lines { y, .. } => y.signum(),
+                MouseWheelDelta::Pixels { y, .. } => (y as f32).signum(),
+            };
+            if crate::ui::top_bar::scroll_app_volume(point, steps) {
+                return true;
+            }
+        }
         const VOLUME_STEP: f32 = 0.02;
         let layout = self.compute_island_layout();
         let over_island = is_point_in_continuous_rounded_rect(

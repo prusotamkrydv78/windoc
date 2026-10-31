@@ -12,6 +12,7 @@ use winisland_render::{FontStyle, Painter, Point, Radius, Rect, Rgba};
 #[derive(Clone, Debug, PartialEq)]
 pub struct BarApp {
     pub handle: isize,
+    pub process_id: u32,
     pub label: String,
     pub title: String,
     pub foreground: bool,
@@ -503,4 +504,39 @@ pub fn animation_seconds() -> f32 {
         static START: std::time::Instant = std::time::Instant::now();
     }
     START.with(|start| start.elapsed().as_secs_f32())
+}
+
+/// Result of the last per-app volume change, handed from the audio worker to the UI thread.
+static APP_VOLUME: std::sync::Mutex<Option<(String, f32)>> = std::sync::Mutex::new(None);
+
+/// Scrolling over an app button changes that app's own volume (Windows per-app mixer).
+/// Returns `true` when `point` was over an app.
+pub fn scroll_app_volume(point: Point, steps: f32) -> bool {
+    let Some(BarHit::App(handle)) = hit(point) else {
+        return false;
+    };
+    let Some((process_id, label)) = STATE.with(|state| {
+        state
+            .borrow()
+            .apps
+            .iter()
+            .find(|app| app.handle == handle)
+            .map(|app| (app.process_id, app.label.clone()))
+    }) else {
+        return false;
+    };
+    std::thread::spawn(move || {
+        if let Some(level) =
+            winisland_platform_windows::shell_bar::adjust_app_volume(process_id, steps * 0.04)
+            && let Ok(mut slot) = APP_VOLUME.lock()
+        {
+            *slot = Some((label, level));
+        }
+    });
+    true
+}
+
+/// The latest per-app volume change, once.
+pub fn take_app_volume() -> Option<(String, f32)> {
+    APP_VOLUME.lock().ok().and_then(|mut slot| slot.take())
 }

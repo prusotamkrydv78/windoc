@@ -88,6 +88,18 @@ impl App {
             now,
         );
         self.clipboard.poll(now);
+        if let Some((label, level)) = crate::ui::top_bar::take_app_volume()
+            && !self.expanded
+        {
+            self.compact_overlay
+                .push_activity(crate::ui::compact::Activity {
+                    icon: crate::ui::components::icon::Icon::Music,
+                    accent: winisland_render::Rgba::WHITE,
+                    primary: label,
+                    secondary: format!("{}%", (level * 100.0).round()),
+                    progress: Some(level),
+                });
+        }
         self.poll_battery_activity(now);
         if self.file_drag_hover {
             // Keep the drop hint up for as long as the drag lasts.
@@ -1559,6 +1571,7 @@ impl App {
             .into_iter()
             .map(|window| crate::ui::top_bar::BarApp {
                 handle: window.handle,
+                process_id: window.process_id,
                 label: crate::ui::top_bar::app_label(&window.executable, &window.title),
                 title: window.title,
                 foreground: window.foreground,

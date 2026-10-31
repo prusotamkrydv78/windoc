@@ -260,6 +260,7 @@ pub struct AppWindow {
     pub title: String,
     /// Executable file name, such as `Code.exe`, used to group and label windows.
     pub executable: String,
+    pub process_id: u32,
     pub foreground: bool,
     pub minimized: bool,
 }
@@ -334,6 +335,7 @@ pub fn app_windows() -> Vec<AppWindow> {
                 handle: hwnd.0 as isize,
                 title,
                 executable,
+                process_id,
                 foreground: hwnd == foreground,
                 minimized: IsIconic(hwnd).as_bool(),
             });
@@ -432,3 +434,46 @@ pub fn press_shortcut(keys: &[u16]) {
 pub const VK_WIN: u16 = 0x5B;
 pub const VK_A: u16 = 0x41;
 pub const VK_N: u16 = 0x4E;
+
+/// Changes the volume of every audio session owned by `process_id` on the default output by
+/// `delta` (-1.0..1.0) and returns the new level, or `None` when the app is not playing audio.
+/// Blocking COM work: call it off the UI thread.
+pub fn adjust_app_volume(process_id: u32, delta: f32) -> Option<f32> {
+    use windows::Win32::Media::Audio::{
+        IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, ISimpleAudioVolume,
+        MMDeviceEnumerator, eConsole, eRender,
+    };
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::core::Interface;
+
+    let _com = crate::com::ComGuard::mta().ok()?;
+    // SAFETY: COM calls on interfaces created here, with the apartment held by `_com`.
+    unsafe {
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+        let manager: IAudioSessionManager2 = device.Activate(CLSCTX_ALL, None).ok()?;
+        let sessions = manager.GetSessionEnumerator().ok()?;
+        let mut level = None;
+        for index in 0..sessions.GetCount().ok()? {
+            let Ok(control) = sessions.GetSession(index) else {
+                continue;
+            };
+            let Ok(control) = control.cast::<IAudioSessionControl2>() else {
+                continue;
+            };
+            if control.GetProcessId().ok() != Some(process_id) {
+                continue;
+            }
+            let Ok(volume) = control.cast::<ISimpleAudioVolume>() else {
+                continue;
+            };
+            let current = volume.GetMasterVolume().unwrap_or(1.0);
+            let next = (current + delta).clamp(0.0, 1.0);
+            if volume.SetMasterVolume(next, std::ptr::null()).is_ok() {
+                level = Some(next);
+            }
+        }
+        level
+    }
+}
