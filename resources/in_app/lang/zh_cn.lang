@@ -396,3 +396,6 @@ activity_charging=正在充电
 activity_on_battery=使用电池
 activity_fully_charged=已充满
 activity_low_battery=请尽快充电
+activity_drop_here=拖放以保存
+activity_shelf=文件架
+activity_saved_to_shelf=已保存到文件架

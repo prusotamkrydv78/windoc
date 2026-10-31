@@ -65,6 +65,8 @@ pub enum PlatformEvent {
     },
     /// A file was dropped; the owned path remains valid after delivery.
     DroppedFile { id: WindowId, path: PathBuf },
+    /// A file drag entered (`hovering`) or left the window without dropping.
+    FileHover { id: WindowId, hovering: bool },
     /// Desktop composition changed; consumers may recreate rendering resources now.
     CompositionChanged,
     /// A deduplicated external wake was delivered; the pending flag is already cleared.

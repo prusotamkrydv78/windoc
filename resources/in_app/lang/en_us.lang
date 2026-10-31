@@ -396,3 +396,6 @@ activity_charging=Charging
 activity_on_battery=On battery
 activity_fully_charged=Fully charged
 activity_low_battery=Plug in soon
+activity_drop_here=Drop to save
+activity_shelf=Shelf
+activity_saved_to_shelf=Saved to Shelf

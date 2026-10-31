@@ -396,3 +396,6 @@ activity_charging=Cargando
 activity_on_battery=Con batería
 activity_fully_charged=Carga completa
 activity_low_battery=Conecta pronto
+activity_drop_here=Suelta para guardar
+activity_shelf=Estante
+activity_saved_to_shelf=Guardado en el estante

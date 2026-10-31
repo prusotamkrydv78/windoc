@@ -93,10 +93,23 @@ impl App {
                         .is_some_and(|e| e.eq_ignore_ascii_case("zip")) =>
                 {
                     log::info!("File dropped: {}", path.display());
+                    self.file_drag_hover = false;
                     self.install_zip_drop(&path);
+                }
+                PlatformEvent::FileHover { hovering, .. } => {
+                    self.file_drag_hover = hovering;
+                    if hovering {
+                        self.push_drop_activity(None);
+                    }
+                    win.request_redraw();
                 }
                 PlatformEvent::DroppedFile { path, .. } => {
                     log::info!("File dropped on shelf");
+                    self.file_drag_hover = false;
+                    self.push_drop_activity(
+                        path.file_name()
+                            .map(|name| name.to_string_lossy().into_owned()),
+                    );
                     self.shelf.add(path);
                     win.request_redraw();
                 }
@@ -604,6 +617,7 @@ fn event_window_id(event: &PlatformEvent) -> Option<WindowId> {
         | PlatformEvent::MouseWheel { id, .. }
         | PlatformEvent::KeyInput { id, .. }
         | PlatformEvent::Touch { id, .. }
+        | PlatformEvent::FileHover { id, .. }
         | PlatformEvent::DroppedFile { id, .. } => Some(*id),
         _ => None,
     }

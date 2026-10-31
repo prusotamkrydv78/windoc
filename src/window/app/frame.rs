@@ -89,6 +89,10 @@ impl App {
         );
         self.clipboard.poll(now);
         self.poll_battery_activity(now);
+        if self.file_drag_hover {
+            // Keep the drop hint up for as long as the drag lasts.
+            self.push_drop_activity(None);
+        }
         if let Some(index) = crate::ui::dashboard::take_clipboard_copy()
             && self.clipboard.copy_again(index)
         {
@@ -1371,6 +1375,32 @@ impl App {
             accent: Rgba::WHITE,
             primary: tr("activity_copied"),
             secondary: kind,
+            progress: None,
+        });
+    }
+}
+
+impl App {
+    /// "Drop to save · Shelf" while a file is dragged over the notch, then
+    /// "Saved to Shelf · name" once it lands.
+    pub(super) fn push_drop_activity(&mut self, dropped: Option<String>) {
+        use crate::ui::compact::Activity;
+        use crate::ui::components::icon::Icon;
+        use winisland_core::i18n::tr;
+        use winisland_render::Rgba;
+        if self.expanded || self.is_hidden() {
+            return;
+        }
+        let blue = Rgba::from_argb(255, 10, 132, 255);
+        let (primary, secondary) = match dropped {
+            Some(name) => (tr("activity_saved_to_shelf"), name),
+            None => (tr("activity_drop_here"), tr("activity_shelf")),
+        };
+        self.compact_overlay.push_activity(Activity {
+            icon: Icon::Shelf,
+            accent: blue,
+            primary,
+            secondary,
             progress: None,
         });
     }

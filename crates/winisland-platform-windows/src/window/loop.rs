@@ -288,6 +288,11 @@ fn platform_event(id: WinitWindowId, event: WindowEvent) -> Option<PlatformEvent
             },
         },
         WindowEvent::DroppedFile(path) => PlatformEvent::DroppedFile { id, path },
+        WindowEvent::HoveredFile(_) => PlatformEvent::FileHover { id, hovering: true },
+        WindowEvent::HoveredFileCancelled => PlatformEvent::FileHover {
+            id,
+            hovering: false,
+        },
         _ => return None,
     };
     Some(event)
