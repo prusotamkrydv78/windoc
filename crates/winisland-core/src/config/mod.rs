@@ -57,7 +57,8 @@ pub struct AppConfig {
     #[educe(Default = 60)]
     #[setting(choice(30 => "30 FPS", 45 => "45 FPS", 60 => "60 FPS", 90 => "90 FPS"))]
     pub expanded_idle_fps: u32,
-    #[educe(Default = "default")]
+    /// "dynamic" washes the panel with a blurred copy of the album art.
+    #[educe(Default = "dynamic")]
     pub island_style: String,
     #[educe(Default = true)]
     #[setting(toggle, label = "smtc_control")]

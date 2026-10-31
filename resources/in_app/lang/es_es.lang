@@ -383,3 +383,5 @@ edge_light=Luz de borde
 edge_light_off=Desactivada
 edge_light_theme=Color del tema
 edge_light_music=Color del álbum
+card_system=Sistema
+card_system_detail=CPU, memoria y disco

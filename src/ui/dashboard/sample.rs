@@ -10,6 +10,8 @@ pub enum CardKind {
     Focus,
     Clipboard,
     Notes,
+    /// CPU, RAM and disk rings.
+    System,
 }
 
 impl CardKind {
@@ -21,6 +23,7 @@ impl CardKind {
             Self::Focus => Icon::Focus,
             Self::Clipboard => Icon::Clipboard,
             Self::Notes => Icon::Notes,
+            Self::System => Icon::Chart,
         }
     }
 }
@@ -36,7 +39,7 @@ pub struct SampleCard {
     pub column_span: usize,
 }
 
-pub const HOME_CARDS: [SampleCard; 5] = [
+pub const HOME_CARDS: [SampleCard; 6] = [
     SampleCard {
         kind: CardKind::ScreenTime,
         title_key: "card_screen_time",
@@ -71,5 +74,12 @@ pub const HOME_CARDS: [SampleCard; 5] = [
         value: "4",
         detail_key: "card_notes_detail",
         column_span: 1,
+    },
+    SampleCard {
+        kind: CardKind::System,
+        title_key: "card_system",
+        value: "",
+        detail_key: "card_system_detail",
+        column_span: 2,
     },
 ];

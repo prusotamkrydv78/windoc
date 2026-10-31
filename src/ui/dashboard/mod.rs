@@ -51,6 +51,8 @@ struct PageState {
     focus: FocusTimer,
     /// A phase that ended while the app was closed, reported by the next [`poll`].
     restored_event: Option<FocusEvent>,
+    /// When the current page was shown, for the staggered entrance.
+    shown_at: Instant,
 }
 
 thread_local! {
@@ -58,6 +60,7 @@ thread_local! {
         let (focus, restored_event) =
             crate::core::focus_store::load(TimerKind::Pomodoro(PomodoroConfig::default()));
         PageState {
+            shown_at: Instant::now(),
             active: Destination::Home,
             hover: None,
             focus,
@@ -373,7 +376,13 @@ pub fn add_quick_note(text: &str) {
 
 /// Switches the dashboard to `destination`.
 pub fn show(destination: Destination) {
-    PAGE.with(|page| page.borrow_mut().active = destination);
+    PAGE.with(|page| {
+        let mut page = page.borrow_mut();
+        if page.active != destination {
+            page.active = destination;
+            page.shown_at = Instant::now();
+        }
+    });
 }
 
 fn start_timer(kind: TimerKind) {
@@ -610,7 +619,11 @@ pub fn reset_focus() {
 }
 
 pub fn is_animating() -> bool {
-    wants_keyboard() || PAGE.with(|page| page.borrow().focus.state() == TimerState::Running)
+    wants_keyboard()
+        || PAGE.with(|page| {
+            let page = page.borrow();
+            page.focus.state() == TimerState::Running || page.shown_at.elapsed().as_secs_f32() < 0.8
+        })
 }
 
 /// Text for the compact Focus widget and whether the timer is running.
@@ -711,7 +724,12 @@ pub fn apply(hit: DashboardHit) {
     PAGE.with(|page| {
         let mut page = page.borrow_mut();
         match hit {
-            DashboardHit::Destination(destination) => page.active = destination,
+            DashboardHit::Destination(destination) => {
+                if page.active != destination {
+                    page.active = destination;
+                    page.shown_at = Instant::now();
+                }
+            }
             DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
             DashboardHit::Header => palette::open(),
             DashboardHit::NoteRow(index) => open_note_row(index),
@@ -745,9 +763,14 @@ pub fn draw_page(
     let layout = page_layout(width, height, scale);
     let now = Instant::now();
     // Ticking happens in `poll` from the frame loop; drawing only reads.
-    let (active, hover, focus) = PAGE.with(|page| {
+    let (active, hover, focus, entrance) = PAGE.with(|page| {
         let page = page.borrow();
-        (page.active, page.hover, page.focus.view(now))
+        (
+            page.active,
+            page.hover,
+            page.focus.view(now),
+            now.saturating_duration_since(page.shown_at).as_secs_f32(),
+        )
     });
     let interaction = DashboardInteraction {
         hovered_card: match hover {
@@ -786,6 +809,7 @@ pub fn draw_page(
         cards: cards_for(active),
         focus: Some(focus),
         interaction,
+        entrance,
     });
     let caret_visible = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -795,6 +819,13 @@ pub fn draw_page(
     palette::draw(painter, layout.header, &colors, caret_visible);
     painter.restore();
 }
+
+/// Delay between cards in the staggered entrance, in seconds.
+const STAGGER_STEP: f32 = 0.045;
+/// Duration of each card's entrance, in seconds.
+const STAGGER_LENGTH: f32 = 0.26;
+/// How far cards rise while appearing, in logical pixels.
+const STAGGER_RISE: f32 = 8.0;
 
 /// Primary destinations, matching the first-run modules in the design guide.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -910,6 +941,8 @@ pub struct DashboardParams<'a> {
     /// Live Focus timer state; `None` shows the sample value.
     pub focus: Option<FocusView>,
     pub interaction: DashboardInteraction,
+    /// Seconds since the page was shown, for the staggered card entrance.
+    pub entrance: f32,
 }
 
 pub fn draw_dashboard(params: DashboardParams<'_>) {
@@ -921,6 +954,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         cards,
         focus,
         interaction,
+        entrance,
     } = params;
     painter.fill_round_rect(
         layout.bounds,
@@ -932,6 +966,17 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
     let save = painter.save();
     painter.clip_rect(layout.grid);
     for (index, (rect, card)) in layout.cards.iter().zip(cards).enumerate() {
+        // Cards fade and rise in one after another when a page opens.
+        let appear = ((entrance - index as f32 * STAGGER_STEP) / STAGGER_LENGTH).clamp(0.0, 1.0);
+        let appear = 1.0 - (1.0 - appear).powi(3);
+        if appear <= 0.0 {
+            continue;
+        }
+        let card_save = painter.save();
+        if appear < 1.0 {
+            painter.save_alpha((appear * 255.0) as u8);
+            painter.translate(Vec2::new(0.0, (1.0 - appear) * STAGGER_RISE));
+        }
         let card_layout = CardLayout::new(*rect, 0);
         let state = InteractionState {
             hovered: interaction.hovered_card == Some(index),
@@ -946,13 +991,18 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             colors,
             state,
         );
-        let (value, detail) = card_text(card, focus.as_ref());
-        draw_card_value(painter, &card_layout, &value, &detail, colors);
+        if card.kind == CardKind::System {
+            draw_system_rings(painter, card_layout.content, colors);
+        } else {
+            let (value, detail) = card_text(card, focus.as_ref());
+            draw_card_value(painter, &card_layout, &value, &detail, colors);
+        }
         if card.kind == CardKind::Focus
             && let Some(progress) = focus.as_ref().and_then(|view| view.progress)
         {
             draw_progress_ring(painter, card_layout.content, 1.0 - progress, colors);
         }
+        painter.restore_to(card_save);
     }
     if active == Destination::Clipboard {
         draw_clipboard_page(painter, layout.grid, colors);
@@ -1858,6 +1908,76 @@ fn draw_progress_ring(painter: Painter<'_>, content: Rect, fraction: f32, colors
             stroke,
             colors.accent_primary,
             StrokeCap::Round,
+        );
+    }
+}
+
+/// CPU, RAM and disk usage as three labelled rings across `content`.
+fn draw_system_rings(painter: Painter<'_>, content: Rect, colors: &SemanticColors) {
+    use winisland_core::config::ResourceMetricKind;
+    use winisland_render::{Angle, StrokeCap};
+    let metrics = [
+        (ResourceMetricKind::Cpu, "CPU"),
+        (ResourceMetricKind::Ram, "RAM"),
+        (ResourceMetricKind::Disk, "DISK"),
+    ];
+    let values = crate::ui::widget::resource_usage::with_expanded_config(|config| {
+        crate::ui::widget::resource_usage::with_resource_usage(config, |usage| {
+            metrics.map(|(kind, _)| usage.metric(kind).value)
+        })
+    });
+    let palette = crate::ui::theme::current().chart_palette();
+    let slot = content.width() / metrics.len() as f32;
+    let label_h = typography::CAPTION.size + space::S1;
+    let size = (content.height() - label_h).min(slot - space::S2).max(0.0);
+    if size < 18.0 {
+        return;
+    }
+    let stroke = (size * 0.12).max(3.0);
+    for (index, ((_, label), value)) in metrics.iter().zip(values).enumerate() {
+        let center_x = content.left + slot * (index as f32 + 0.5);
+        let ring = Rect::from_xywh(
+            center_x - size / 2.0 + stroke / 2.0,
+            content.top + stroke / 2.0,
+            size - stroke,
+            size - stroke,
+        );
+        painter.stroke_arc(
+            ring,
+            Angle::from_degrees(0.0),
+            Angle::from_degrees(360.0),
+            stroke,
+            colors.border_strong,
+            StrokeCap::Round,
+        );
+        let fraction = value.unwrap_or(0.0).clamp(0.0, 1.0);
+        if fraction > 0.0 {
+            painter.stroke_arc(
+                ring,
+                Angle::from_degrees(0.0),
+                Angle::from_degrees(360.0 * fraction),
+                stroke,
+                palette[index % palette.len()],
+                StrokeCap::Round,
+            );
+        }
+        let percent =
+            value.map_or_else(|| "—".to_string(), |value| format!("{:.0}%", value * 100.0));
+        draw_text(
+            painter,
+            &percent,
+            typography::LABEL,
+            ring,
+            Align::Center,
+            colors.text_primary,
+        );
+        draw_text(
+            painter,
+            label,
+            typography::CAPTION,
+            Rect::from_xywh(center_x - slot / 2.0, content.top + size, slot, label_h),
+            Align::Center,
+            colors.text_secondary,
         );
     }
 }
