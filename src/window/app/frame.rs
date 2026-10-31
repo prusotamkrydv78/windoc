@@ -63,6 +63,10 @@ impl App {
             now,
         );
         self.clipboard.poll(now);
+        if self.clipboard.take_captured() {
+            self.attention_pulse_started = Some(now);
+            window.request_redraw();
+        }
         crate::ui::dashboard::sync_clipboard(
             self.clipboard.enabled(),
             self.clipboard.revision(),

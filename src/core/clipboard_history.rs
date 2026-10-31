@@ -24,6 +24,8 @@ pub struct ClipboardService {
     monitor: Option<ClipboardMonitor>,
     save_due: Option<Instant>,
     revision: u64,
+    /// Set when an item was added since the last [`Self::take_captured`].
+    just_captured: bool,
 }
 
 pub fn settings_for(config: &winisland_core::config::AppConfig) -> ClipboardSettings {
@@ -66,6 +68,7 @@ impl ClipboardService {
             monitor: None,
             save_due: None,
             revision: 0,
+            just_captured: false,
         };
         service.sync_monitor();
         service
@@ -126,9 +129,15 @@ impl ClipboardService {
                 value: format.value,
             })
             .collect();
-        let _ = self
+        let capture = self
             .history
             .capture(body, &formats, change.source_app, SystemTime::now());
+        if matches!(
+            capture.outcome,
+            winisland_core::clipboard::CaptureOutcome::Added(_)
+        ) {
+            self.just_captured = true;
+        }
         self.changed(now);
     }
 
@@ -156,6 +165,11 @@ impl ClipboardService {
         if self.save_due.is_some() {
             self.save();
         }
+    }
+
+    /// Whether an item was added since the last call, for the copy confirmation.
+    pub fn take_captured(&mut self) -> bool {
+        std::mem::take(&mut self.just_captured)
     }
 
     pub fn enabled(&self) -> bool {
