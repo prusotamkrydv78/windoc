@@ -95,6 +95,11 @@ impl App {
                     log::info!("File dropped: {}", path.display());
                     self.install_zip_drop(&path);
                 }
+                PlatformEvent::DroppedFile { path, .. } => {
+                    log::info!("File dropped on shelf");
+                    self.shelf.add(path);
+                    win.request_redraw();
+                }
                 PlatformEvent::MouseWheel { delta, .. } => {
                     let (px, py) = get_global_cursor_pos();
                     if self.handle_mouse_wheel(delta, px, py) {

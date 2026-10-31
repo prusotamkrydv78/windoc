@@ -283,3 +283,5 @@ world_clock_placeholder=输入时区名称后按回车
 world_clock_remove=移除
 world_clock_empty=还没有世界时钟，可在设置的常规中添加。
 dashboard_clock=时钟
+shelf_empty_hint=把文件拖到灵动岛即可放在这里，原文件位置不变。
+shelf_missing=文件已移动或删除，点击可从文件架移除。

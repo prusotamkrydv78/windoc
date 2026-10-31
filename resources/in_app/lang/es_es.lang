@@ -283,3 +283,5 @@ world_clock_placeholder=Escribe una zona y pulsa Intro
 world_clock_remove=Quitar
 world_clock_empty=Aún no hay relojes. Añádelos en Ajustes, General.
 dashboard_clock=Reloj
+shelf_empty_hint=Suelta archivos en la isla para guardarlos aquí. Los originales no se mueven.
+shelf_missing=Archivo movido o eliminado. Haz clic para quitarlo del estante.

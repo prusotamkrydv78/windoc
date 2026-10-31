@@ -32,6 +32,8 @@ use winisland_core::focus::{
 pub enum DashboardHit {
     Card(usize),
     Destination(Destination),
+    /// Index of a row on the Shelf page.
+    ShelfEntry(usize),
 }
 
 struct PageState {
@@ -533,6 +535,9 @@ pub fn hit_test(
     if active == Destination::More {
         return hit_more_row(&layout, local).map(DashboardHit::Destination);
     }
+    if active == Destination::Shelf {
+        return hit_shelf_row(&layout, local).map(DashboardHit::ShelfEntry);
+    }
     layout
         .hit_card(local)
         .filter(|index| *index < cards_for(active).len())
@@ -556,6 +561,7 @@ pub fn apply(hit: DashboardHit) {
         let mut page = page.borrow_mut();
         match hit {
             DashboardHit::Destination(destination) => page.active = destination,
+            DashboardHit::ShelfEntry(index) => open_shelf_entry(index),
             DashboardHit::Card(index) => {
                 let is_focus = cards_for(page.active)
                     .get(index)
@@ -602,6 +608,7 @@ pub fn draw_page(
             _ => None,
         },
         hovered_row: match hover {
+            Some(DashboardHit::ShelfEntry(index)) => Some(index),
             Some(DashboardHit::Destination(destination)) if active == Destination::More => {
                 more_entries(&layout)
                     .iter()
@@ -737,6 +744,8 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_notes_page(painter, layout.grid, colors);
     } else if active == Destination::Clock {
         draw_clock_page(painter, layout.grid, colors);
+    } else if active == Destination::Shelf {
+        draw_shelf_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if cards.is_empty() {
         draw_text(
             painter,
@@ -943,6 +952,107 @@ fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
                 colors,
                 InteractionState::default(),
             );
+        }
+    });
+}
+
+struct ShelfView {
+    revision: Option<u64>,
+    entries: Vec<crate::core::shelf_store::ShelfRow>,
+}
+
+thread_local! {
+    static SHELF: RefCell<ShelfView> = const {
+        RefCell::new(ShelfView {
+            revision: None,
+            entries: Vec::new(),
+        })
+    };
+    static SHELF_REMOVAL: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+/// Publishes shelf entries for the Shelf page, rebuilding them only when they changed.
+pub fn sync_shelf(
+    revision: u64,
+    entries: impl FnOnce() -> Vec<crate::core::shelf_store::ShelfRow>,
+) {
+    let stale = SHELF.with(|cell| cell.borrow().revision != Some(revision));
+    if stale {
+        let entries = entries();
+        SHELF.with(|cell| {
+            let mut view = cell.borrow_mut();
+            view.revision = Some(revision);
+            view.entries = entries;
+        });
+    }
+}
+
+/// An entry the user asked to remove (a missing file that was clicked).
+pub fn take_shelf_removal() -> Option<u64> {
+    SHELF_REMOVAL.with(Cell::take)
+}
+
+fn hit_shelf_row(layout: &DashboardLayout, point: Point) -> Option<usize> {
+    if !layout.grid.contains(point) {
+        return None;
+    }
+    let count = SHELF.with(|cell| cell.borrow().entries.len());
+    (0..count).find(|index| list_row(layout.grid, *index, true).bounds.contains(point))
+}
+
+/// Opens an existing file; clicking a missing one removes it from the shelf.
+fn open_shelf_entry(index: usize) {
+    let entry = SHELF.with(|cell| cell.borrow().entries.get(index).cloned());
+    let Some((id, _, path, _)) = entry else {
+        return;
+    };
+    if !path.exists() {
+        SHELF_REMOVAL.with(|cell| cell.set(Some(id)));
+        return;
+    }
+    if let Err(error) = crate::platform::shell().open_url(&path.to_string_lossy()) {
+        log::warn!("Cannot open shelf file: {error}");
+    }
+}
+
+fn draw_shelf_page(
+    painter: Painter<'_>,
+    grid: Rect,
+    hovered_row: Option<usize>,
+    colors: &SemanticColors,
+) {
+    use crate::ui::components::list_row::draw_list_row;
+    SHELF.with(|cell| {
+        let view = cell.borrow();
+        if view.entries.is_empty() {
+            draw_text(
+                painter,
+                &tr("shelf_empty_hint"),
+                typography::BODY,
+                grid,
+                Align::Center,
+                colors.text_secondary,
+            );
+            return;
+        }
+        for (index, (_, name, path, exists)) in view.entries.iter().enumerate() {
+            let row = list_row(grid, index, true);
+            if row.bounds.top >= grid.bottom {
+                break;
+            }
+            let detail = if *exists {
+                path.parent()
+                    .map(|parent| parent.display().to_string())
+                    .unwrap_or_default()
+            } else {
+                tr("shelf_missing")
+            };
+            let state = InteractionState {
+                hovered: hovered_row == Some(index),
+                disabled: !exists,
+                ..InteractionState::default()
+            };
+            draw_list_row(painter, &row, name, Some(detail.as_str()), colors, state);
         }
     });
 }

@@ -73,6 +73,10 @@ impl App {
         }
         crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
         crate::ui::dashboard::set_world_clocks(&self.config.world_clocks);
+        crate::ui::dashboard::sync_shelf(self.shelf.revision(), || self.shelf.entries());
+        if let Some(entry_id) = crate::ui::dashboard::take_shelf_removal() {
+            self.shelf.remove(entry_id);
+        }
         crate::ui::dashboard::set_screen_time_total(self.config.screen_time_enabled.then(|| {
             self.screen_time
                 .today(now)

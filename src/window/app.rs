@@ -71,6 +71,7 @@ pub struct App {
     screen_time: crate::core::screen_time::ScreenTimeService,
     clipboard: crate::core::clipboard_history::ClipboardService,
     weather: crate::core::weather_service::WeatherService,
+    shelf: crate::core::shelf_store::ShelfService,
     compact_overlay: CompactOverlay,
     config: AppConfig,
     expanded: bool,
@@ -222,6 +223,7 @@ impl Default for App {
                 crate::core::clipboard_history::settings_for(&config),
             ),
             weather: crate::core::weather_service::WeatherService::load(),
+            shelf: crate::core::shelf_store::ShelfService::load(),
             compact_overlay: CompactOverlay::new(
                 config.replace_native_volume_flyout,
                 config.brightness_overlay_enabled,

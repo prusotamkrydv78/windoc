@@ -283,3 +283,5 @@ world_clock_placeholder=Type a zone name, press Enter
 world_clock_remove=Remove
 world_clock_empty=No world clocks yet. Add them in Settings, General.
 dashboard_clock=Clock
+shelf_empty_hint=Drop files on the island to keep them here. Originals stay where they are.
+shelf_missing=File moved or deleted. Click to remove it from the shelf.
