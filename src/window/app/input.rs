@@ -47,6 +47,15 @@ impl App {
                 crate::ui::top_bar::BarHit::Clock => {
                     shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_N]);
                 }
+                crate::ui::top_bar::BarHit::Tray => {
+                    // Briefly show the taskbar so its overflow can open, then hide it again
+                    // on the next watchdog pass.
+                    shell_bar::show_taskbar_windows();
+                    if let Some(session) = self.top_bar.as_mut() {
+                        session.pause_watchdog(std::time::Duration::from_secs(8));
+                    }
+                    std::thread::spawn(shell_bar::open_tray_overflow);
+                }
                 crate::ui::top_bar::BarHit::Status => {
                     shell_bar::press_shortcut(&[shell_bar::VK_WIN, shell_bar::VK_A]);
                 }

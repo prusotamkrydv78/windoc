@@ -25,6 +25,8 @@ pub enum BarHit {
     Clock,
     /// Wi-Fi, volume and battery: opens Quick Settings.
     Status,
+    /// Hidden tray icons: opens the Windows tray overflow.
+    Tray,
     Notifications,
 }
 
@@ -400,6 +402,16 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
             );
         }
         targets.push((group, BarHit::Status));
+        let tray = Rect::from_xywh(group.left - 26.0 * scale, item_top, 24.0 * scale, item_h);
+        if hovered == Some(BarHit::Tray) {
+            painter.fill_round_rect(
+                tray,
+                Radius::uniform(6.0 * scale),
+                Rgba::WHITE.with_alpha(26),
+            );
+        }
+        draw_glyph(painter, CHEVRON, tray, scale);
+        targets.push((tray, BarHit::Tray));
         state.targets = targets;
     });
 }
@@ -410,6 +422,7 @@ const WIFI: &str =
 const SPEAKER: &str =
     "M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10";
 const BELL: &str = "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15zM10 20.5a2.2 2.2 0 0 0 4 0";
+const CHEVRON: &str = "M7 14.5l5-5 5 5";
 
 /// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
 fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
@@ -419,6 +432,7 @@ fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
     let svg: &'static str = match svg {
         WIFI => WIFI,
         SPEAKER => SPEAKER,
+        CHEVRON => CHEVRON,
         _ => BELL,
     };
     let path = CACHE.with(|cache| {

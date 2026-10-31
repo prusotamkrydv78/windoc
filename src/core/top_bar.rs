@@ -78,6 +78,11 @@ impl TopBarSession {
         }
     }
 
+    /// Lets the taskbar stay visible for `duration`, for example while its tray overflow is open.
+    pub fn pause_watchdog(&mut self, duration: Duration) {
+        self.last_watchdog = Instant::now() + duration;
+    }
+
     /// The strip Windows granted, in physical screen pixels.
     pub fn reserved(&self) -> ScreenRect {
         self.reservation.reserved()

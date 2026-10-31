@@ -673,3 +673,25 @@ pub const CALL_APPS: [&str; 7] = [
     "skype.exe",
     "webex.exe",
 ];
+
+/// Opens the notification-area overflow ("show hidden icons"): Win+B focuses the tray
+/// chevron and Enter opens it. With the taskbar hidden Windows may not show it, so this
+/// falls back to the taskbar settings page that lists the tray icons.
+pub fn open_tray_overflow() {
+    const VK_B: u16 = 0x42;
+    const VK_RETURN: u16 = 0x0D;
+    press_shortcut(&[VK_WIN, VK_B]);
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    press_shortcut(&[VK_RETURN]);
+}
+
+/// Shows the taskbar windows without changing their AppBar state, for a moment such as
+/// opening the tray overflow; the top bar's watchdog hides them again afterwards.
+pub fn show_taskbar_windows() {
+    for hwnd in taskbar_windows() {
+        // SAFETY: showing Explorer's taskbar windows without activating them.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNA);
+        }
+    }
+}
