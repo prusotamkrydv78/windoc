@@ -73,6 +73,9 @@ const DAY: [Scene; 9] = [
 /// Without input for this long the user counts as away and the robot naps.
 const AWAY_SECONDS: f32 = 300.0;
 
+/// Caption text size, in robot units.
+const CAPTION_SIZE: f32 = 8.5;
+
 /// How long the robot dances when a song starts.
 const DANCE_SECONDS: f32 = 8.0;
 
@@ -90,6 +93,8 @@ struct Context {
     active_since: Option<f32>,
     next_water: f32,
     next_stretch: f32,
+    /// When the next Diwali moment is due during the festive days.
+    next_diwali: Option<f32>,
 }
 
 thread_local! {
@@ -153,15 +158,55 @@ pub(crate) enum Reaction {
     Lunch,
     /// Around 6 pm: it closes its laptop and waves.
     WrapUp,
+    /// Clicked: a happy hop.
+    Jump,
+    /// The internet dropped: it holds an unplugged cable, glum.
+    Offline,
+    /// The internet is back: Wi-Fi waves and a cheer.
+    Online,
+    /// The PC has been working hard for a while: it fans itself.
+    HotCpu,
+    /// A download finished: a parcel drops into its arms.
+    Downloaded,
+    /// The third Focus session of the day: it lifts a trophy.
+    Trophy,
+    /// The festive days around Diwali: diyas, sparklers and fireworks.
+    Diwali,
 }
 
 impl Reaction {
+    /// The caption shown beside the robot, if any.
+    fn caption_key(self) -> Option<&'static str> {
+        match self {
+            Self::Water => Some("nudge_water"),
+            Self::StretchBreak => Some("nudge_stretch"),
+            Self::Lunch => Some("nudge_lunch"),
+            Self::WrapUp => Some("nudge_wrap_up"),
+            Self::Offline => Some("reaction_offline"),
+            Self::Online => Some("reaction_online"),
+            Self::HotCpu => Some("reaction_hot_cpu"),
+            Self::Downloaded => Some("reaction_downloaded"),
+            Self::Trophy => Some("reaction_trophy"),
+            Self::WelcomeBack => Some("activity_welcome_back"),
+            Self::Diwali if diwali_today().is_some_and(|offset| offset > 1) => {
+                Some("reaction_diwali_coming")
+            }
+            Self::Diwali => Some("reaction_diwali"),
+            _ => None,
+        }
+    }
+
     fn seconds(self) -> f32 {
         match self {
             Self::MouseArrived => 6.0,
             Self::Celebrate => 4.5,
             Self::WelcomeBack => 4.5,
             Self::Water | Self::StretchBreak | Self::Lunch | Self::WrapUp => 6.0,
+            Self::Jump => 1.0,
+            Self::Offline | Self::Downloaded => 4.0,
+            Self::Online => 3.5,
+            Self::HotCpu | Self::Trophy => 5.0,
+            Self::Diwali => 9.0,
             Self::Charging | Self::Drive => 4.0,
             Self::Copied => 3.0,
             Self::Surprised => 2.6,
@@ -186,6 +231,11 @@ impl Reaction {
             Self::WelcomeBack => 60.0,
             Self::Water | Self::StretchBreak => 600.0,
             Self::Lunch | Self::WrapUp => 3600.0,
+            Self::Jump => 1.2,
+            Self::Offline | Self::Online => 60.0,
+            Self::HotCpu => 600.0,
+            Self::Downloaded => 20.0,
+            Self::Trophy | Self::Diwali => 0.0,
             Self::Celebrate => 0.0,
         }
     }
@@ -196,7 +246,7 @@ impl Reaction {
 }
 
 thread_local! {
-    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 11]> = const { std::cell::Cell::new([None; 11]) };
+    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 24]> = const { std::cell::Cell::new([None; 24]) };
 }
 
 /// Whether `reaction` may play now; records it as played if so.
@@ -224,6 +274,10 @@ pub(crate) fn react(reaction: Reaction) {
         Reaction::Celebrate => play(Sound::Done),
         Reaction::WelcomeBack | Reaction::Charging => play(Sound::Hello),
         Reaction::Drive | Reaction::Surprised => play(Sound::Pop),
+        Reaction::Trophy | Reaction::Diwali => play(Sound::Done),
+        Reaction::Online => play(Sound::Hello),
+        Reaction::Downloaded => play(Sound::Pop),
+        Reaction::Jump | Reaction::Offline | Reaction::HotCpu => {}
         Reaction::Copied
         | Reaction::Water
         | Reaction::StretchBreak
@@ -253,6 +307,86 @@ fn active_reaction(time: f32, alpha: u8) -> Option<(Reaction, f32)> {
         }
         Some((reaction, elapsed))
     })
+}
+
+thread_local! {
+    /// The last seen connection state, when CPU load first ran high, and today's Focus
+    /// sessions as `(day, count)`.
+    static SYSTEM: std::cell::Cell<(Option<bool>, Option<f32>, (u16, u32))> =
+        const { std::cell::Cell::new((None, None, (0, 0))) };
+}
+
+/// Reacts to the connection dropping or returning and to the CPU staying above 85% for
+/// 20 seconds. Call each tick with the latest system sample.
+pub(crate) fn set_system(online: bool, cpu_percent: f32) {
+    let now = seconds();
+    let (last_online, hot_since, streak) = SYSTEM.with(std::cell::Cell::get);
+    match last_online {
+        Some(true) if !online => react(Reaction::Offline),
+        Some(false) if online => react(Reaction::Online),
+        _ => {}
+    }
+    let hot_since = if cpu_percent > 85.0 {
+        let since = hot_since.unwrap_or(now);
+        if now - since >= 20.0 {
+            react(Reaction::HotCpu);
+        }
+        Some(since)
+    } else if cpu_percent < 70.0 {
+        None
+    } else {
+        hot_since
+    };
+    SYSTEM.with(|cell| cell.set((Some(online), hot_since, streak)));
+}
+
+/// A Focus session finished: confetti, or a trophy for the third one today.
+pub(crate) fn focus_finished() {
+    let today = crate::platform::shell().local_datetime().day;
+    let count = SYSTEM.with(|cell| {
+        let (online, hot, (day, count)) = cell.get();
+        let count = if day == today { count + 1 } else { 1 };
+        cell.set((online, hot, (today, count)));
+        count
+    });
+    react(if count == 3 {
+        Reaction::Trophy
+    } else {
+        Reaction::Celebrate
+    });
+}
+
+/// Days from 1970-01-01 to a Gregorian date.
+fn days_from_civil(year: i32, month: u32, day: u32) -> i32 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month = month as i32;
+    let day_of_year = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day as i32 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// Lakshmi Puja dates.
+const DIWALI: [(i32, u32, u32); 3] = [(2026, 11, 8), (2027, 10, 29), (2028, 10, 17)];
+
+/// Days until Diwali (negative after it) during the festive window, 10 days before to 3
+/// days after.
+fn diwali_offset(year: i32, month: u32, day: u32) -> Option<i32> {
+    let today = days_from_civil(year, month, day);
+    DIWALI
+        .iter()
+        .map(|&(y, m, d)| days_from_civil(y, m, d) - today)
+        .find(|offset| (-3..=10).contains(offset))
+}
+
+fn diwali_today() -> Option<i32> {
+    let clock = crate::platform::shell().local_datetime();
+    diwali_offset(
+        i32::from(clock.year),
+        u32::from(clock.month),
+        u32::from(clock.day),
+    )
 }
 
 /// Water every hour of continuous activity (first after half an hour), a stretch every 55
@@ -293,6 +427,26 @@ fn nudge(away: bool, focus_running: bool) {
     };
     if let Some(reaction) = due.or(if focus_running || away { None } else { daily }) {
         react(reaction);
+    }
+    // Festive moments every 20 minutes, every 10 on Diwali itself and the day either side,
+    // the first a minute after starting.
+    if let Some(offset) = diwali_today()
+        && !away
+        && !focus_running
+    {
+        let interval = if offset.abs() <= 1 { 600.0 } else { 1200.0 };
+        let fire = CONTEXT.with(|context| {
+            let mut context = context.borrow_mut();
+            let next = *context.next_diwali.get_or_insert(now + 60.0);
+            let fire = now >= next;
+            if fire {
+                context.next_diwali = Some(now + interval);
+            }
+            fire
+        });
+        if fire {
+            react(Reaction::Diwali);
+        }
     }
 }
 
@@ -430,11 +584,25 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     // The robot stands nearly the full height of the notch.
     let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
     if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
+        // Centre the robot and its caption together.
+        let caption = reaction.caption_key().map_or(0.0, |key| {
+            11.0 * unit
+                + FontManager::global().measure_text_cached(
+                    &winisland_core::i18n::tr(key),
+                    CAPTION_SIZE * unit,
+                    winisland_render::FontStyle::bold(),
+                )
+        });
+        let x = if caption > 0.0 {
+            (rect.center_x() - (caption - 9.0 * unit) / 2.0).max(rect.left + 10.0 * unit)
+        } else {
+            rect.center_x() - 4.0 * unit
+        };
         let stage = Stage {
             painter,
             unit,
             alpha,
-            x: rect.center_x() - 4.0 * unit,
+            x,
             floor: rect.center_y() + 11.0 * unit,
             mid: rect.center_y(),
             time,
@@ -1201,7 +1369,7 @@ impl Stage<'_> {
             &winisland_core::i18n::tr(key),
             self.x + 11.0 * self.unit,
             self.mid + 3.0 * self.unit,
-            9.0,
+            CAPTION_SIZE,
             self.prop(ease((t - 0.3) / 0.4), WHITE),
         );
     }
@@ -1302,6 +1470,152 @@ impl Stage<'_> {
                 );
                 self.caption("nudge_wrap_up", t);
             }
+            Reaction::Jump => {
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.rise = (t / 1.0 * PI).sin() * 4.0;
+                pose.right_arm = -1.2;
+                pose.left_arm = -1.2;
+                self.robot(pose);
+            }
+            Reaction::Offline => {
+                // Holds up an unplugged cable, glum.
+                let mut pose = Pose::new(Eyes::Closed);
+                pose.lean = -4.0;
+                pose.right_arm = 0.2;
+                let hands = self.robot(pose);
+                let grey = self.prop(1.0, (200, 200, 210));
+                let plug = Rect::from_xywh(
+                    hands.right.x + 1.0 * u,
+                    hands.right.y - 1.2 * u,
+                    2.6 * u,
+                    2.4 * u,
+                );
+                self.line(
+                    Point::new(hands.right.x - 2.0 * u, hands.right.y + 3.0 * u),
+                    hands.right,
+                    0.6,
+                    grey,
+                );
+                self.painter
+                    .fill_round_rect(plug, Radius::uniform(0.5 * u), grey);
+                for pin in [-0.5, 0.5] {
+                    self.line(
+                        Point::new(plug.right, plug.center_y() + pin * u),
+                        Point::new(plug.right + 1.0 * u, plug.center_y() + pin * u),
+                        0.4,
+                        grey,
+                    );
+                }
+                self.caption("reaction_offline", t);
+            }
+            Reaction::Online => {
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = -1.4;
+                pose.rise = (t * 5.0).sin().abs() * 0.8;
+                self.robot(pose);
+                // Wi-Fi arcs above the raised hand, lighting up one by one.
+                let center = self.at(9.0, -15.0);
+                let save = self.painter.save();
+                self.painter.clip_rect(Rect::from_ltrb(
+                    center.x - 6.0 * u,
+                    center.y - 6.0 * u,
+                    center.x + 6.0 * u,
+                    center.y,
+                ));
+                for ring in 0..3 {
+                    let lit = ease((t * 2.0 - ring as f32 * 0.4) / 0.3);
+                    self.painter.stroke_circle(
+                        center,
+                        (1.6 + ring as f32 * 1.6) * u,
+                        0.7 * u,
+                        self.prop(lit, (120, 210, 140)),
+                    );
+                }
+                self.painter.restore_to(save);
+                self.caption("reaction_online", t);
+            }
+            Reaction::HotCpu => {
+                // Fans itself with a hand fan, sweating.
+                let mut pose = Pose::new(Eyes::Closed);
+                pose.right_arm = -0.9 + (t * 12.0).sin() * 0.35;
+                let hands = self.robot(pose);
+                self.painter.fill_oval(
+                    Rect::from_xywh(
+                        hands.right.x - 1.6 * u,
+                        hands.right.y - 3.8 * u,
+                        3.2 * u,
+                        4.0 * u,
+                    ),
+                    self.prop(1.0, (255, 170, 120)),
+                );
+                for index in 0..2 {
+                    let phase = (t * 1.2 + index as f32 * 0.5).fract();
+                    self.painter.fill_circle(
+                        self.at(-9.0 + index as f32 * 1.4, -17.0 + phase * 6.0),
+                        0.7 * u,
+                        self.prop(1.0 - phase, (130, 190, 255)),
+                    );
+                }
+                self.caption("reaction_hot_cpu", t);
+            }
+            Reaction::Downloaded => {
+                let caught = t > 0.9;
+                let mut pose = Pose::new(if caught {
+                    Eyes::Happy
+                } else {
+                    Eyes::Open(0.0, -1.2)
+                });
+                pose.right_arm = 0.1;
+                pose.left_arm = 0.1;
+                let hands = self.robot(pose);
+                let start = rect.top - 8.0 * u;
+                let y = start + (hands.right.y - 4.0 * u - start) * ease(t / 0.9);
+                let parcel = Rect::from_xywh(self.x - 3.2 * u, y, 6.4 * u, 5.0 * u);
+                self.painter.fill_round_rect(
+                    parcel,
+                    Radius::uniform(0.6 * u),
+                    self.prop(1.0, (205, 160, 100)),
+                );
+                self.line(
+                    Point::new(parcel.center_x(), parcel.top),
+                    Point::new(parcel.center_x(), parcel.bottom),
+                    0.8,
+                    self.prop(1.0, (240, 220, 170)),
+                );
+                self.caption("reaction_downloaded", t);
+            }
+            Reaction::Trophy => {
+                let mut pose = Pose::new(Eyes::Happy);
+                pose.right_arm = -1.5;
+                pose.rise = (t * 3.0).sin().abs() * 1.2;
+                let hands = self.robot(pose);
+                let gold = self.prop(1.0, (255, 200, 60));
+                let cup = Rect::from_xywh(
+                    hands.right.x - 2.2 * u,
+                    hands.right.y - 6.0 * u,
+                    4.4 * u,
+                    3.6 * u,
+                );
+                self.painter
+                    .fill_round_rect(cup, Radius::uniform(1.4 * u), gold);
+                for side in [-1.0, 1.0] {
+                    self.painter.stroke_circle(
+                        Point::new(cup.center_x() + side * 2.6 * u, cup.top + 1.2 * u),
+                        0.9 * u,
+                        0.5 * u,
+                        gold,
+                    );
+                }
+                self.line(
+                    Point::new(cup.center_x(), cup.bottom),
+                    Point::new(cup.center_x(), cup.bottom + 1.6 * u),
+                    0.8,
+                    gold,
+                );
+                self.confetti(rect, t);
+                self.caption("reaction_trophy", t);
+            }
+            Reaction::Diwali => self.diwali(rect),
             Reaction::MouseArrived => self.mouse_chase(rect),
             Reaction::WelcomeBack => {
                 // Eyes open, a big stretch, then a wave.
@@ -1426,29 +1740,118 @@ impl Stage<'_> {
                 pose.right_arm = -1.5 + hop * 0.3;
                 pose.left_arm = -1.5 - hop * 0.3;
                 self.robot(pose);
-                let colors = [
-                    (255, 120, 120),
-                    (255, 210, 90),
-                    (120, 210, 140),
-                    (120, 180, 255),
-                    (220, 140, 255),
-                ];
-                for index in 0..18 {
-                    let seed = index as f32 * 12.9898;
-                    let column = (seed.sin() * 43758.547).fract().abs();
-                    let speed = 0.6 + (seed.cos() * 1234.5).fract().abs() * 0.6;
-                    let fall = ((t * speed + column) % 1.4) / 1.4;
-                    let x = rect.left + column * rect.width();
-                    let y = rect.top + fall * rect.height();
-                    let spin = (t * 6.0 + seed).sin() * 0.8 * u;
-                    self.line(
-                        Point::new(x - spin, y),
-                        Point::new(x + spin, y + 0.6 * u),
-                        0.9,
-                        self.prop(1.0, colors[index % colors.len()]),
-                    );
-                }
+                self.confetti(rect, t);
             }
+        }
+    }
+
+    /// Falling confetti across `rect`.
+    fn confetti(&self, rect: Rect, t: f32) {
+        let colors = [
+            (255, 120, 120),
+            (255, 210, 90),
+            (120, 210, 140),
+            (120, 180, 255),
+            (220, 140, 255),
+        ];
+        for index in 0..18 {
+            let seed = index as f32 * 12.9898;
+            let column = (seed.sin() * 43758.547).fract().abs();
+            let speed = 0.6 + (seed.cos() * 1234.5).fract().abs() * 0.6;
+            let fall = ((t * speed + column) % 1.4) / 1.4;
+            let x = rect.left + column * rect.width();
+            let y = rect.top + fall * rect.height();
+            let spin = (t * 6.0 + seed).sin() * 0.8 * self.unit;
+            self.line(
+                Point::new(x - spin, y),
+                Point::new(x + spin, y + 0.6 * self.unit),
+                0.9,
+                self.prop(1.0, colors[index % colors.len()]),
+            );
+        }
+    }
+
+    /// Diwali: a string of festive lights, a glowing diya held in both hands, sparkles and
+    /// fireworks bursting on either side.
+    fn diwali(&self, rect: Rect) {
+        let t = self.elapsed;
+        let u = self.unit;
+        let warm = [
+            (255, 190, 70),
+            (255, 120, 80),
+            (255, 225, 120),
+            (240, 100, 160),
+        ];
+        // Lights along the top edge, twinkling in turn.
+        let count = ((rect.width() / u) / 5.0) as usize;
+        for index in 0..count {
+            let x = rect.left + (index as f32 + 0.5) * rect.width() / count as f32;
+            let sag = ((index as f32 / count as f32) * PI * 3.0).sin().abs() * 1.6 * u;
+            let twinkle = 0.45 + 0.55 * ((t * 4.0 + index as f32 * 0.9).sin() * 0.5 + 0.5);
+            self.painter.fill_circle(
+                Point::new(x, rect.top + 2.6 * u + sag),
+                0.7 * u,
+                self.prop(twinkle, warm[index % warm.len()]),
+            );
+        }
+        // Fireworks: bursts that bloom and fade, one each side, taking turns.
+        for (side, delay) in [(-1.0, 0.0), (1.0, 1.1)] {
+            let phase = ((t + delay) % 2.2) / 2.2;
+            let center = Point::new(self.x + side * 24.0 * u, self.mid - 3.0 * u);
+            let radius = ease(phase / 0.6) * 6.0 * u;
+            let fade = 1.0 - ease((phase - 0.4) / 0.6);
+            let color = warm[((t + delay) / 2.2) as usize % warm.len()];
+            for ray in 0..10 {
+                let angle = ray as f32 / 10.0 * TAU;
+                let (sin, cos) = angle.sin_cos();
+                self.line(
+                    Point::new(
+                        center.x + cos * radius * 0.45,
+                        center.y + sin * radius * 0.45,
+                    ),
+                    Point::new(center.x + cos * radius, center.y + sin * radius),
+                    0.6,
+                    self.prop(fade, color),
+                );
+            }
+        }
+        // The robot holds a diya up, flame flickering.
+        let mut pose = Pose::new(Eyes::Happy);
+        pose.right_arm = 0.0;
+        pose.left_arm = 0.0;
+        pose.rise = (t * 2.0).sin().abs() * 0.6;
+        let hands = self.robot(pose);
+        let lamp = Point::new(
+            (hands.left.x + hands.right.x) / 2.0,
+            hands.right.y - 1.0 * u,
+        );
+        self.painter.fill_oval(
+            Rect::from_xywh(lamp.x - 3.6 * u, lamp.y - 1.4 * u, 7.2 * u, 2.8 * u),
+            self.prop(1.0, (200, 100, 50)),
+        );
+        let flicker = 1.0 + (t * 17.0).sin() * 0.12 + (t * 11.0).cos() * 0.08;
+        self.painter.fill_circle(
+            Point::new(lamp.x, lamp.y - 3.0 * u),
+            2.6 * u * flicker,
+            self.prop(0.25, (255, 190, 70)),
+        );
+        self.painter.fill_oval(
+            Rect::from_xywh(
+                lamp.x - 0.9 * u,
+                lamp.y - 4.2 * u * flicker,
+                1.8 * u,
+                3.0 * u * flicker,
+            ),
+            self.prop(1.0, (255, 200, 70)),
+        );
+        self.painter.fill_oval(
+            Rect::from_xywh(lamp.x - 0.4 * u, lamp.y - 3.0 * u, 0.8 * u, 1.6 * u),
+            self.prop(1.0, (255, 250, 220)),
+        );
+        self.sparkle(self.at(-10.0, -16.0), 0.5 + 0.5 * (t * 3.0).sin());
+        self.sparkle(self.at(11.0, -18.0), 0.5 + 0.5 * (t * 3.7).cos());
+        if let Some(key) = Reaction::Diwali.caption_key() {
+            self.caption(key, t);
         }
     }
 
@@ -1734,6 +2137,16 @@ mod tests {
         assert!(!cooled_down(Reaction::Copied));
         assert!(cooled_down(Reaction::Celebrate));
         assert!(cooled_down(Reaction::Celebrate));
+    }
+
+    #[test]
+    fn diwali_window_runs_from_ten_days_before_to_three_after() {
+        assert_eq!(diwali_offset(2026, 10, 31), Some(8));
+        assert_eq!(diwali_offset(2026, 11, 8), Some(0));
+        assert_eq!(diwali_offset(2026, 11, 11), Some(-3));
+        assert_eq!(diwali_offset(2026, 11, 12), None);
+        assert_eq!(diwali_offset(2026, 10, 28), None);
+        assert_eq!(diwali_offset(2027, 10, 29), Some(0));
     }
 
     #[test]

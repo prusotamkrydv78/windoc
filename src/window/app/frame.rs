@@ -60,9 +60,7 @@ impl App {
             return;
         }
         if let Some(event) = crate::ui::dashboard::poll(now) {
-            crate::ui::widget::compact::mascot::react(
-                crate::ui::widget::compact::mascot::Reaction::Celebrate,
-            );
+            crate::ui::widget::compact::mascot::focus_finished();
             if !self.expanded && !self.is_hidden() {
                 self.compact_overlay
                     .push_activity(crate::ui::compact::Activity {
@@ -1891,6 +1889,13 @@ impl App {
             winisland_platform_windows::input_idle_duration()
                 .map_or(0.0, |idle| idle.as_secs_f32()),
         );
+        let system = crate::core::system_watch::snapshot();
+        crate::ui::widget::compact::mascot::set_system(system.online, system.cpu_percent);
+        if crate::core::screenshot_watch::poll_downloads(std::time::Instant::now()).is_some() {
+            crate::ui::widget::compact::mascot::react(
+                crate::ui::widget::compact::mascot::Reaction::Downloaded,
+            );
+        }
         if crate::core::device_watch::mouse_arrived(std::time::Instant::now()) {
             crate::ui::widget::compact::mascot::react(
                 crate::ui::widget::compact::mascot::Reaction::MouseArrived,

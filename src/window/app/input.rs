@@ -496,7 +496,20 @@ impl App {
                 if self.is_hidden() {
                     self.reveal_island();
                 } else {
-                    self.expand();
+                    // With hover-to-open the panel opens on its own, so a click on the resting
+                    // robot makes it hop instead.
+                    let robot_resting = self.config.hover_to_open
+                        && !self.current_media_info().is_playing
+                        && self.config.compact_widget_layout.iter().any(|slot| {
+                            slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)
+                        });
+                    if robot_resting && !self.expanded {
+                        crate::ui::widget::compact::mascot::react(
+                            crate::ui::widget::compact::mascot::Reaction::Jump,
+                        );
+                    } else {
+                        self.expand();
+                    }
                 }
             } else if self.springs.hide.value > 0.3 {
                 self.hide.manual = true;
