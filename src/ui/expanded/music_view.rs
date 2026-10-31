@@ -28,11 +28,11 @@ use std::sync::{Arc, OnceLock};
 use winisland_core::physics::Spring;
 
 const CONTENT_PADDING: f32 = 24.0;
-const COVER_SIZE: f32 = 64.0;
+const COVER_SIZE: f32 = 78.0;
 const TRACK_TEXT_GAP: f32 = 18.0;
 const TRACK_TEXT_RIGHT_INSET: f32 = 70.0;
 const TRACK_TITLE_BASELINE_OFFSET: f32 = 26.0;
-const PROGRESS_TOP_GAP: f32 = 24.0;
+const PROGRESS_TOP_GAP: f32 = 20.0;
 const PROGRESS_TIME_FONT_SCALE: f32 = 0.67;
 const DEFAULT_PROGRESS_TIME_FONT_SIZE: f32 = 10.0;
 const PROGRESS_TIME_WIDTH: f32 = 28.0;
@@ -42,15 +42,18 @@ const PROGRESS_JUMP_THRESHOLD: f32 = 0.3;
 const PROGRESS_SMOOTHING: f32 = 0.15;
 const PROGRESS_HOVER_SMOOTHING: f32 = 0.18;
 const PROGRESS_HOVER_SNAP_THRESHOLD: f32 = 0.005;
-const PROGRESS_BAR_HEIGHT: f32 = 6.5;
-const PROGRESS_BAR_HOVER_GROWTH: f32 = 3.5;
+const PROGRESS_BAR_HEIGHT: f32 = 4.0;
+const PROGRESS_BAR_HOVER_GROWTH: f32 = 2.5;
 const PROGRESS_FILL_IDLE_BRIGHTNESS: f32 = 0.72;
 const PROGRESS_FILL_BRIGHTEN_DELAY: f32 = 0.18;
 const PROGRESS_TIME_BASELINE_SCALE: f32 = 0.35;
 const PROGRESS_TIME_IDLE_ALPHA: f32 = 0.5;
 const PROGRESS_TRACK_ALPHA: f32 = 0.12;
-const PLAYBACK_CONTROLS_TOP_GAP: f32 = 42.0;
-const SKIP_BUTTON_GAP: f32 = 75.0;
+const PLAYBACK_CONTROLS_TOP_GAP: f32 = 34.0;
+const SKIP_BUTTON_GAP: f32 = 58.0;
+/// Playback icons are drawn smaller than their source paths for a lighter look.
+const PLAY_ICON_SCALE: f32 = 0.72;
+const SKIP_ICON_SCALE: f32 = 0.7;
 const SKIP_ANIMATION_DURATION_SECS: f32 = 0.5;
 const PLAY_STATE_RESPONSE: f32 = 0.18;
 pub(super) const PAUSE_CONTROL_PRESS_VELOCITY: f32 = -0.18;
@@ -494,6 +497,10 @@ pub fn draw_music_page(params: DrawMusicPageParams<'_>) {
         }
     }
 
+    // With audio capture off the spectrum is silent; skip the idle bars entirely.
+    if media.spectrum.iter().all(|level| *level <= 0.0) {
+        return;
+    }
     let viz_x_offset = COLLAPSED_VISUALIZER_INSET
         + (EXPANDED_VISUALIZER_INSET - COLLAPSED_VISUALIZER_INSET) * expansion_progress;
     draw_visualizer(DrawVisualizerParams {
@@ -798,7 +805,10 @@ fn draw_pause_control(
         painter.begin_layer(LayerSpec::Blur(BlurSpec::uniform(pause_blur)));
     }
     painter.translate(Vec2::new(btn_cx, btn_cy));
-    painter.scale(Vec2::new(pause_s, pause_s));
+    painter.scale(Vec2::new(
+        pause_s * PLAY_ICON_SCALE,
+        pause_s * PLAY_ICON_SCALE,
+    ));
     let icon_progress = ((pause_t - 0.5).abs() * 2.0).clamp(0.0, 1.0);
     let icon_alpha =
         (alpha as f32 * icon_progress * icon_progress * (3.0 - 2.0 * icon_progress)) as u8;
@@ -829,9 +839,14 @@ fn draw_skip_button(
 ) {
     painter.save();
     painter.translate(Vec2::new(cx, cy));
-    if mirror {
-        painter.scale(Vec2::new(-1.0, 1.0));
-    }
+    painter.scale(Vec2::new(
+        if mirror {
+            -SKIP_ICON_SCALE
+        } else {
+            SKIP_ICON_SCALE
+        },
+        SKIP_ICON_SCALE,
+    ));
     if let Some(t) = anim_t {
         let skip_blur = (1.0 - t / 0.3).max(0.0) * 6.0 * scale;
         if skip_blur > 0.1 && use_blur {
