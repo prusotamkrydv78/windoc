@@ -18,6 +18,7 @@ pub(super) enum BehaviorAction {
     ClearData(crate::core::data_inventory::DataKind),
     AddWorldClock,
     StatusMessage,
+    UserName,
     AddLink,
     AddFeed,
     RemoveFeed(usize),
@@ -205,6 +206,17 @@ impl SettingsApp {
             self.config.links.len() < 12,
             BehaviorAction::AddLink,
         );
+        page.group_end();
+        page.section(tr("section_you"));
+        page.group_start();
+        page.row_text_field(
+            tr("user_name"),
+            self.config.user_name.clone(),
+            tr("user_name_placeholder"),
+            true,
+            BehaviorAction::UserName,
+        );
+        page.row_label(tr("user_name_hint"));
         page.group_end();
         page.section(tr("section_status_message"));
         page.group_start();
@@ -425,6 +437,12 @@ impl SettingsApp {
                 let rect = input.text_field_rect(&page, *index, self.scroll_y);
                 let current = self.config.status_message.clone();
                 self.begin_text_input(rect, &current, 60, commit_status_message);
+                false
+            }
+            (BehaviorAction::UserName, ClickResult::TextField(index)) => {
+                let rect = input.text_field_rect(&page, *index, self.scroll_y);
+                let current = self.config.user_name.clone();
+                self.begin_text_input(rect, &current, 40, commit_user_name);
                 false
             }
             (BehaviorAction::AddWorldClock, ClickResult::TextField(index)) => {
@@ -664,6 +682,11 @@ fn commit_restore_backup(app: &mut SettingsApp, passphrase: &str) {
             app.mark_items_dirty();
         }
     }
+}
+
+fn commit_user_name(app: &mut SettingsApp, text: &str) {
+    app.config.user_name = text.trim().to_string();
+    app.mark_items_dirty();
 }
 
 fn commit_status_message(app: &mut SettingsApp, text: &str) {

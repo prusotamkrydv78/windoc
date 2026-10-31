@@ -1784,6 +1784,23 @@ fn format_call_time(elapsed: Duration) -> String {
 
 impl App {
     /// Turns system events from the top bar's host window into notch activities.
+    /// The name from Settings, or the Windows account name with a capital first letter.
+    fn display_name(&self) -> String {
+        let configured = self.config.user_name.trim();
+        if !configured.is_empty() {
+            return configured.to_string();
+        }
+        std::env::var("USERNAME")
+            .ok()
+            .and_then(|name| {
+                let mut chars = name.chars();
+                chars
+                    .next()
+                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+            })
+            .unwrap_or_default()
+    }
+
     /// The robot waves with "Good morning, Name" (or afternoon or evening) and the battery.
     fn push_greeting(&mut self, priority: crate::ui::compact::Priority) {
         use winisland_core::i18n::tr;
@@ -1793,15 +1810,7 @@ impl App {
             12..=16 => "greeting_afternoon",
             _ => "greeting_evening",
         };
-        let name = std::env::var("USERNAME")
-            .ok()
-            .and_then(|name| {
-                let mut chars = name.chars();
-                chars
-                    .next()
-                    .map(|first| first.to_uppercase().chain(chars).collect::<String>())
-            })
-            .unwrap_or_default();
+        let name = self.display_name();
         let primary = if name.is_empty() {
             tr(key)
         } else {
@@ -1833,6 +1842,10 @@ impl App {
         use winisland_core::i18n::tr;
         use winisland_platform_windows::shell_bar::ShellEvent;
         use winisland_render::Rgba;
+        crate::ui::widget::compact::mascot::set_context(
+            &self.display_name(),
+            crate::ui::dashboard::focus_running(),
+        );
         // The robot says hello once when the app starts.
         static GREETED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !self.expanded

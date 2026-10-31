@@ -110,6 +110,8 @@ pub struct AppConfig {
     pub ai_usage_enabled: bool,
     /// Windows time zone keys shown as world clocks.
     pub world_clocks: Vec<String>,
+    /// What the robot calls the user in greetings; empty uses the Windows account name.
+    pub user_name: String,
     /// Text shown by the Message compact widget.
     pub status_message: String,
     /// Panel theme: pure_black, ember, vivid or silver.
