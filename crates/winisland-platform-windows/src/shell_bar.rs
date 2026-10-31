@@ -890,3 +890,20 @@ pub fn toggle_desktop() {
     const VK_D: u16 = 0x44;
     press_shortcut(&[VK_WIN, VK_D]);
 }
+
+/// Keeps the PC and display awake while `on` (like Caffeine/PowerToys Awake), for this
+/// process's UI thread. Call from the UI thread.
+pub fn keep_awake(on: bool) {
+    use windows::Win32::System::Power::{
+        ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED, SetThreadExecutionState,
+    };
+    let flags = if on {
+        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+    } else {
+        ES_CONTINUOUS
+    };
+    // SAFETY: setting this thread's execution state has no memory-safety preconditions.
+    unsafe {
+        SetThreadExecutionState(flags);
+    }
+}

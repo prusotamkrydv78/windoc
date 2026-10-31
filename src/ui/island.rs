@@ -168,7 +168,9 @@ pub fn draw_island(
         // Soft glow behind the island; only the part outside its edge stays visible.
         painter.fill_path_blurred(
             &island_path,
-            color.with_alpha(110),
+            color.with_alpha(
+                (110.0 * (1.0 - params.layout.expansion_progress).clamp(0.0, 1.0)) as u8,
+            ),
             BlurSpec {
                 sigma: (7.0, 7.0),
                 tile: None,
@@ -243,11 +245,13 @@ pub fn draw_island(
     painter.restore();
     draw_island_border(painter, &params);
     draw_privacy_dots(painter, &params, rect);
-    if let Some(color) = edge_color {
+    // The rim belongs to the small notch; the open panel is pure black with no outline.
+    let rim = (1.0 - params.layout.expansion_progress).clamp(0.0, 1.0);
+    if let Some(color) = edge_color.filter(|_| rim > 0.01) {
         painter.stroke_path(
             &island_path,
             1.2,
-            color.with_alpha(210),
+            color.with_alpha((210.0 * rim) as u8),
             winisland_render::StrokeCap::Round,
             winisland_render::StrokeJoin::Round,
         );
@@ -523,11 +527,8 @@ fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
     } else {
         EFFECT_BORDER_ALPHA
     };
-    let opacity = if solid_style {
-        1.0 - layout.expansion_progress.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
+    // No outline on the open panel, whatever the style.
+    let opacity = 1.0 - layout.expansion_progress.clamp(0.0, 1.0);
     let border_path = Path::continuous_rounded_rect(
         Rect::from_xywh(
             layout.island_x + BORDER_INSET,

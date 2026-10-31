@@ -457,22 +457,17 @@ const SEARCH: &str = "M11 4.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM16 16l4.5 4
 pub(crate) const BLUETOOTH: &str = "M7 7l10 10-5 4V3l5 4L7 17";
 pub(crate) const MOON: &str = "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z";
 pub(crate) const SUN: &str = "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4";
+pub(crate) const SPARKLE: &str = "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z";
+pub(crate) const CAMERA: &str =
+    "M4 8h3l2-2.5h6L17 8h3v11H4zM12 9.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7z";
+pub(crate) const CUP: &str =
+    "M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v3M11 3v3";
 
 /// Strokes a 24x24 SVG path glyph centred in `rect` at about 15 px.
-pub(crate) fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32) {
+pub(crate) fn draw_glyph(painter: Painter<'_>, svg: &'static str, rect: Rect, scale: f32) {
     thread_local! {
         static CACHE: RefCell<Vec<(&'static str, Option<winisland_render::Path>)>> = const { RefCell::new(Vec::new()) };
     }
-    let svg: &'static str = match svg {
-        WIFI => WIFI,
-        SPEAKER => SPEAKER,
-        CHEVRON => CHEVRON,
-        SEARCH => SEARCH,
-        BLUETOOTH => BLUETOOTH,
-        MOON => MOON,
-        SUN => SUN,
-        _ => BELL,
-    };
     let path = CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if let Some((_, path)) = cache.iter().find(|(key, _)| *key == svg) {
@@ -505,7 +500,7 @@ pub(crate) fn draw_glyph(painter: Painter<'_>, svg: &str, rect: Rect, scale: f32
 /// Seconds per full pass of the edge light across the bar.
 const EDGE_PASS_SECONDS: f32 = 6.0;
 /// Length of the travelling light in logical pixels.
-const EDGE_COMET: f32 = 260.0;
+const EDGE_COMET: f32 = 140.0;
 
 /// The light that travels around the notch outline, shoulder to shoulder, at a constant speed
 /// measured along the line itself, looping with no gap.
@@ -526,36 +521,22 @@ pub fn draw_edge_light(
     let comet = EDGE_COMET * scale;
     let head = (seconds / EDGE_PASS_SECONDS * total).rem_euclid(total);
     // The current comet plus, while it wraps, the previous one leaving on the right.
-    let draw_layers = |head: f32| {
-        // (length behind the head, stroke width, colour, blur sigma)
-        let layers: [(f32, f32, Rgba, f32); 5] = [
-            (1.0, 16.0, Rgba::from_argb(110, 143, 123, 255), 8.0),
-            (0.8, 6.0, Rgba::from_argb(200, 167, 123, 255), 3.0),
-            (1.0, 1.8, Rgba::from_argb(180, 91, 140, 255), 0.0),
-            (0.45, 1.8, Rgba::from_argb(240, 255, 143, 207), 0.0),
-            (0.12, 1.8, Rgba::WHITE, 0.0),
-        ];
-        for (fraction, stroke, color, sigma) in layers {
-            let segment = edge.segment(head - comet * fraction, head);
-            if segment.is_empty() {
-                continue;
-            }
-            if sigma > 0.0 {
-                painter.stroke_path_blurred(&segment, stroke * scale, color, sigma * scale);
-            } else {
-                painter.stroke_path(
-                    &segment,
-                    stroke * scale,
-                    color,
-                    winisland_render::StrokeCap::Round,
-                    winisland_render::StrokeJoin::Round,
-                );
-            }
+    // One plain white line: no gradient and no blur, so it costs a single stroke per frame.
+    let draw_line = |head: f32| {
+        let segment = edge.segment(head - comet, head);
+        if !segment.is_empty() {
+            painter.stroke_path(
+                &segment,
+                1.6 * scale,
+                Rgba::WHITE.with_alpha(220),
+                winisland_render::StrokeCap::Round,
+                winisland_render::StrokeJoin::Round,
+            );
         }
     };
-    draw_layers(head);
+    draw_line(head);
     if head < comet {
-        draw_layers(head + total);
+        draw_line(head + total);
     }
 }
 
