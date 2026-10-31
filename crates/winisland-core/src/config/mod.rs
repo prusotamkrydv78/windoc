@@ -141,6 +141,10 @@ pub struct AppConfig {
     pub onboarding_done: bool,
     /// More-page modules the user has hidden, by label key.
     pub hidden_modules: Vec<String>,
+    /// Named sets of dashboard modules (Home, Work, Code…); the dock shows the active one.
+    #[educe(Default(expression = default_workspaces()))]
+    pub workspaces: Vec<Workspace>,
+    pub active_workspace: usize,
     /// Subscribed ICS or webcal feed links.
     pub calendar_feeds: Vec<String>,
     /// Quick links as `(name, url)`.
@@ -258,4 +262,54 @@ pub struct AppConfig {
     #[serde(default)]
     #[educe(Default(expression = CONFIG_VERSION))]
     pub config_version: u32,
+}
+
+/// A named set of dashboard modules, by label key.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Workspace {
+    pub name: String,
+    pub modules: Vec<String>,
+}
+
+fn default_workspaces() -> Vec<Workspace> {
+    let space = |name: &str, modules: &[&str]| Workspace {
+        name: name.to_string(),
+        modules: modules.iter().map(|key| (*key).to_string()).collect(),
+    };
+    vec![
+        space(
+            "Home",
+            &[
+                "dashboard_media",
+                "dashboard_weather",
+                "dashboard_agenda",
+                "dashboard_clipboard",
+                "dashboard_shelf",
+                "dashboard_drop",
+            ],
+        ),
+        space(
+            "Work",
+            &[
+                "dashboard_focus",
+                "dashboard_agenda",
+                "dashboard_notes",
+                "dashboard_clipboard",
+                "dashboard_shelf",
+                "dashboard_links",
+                "dashboard_screen_time",
+            ],
+        ),
+        space(
+            "Code",
+            &[
+                "dashboard_ai_usage",
+                "dashboard_focus",
+                "dashboard_clipboard",
+                "dashboard_notes",
+                "dashboard_links",
+                "dashboard_screen_time",
+            ],
+        ),
+    ]
 }

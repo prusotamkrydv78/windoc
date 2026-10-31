@@ -40,6 +40,12 @@ pub enum DashboardHit {
     Header,
     /// The header's search button, which opens the command palette.
     Search,
+    /// A workspace tab in the header.
+    Workspace(u8),
+    /// The "+" after the workspace tabs.
+    AddWorkspace,
+    /// Toggles arrange mode (choose which modules the workspace shows).
+    Arrange,
     /// Focus page buttons: 0 reset, 1 play or pause, 2 skip.
     FocusButton(u8),
     /// The header's settings button.
@@ -731,6 +737,13 @@ pub fn hit_test(
         if search_button(layout.header).contains(local) {
             return Some(DashboardHit::Search);
         }
+        let active = PAGE.with(|page| page.borrow().active);
+        if let Some((_, hit)) = workspace_tabs(layout.header, active)
+            .into_iter()
+            .find(|(rect, _)| rect.contains(local))
+        {
+            return Some(hit);
+        }
         if settings.contains(local) {
             return Some(DashboardHit::OpenSettings);
         }
@@ -785,6 +798,9 @@ pub fn apply(hit: DashboardHit) {
     }
     PAGE.with(|page| {
         let mut page = page.borrow_mut();
+        if apply_workspace_hit(hit, &mut page) {
+            return;
+        }
         match hit {
             DashboardHit::Destination(destination) => {
                 if page.active != destination {
@@ -870,7 +886,12 @@ pub fn draw_page(
         hovered_header: hover.filter(|hit| {
             matches!(
                 hit,
-                DashboardHit::Search | DashboardHit::OpenSettings | DashboardHit::Close
+                DashboardHit::Search
+                    | DashboardHit::OpenSettings
+                    | DashboardHit::Close
+                    | DashboardHit::Workspace(_)
+                    | DashboardHit::AddWorkspace
+                    | DashboardHit::Arrange
             )
         }),
         hovered_row: match hover {
@@ -1222,6 +1243,7 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         interaction.focused_dock,
         colors,
     );
+    draw_arrange_badges(painter, &layout.dock.items, &layout.destinations);
 }
 
 /// Header button size and the two right-aligned buttons: settings, then close.
@@ -1323,14 +1345,7 @@ fn draw_header(
     );
     let (settings, close) = header_buttons(header);
     let date_left = divider_x + space::S3;
-    draw_text(
-        painter,
-        &today_label(),
-        typography::BODY,
-        Rect::from_xywh(date_left, header.top, 160.0, header.height()),
-        Align::Start,
-        colors.text_secondary,
-    );
+    draw_workspace_tabs(painter, header, active, hovered, colors);
     // Centre: what is playing, as a pill.
     if let Some(title) = NOW_PLAYING.with(|cell| cell.borrow().clone()) {
         let pill_width = (header.width() * 0.3).clamp(120.0, 220.0);
@@ -1340,7 +1355,11 @@ fn draw_header(
             pill_width,
             26.0,
         );
-        if pill.left > date_left + 150.0
+        if pill.left
+            > workspace_tabs(header, active)
+                .last()
+                .map_or(date_left, |(rect, _)| rect.right)
+                + 12.0
             && pill.right < search_button(header).left - BATTERY_CHIP_WIDTH
         {
             painter.fill_round_rect(pill, Radius::uniform(13.0), colors.surface_raised);
@@ -2609,12 +2628,12 @@ pub fn focus_running() -> bool {
 
 /// Whether the user hid `destination` in Settings (Home is always shown).
 pub(crate) fn module_hidden(destination: Destination) -> bool {
-    destination != Destination::Home
-        && HIDDEN_MODULES.with(|cell| {
-            cell.borrow()
-                .iter()
-                .any(|key| key == destination.label_key())
-        })
+    if matches!(destination, Destination::Home | Destination::More) {
+        return false;
+    }
+    let key = destination.label_key();
+    HIDDEN_MODULES.with(|cell| cell.borrow().iter().any(|hidden| hidden == key))
+        || (!ARRANGING.with(Cell::get) && !workspace_has(key))
 }
 
 /// Up to two compact rows with an icon and a title, inside a card. Returns false when
@@ -2957,4 +2976,276 @@ fn draw_battery_chip(painter: Painter<'_>, header: Rect, right: f32, colors: &Se
         Align::Start,
         colors.text_primary,
     );
+}
+
+thread_local! {
+    /// Workspaces as `(name, module keys)`, mirrored from the config.
+    static WORKSPACES: RefCell<Vec<(String, Vec<String>)>> = const { RefCell::new(Vec::new()) };
+    static ACTIVE_WORKSPACE: Cell<usize> = const { Cell::new(0) };
+    static ARRANGING: Cell<bool> = const { Cell::new(false) };
+    /// Set when the user changed workspaces here and the app should save them.
+    static WORKSPACES_DIRTY: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Publishes the configured workspaces. Ignored while local edits wait to be saved.
+pub fn set_workspaces(workspaces: &[winisland_core::config::Workspace], active: usize) {
+    if WORKSPACES_DIRTY.with(Cell::get) {
+        return;
+    }
+    WORKSPACES.with(|cell| {
+        let incoming: Vec<(String, Vec<String>)> = workspaces
+            .iter()
+            .map(|space| (space.name.clone(), space.modules.clone()))
+            .collect();
+        if *cell.borrow() != incoming {
+            *cell.borrow_mut() = incoming;
+        }
+    });
+    ACTIVE_WORKSPACE.with(|cell| cell.set(active.min(workspaces.len().saturating_sub(1))));
+}
+
+/// Workspaces edited in the dashboard, once, for the app to save to the config.
+pub fn take_workspace_change() -> Option<(Vec<winisland_core::config::Workspace>, usize)> {
+    if !WORKSPACES_DIRTY.with(|cell| cell.replace(false)) {
+        return None;
+    }
+    let spaces = WORKSPACES.with(|cell| {
+        cell.borrow()
+            .iter()
+            .map(|(name, modules)| winisland_core::config::Workspace {
+                name: name.clone(),
+                modules: modules.clone(),
+            })
+            .collect()
+    });
+    Some((spaces, ACTIVE_WORKSPACE.with(Cell::get)))
+}
+
+fn workspace_has(key: &str) -> bool {
+    WORKSPACES.with(|cell| {
+        let spaces = cell.borrow();
+        let active = ACTIVE_WORKSPACE.with(Cell::get);
+        spaces
+            .get(active)
+            .is_none_or(|(_, modules)| modules.iter().any(|module| module == key))
+    })
+}
+
+/// Header geometry: `(rect, hit)` for each workspace tab, then "+", then Arrange/Done.
+fn workspace_tabs(header: Rect, active: Destination) -> Vec<(Rect, DashboardHit)> {
+    let fonts = winisland_render::text::FontManager::global();
+    let icon_size = 18.0;
+    let title = tr(active.label_key());
+    let title_width = fonts.measure_text_cached(
+        &title,
+        typography::SECTION_TITLE.size,
+        winisland_render::FontStyle::bold(),
+    );
+    let mut x = header.left + icon_size + space::S2 + title_width + space::S3 * 2.0 + 1.0;
+    let mut tabs = Vec::new();
+    let names: Vec<String> =
+        WORKSPACES.with(|cell| cell.borrow().iter().map(|(name, _)| name.clone()).collect());
+    for (index, name) in names.iter().enumerate() {
+        let width = fonts.measure_text_cached(
+            name,
+            typography::BODY.size,
+            winisland_render::FontStyle::bold(),
+        ) + 16.0;
+        tabs.push((
+            Rect::from_xywh(x, header.top + 3.0, width, header.height() - 6.0),
+            DashboardHit::Workspace(index as u8),
+        ));
+        x += width + 2.0;
+    }
+    tabs.push((
+        Rect::from_xywh(x, header.top + 3.0, 24.0, header.height() - 6.0),
+        DashboardHit::AddWorkspace,
+    ));
+    x += 28.0;
+    let arrange_label = if ARRANGING.with(Cell::get) {
+        "Done"
+    } else {
+        "Arrange"
+    };
+    let width = fonts.measure_text_cached(
+        arrange_label,
+        typography::LABEL.size,
+        winisland_render::FontStyle::bold(),
+    ) + 18.0;
+    tabs.push((
+        Rect::from_xywh(x, header.center_y() - 11.0, width, 22.0),
+        DashboardHit::Arrange,
+    ));
+    tabs
+}
+
+const WORKSPACE_ACCENT: winisland_render::Rgba = winisland_render::Rgba::from_rgb(255, 176, 32);
+
+fn draw_workspace_tabs(
+    painter: Painter<'_>,
+    header: Rect,
+    active: Destination,
+    hovered: Option<DashboardHit>,
+    colors: &SemanticColors,
+) {
+    let names: Vec<String> =
+        WORKSPACES.with(|cell| cell.borrow().iter().map(|(name, _)| name.clone()).collect());
+    let current = ACTIVE_WORKSPACE.with(Cell::get);
+    let arranging = ARRANGING.with(Cell::get);
+    for (rect, hit) in workspace_tabs(header, active) {
+        let hover = hovered == Some(hit);
+        match hit {
+            DashboardHit::Workspace(index) => {
+                let on = usize::from(index) == current;
+                if hover && !on {
+                    painter.fill_round_rect(rect, Radius::uniform(7.0), colors.surface_overlay);
+                }
+                let color = if on {
+                    colors.text_primary
+                } else {
+                    colors.text_secondary
+                };
+                draw_text(
+                    painter,
+                    &names[usize::from(index)],
+                    typography::BODY,
+                    rect.inset(8.0),
+                    Align::Start,
+                    color,
+                );
+                if on {
+                    painter.fill_round_rect(
+                        Rect::from_xywh(
+                            rect.left + 8.0,
+                            rect.bottom - 1.0,
+                            rect.width() - 16.0,
+                            2.0,
+                        ),
+                        Radius::uniform(1.0),
+                        WORKSPACE_ACCENT,
+                    );
+                }
+            }
+            DashboardHit::AddWorkspace => {
+                if hover {
+                    painter.fill_round_rect(rect, Radius::uniform(7.0), colors.surface_overlay);
+                }
+                crate::ui::components::icon::draw_icon(
+                    painter,
+                    crate::ui::components::icon::Icon::Plus,
+                    rect.inset(5.0),
+                    colors.text_secondary,
+                );
+            }
+            DashboardHit::Arrange => {
+                let (fill, text) = if arranging {
+                    (WORKSPACE_ACCENT, winisland_render::Rgba::BLACK)
+                } else if hover {
+                    (colors.surface_overlay, colors.text_primary)
+                } else {
+                    (colors.surface_raised, colors.text_secondary)
+                };
+                painter.fill_round_rect(rect, Radius::uniform(rect.height() / 2.0), fill);
+                draw_text(
+                    painter,
+                    if arranging { "Done" } else { "Arrange" },
+                    typography::LABEL,
+                    rect.inset(9.0),
+                    Align::Start,
+                    text,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+/// In arrange mode, marks each dock module: a filled check when it is in the workspace, a
+/// "+" when it can be added. Clicking toggles it.
+fn draw_arrange_badges(painter: Painter<'_>, items: &[Rect], destinations: &[Destination]) {
+    if !ARRANGING.with(Cell::get) {
+        return;
+    }
+    for (rect, destination) in items.iter().zip(destinations) {
+        if matches!(destination, Destination::Home | Destination::More) {
+            continue;
+        }
+        let member = workspace_has(destination.label_key());
+        let badge = Rect::from_xywh(rect.right - 13.0, rect.top - 2.0, 15.0, 15.0);
+        if member {
+            painter.fill_circle(
+                Point::new(badge.center_x(), badge.center_y()),
+                7.5,
+                WORKSPACE_ACCENT,
+            );
+        } else {
+            painter.stroke_circle(
+                Point::new(badge.center_x(), badge.center_y()),
+                7.0,
+                1.5,
+                WORKSPACE_ACCENT,
+            );
+        }
+        crate::ui::components::icon::draw_icon(
+            painter,
+            if member {
+                crate::ui::components::icon::Icon::Check
+            } else {
+                crate::ui::components::icon::Icon::Plus
+            },
+            badge.inset(3.0),
+            if member {
+                winisland_render::Rgba::BLACK
+            } else {
+                WORKSPACE_ACCENT
+            },
+        );
+    }
+}
+
+/// Applies a workspace-related click. Returns `true` when handled.
+fn apply_workspace_hit(hit: DashboardHit, page: &mut PageState) -> bool {
+    match hit {
+        DashboardHit::Workspace(index) => {
+            ACTIVE_WORKSPACE.with(|cell| cell.set(usize::from(index)));
+            page.active = Destination::Home;
+            page.shown_at = Instant::now();
+        }
+        DashboardHit::AddWorkspace => {
+            WORKSPACES.with(|cell| {
+                let mut spaces = cell.borrow_mut();
+                let name = format!("Space {}", spaces.len() + 1);
+                spaces.push((
+                    name,
+                    vec!["dashboard_agenda".into(), "dashboard_notes".into()],
+                ));
+                ACTIVE_WORKSPACE.with(|active| active.set(spaces.len() - 1));
+            });
+            ARRANGING.with(|cell| cell.set(true));
+        }
+        DashboardHit::Arrange => {
+            ARRANGING.with(|cell| cell.set(!cell.get()));
+            return true;
+        }
+        DashboardHit::Destination(destination)
+            if ARRANGING.with(Cell::get)
+                && !matches!(destination, Destination::Home | Destination::More) =>
+        {
+            let key = destination.label_key();
+            WORKSPACES.with(|cell| {
+                let mut spaces = cell.borrow_mut();
+                let active = ACTIVE_WORKSPACE.with(Cell::get);
+                if let Some((_, modules)) = spaces.get_mut(active) {
+                    if let Some(at) = modules.iter().position(|module| module == key) {
+                        modules.remove(at);
+                    } else {
+                        modules.push(key.to_string());
+                    }
+                }
+            });
+        }
+        _ => return false,
+    }
+    WORKSPACES_DIRTY.with(|cell| cell.set(true));
+    true
 }

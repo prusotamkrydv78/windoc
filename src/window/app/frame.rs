@@ -136,6 +136,12 @@ impl App {
         crate::ui::island::set_edge_light(&self.config.edge_light);
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
+        crate::ui::dashboard::set_workspaces(&self.config.workspaces, self.config.active_workspace);
+        if let Some((workspaces, active)) = crate::ui::dashboard::take_workspace_change() {
+            self.config.workspaces = workspaces;
+            self.config.active_workspace = active;
+            crate::core::persistence::save_config(&self.config);
+        }
         if !self.expanded {
             // A collapsed panel cannot hold keyboard focus; the query is kept for later.
             crate::ui::dashboard::palette::hide();
