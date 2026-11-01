@@ -1317,6 +1317,10 @@ impl Stage<'_> {
 
     /// Draws the robot in `pose` and reports where its hands are.
     fn robot(&self, pose: Pose) -> Hands {
+        // Another character chosen: it draws the same pose in its own body.
+        if let Some(hands) = self.creature(pose) {
+            return hands;
+        }
         let unit = self.unit;
         let breath = (self.time / BREATH_SECONDS * TAU).sin();
         // The feet stay put; the rest of the body rises with each breath.
@@ -1354,7 +1358,7 @@ impl Stage<'_> {
             left_shoulder.y + pose.left_arm.sin() * ARM_LENGTH * unit,
         );
         // The shell colour chosen in Settings; the face stays cream-white.
-        let shell = characters::shell().unwrap_or(SHELLS[life::colour().min(SHELLS.len() - 1)]);
+        let shell = SHELLS[life::colour().min(SHELLS.len() - 1)];
         self.line(right_shoulder, right, 2.4, self.color(1.0, shell));
         self.line(left_shoulder, left, 2.4, self.color(1.0, shell));
         painter.fill_round_rect(body, Radius::uniform(2.4 * unit), self.color(1.0, shell));
@@ -1366,8 +1370,7 @@ impl Stage<'_> {
             16.0 * unit,
             13.6 * unit,
         );
-        // The chosen character's ears (or antenna, or tuft) sit behind the head.
-        self.character_back(head, shell);
+        self.antenna(head, shell);
         painter.fill_round_rect(head, Radius::uniform(3.8 * unit), self.color(1.0, shell));
         let screen = Rect::from_xywh(
             head.left + 2.0 * unit,
@@ -1432,7 +1435,6 @@ impl Stage<'_> {
                 band,
             );
         }
-        self.character_front(head, screen, eye_y);
         self.wear(head, screen, body, eye_y);
         painter.restore_to(save);
         Hands { right, left }
