@@ -1298,6 +1298,9 @@ impl App {
             || self.seek.active
             || self.is_right_dragging
             || (self.expanded
+                && self.page_visible(ExpandedPage::Home)
+                && crate::ui::dashboard::play_animating())
+            || (self.expanded
                 && self.page_visible(ExpandedPage::Calendar)
                 && crate::ui::expanded::calendar_view::is_animating());
         // Live values that change about once a second share the slower refresh tier.

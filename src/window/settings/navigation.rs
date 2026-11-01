@@ -96,7 +96,8 @@ pub(crate) enum SidebarRow {
     Page(usize),
 }
 
-pub(crate) const BUILTIN_ROWS: [SidebarRow; 11] = [
+/// The Plugins page is left out: Notchy's features are built in.
+pub(crate) const BUILTIN_ROWS: [SidebarRow; 10] = [
     SidebarRow::General(0),
     SidebarRow::General(1),
     SidebarRow::General(2),
@@ -107,7 +108,6 @@ pub(crate) const BUILTIN_ROWS: [SidebarRow; 11] = [
     SidebarRow::Page(ACTIVITIES_PAGE_INDEX),
     SidebarRow::Page(MUSIC_PAGE_INDEX),
     SidebarRow::Page(WIDGETS_PAGE_INDEX),
-    SidebarRow::Page(PLUGINS_PAGE_INDEX),
 ];
 
 /// `sidebar_hover` values for built-in rows start here, clear of page indices.

@@ -23,6 +23,7 @@ pub mod drop;
 pub mod links;
 pub mod message;
 pub mod notes;
+pub mod play;
 pub mod screen_time;
 pub mod shelf;
 pub mod timers;
@@ -56,6 +57,7 @@ macro_rules! route {
             Destination::ScreenTime => screen_time::$call($($arg),*),
             Destination::AiUsage => ai_coding::$call($($arg),*),
             Destination::Drop => drop::$call($($arg),*),
+            Destination::Play => play::$call($($arg),*),
             _ => $default,
         }
     };
@@ -116,4 +118,5 @@ pub fn poll_all(now: Instant) {
     screen_time::poll(now);
     ai_coding::poll(now);
     drop::poll(now);
+    play::poll(now);
 }

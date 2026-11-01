@@ -384,6 +384,7 @@ fn default_workspaces() -> Vec<Workspace> {
                 "dashboard_clipboard",
                 "dashboard_shelf",
                 "dashboard_drop",
+                "dashboard_play",
             ],
         ),
         space(
@@ -401,6 +402,7 @@ fn default_workspaces() -> Vec<Workspace> {
                 "dashboard_shelf",
                 "dashboard_links",
                 "dashboard_screen_time",
+                "dashboard_play",
             ],
         ),
         space(
@@ -417,6 +419,7 @@ fn default_workspaces() -> Vec<Workspace> {
                 "dashboard_notes",
                 "dashboard_links",
                 "dashboard_screen_time",
+                "dashboard_play",
             ],
         ),
     ]

@@ -1139,6 +1139,8 @@ pub enum Destination {
     Agenda,
     /// Phone transfer by QR code; reached from More.
     Drop,
+    /// Quick games; reached from More.
+    Play,
 }
 
 impl Destination {
@@ -1152,7 +1154,7 @@ impl Destination {
     ];
     /// The icon dock, in order: every module, like a launcher.
     /// Every page, as an icon row; each mode can hide the ones it does not need.
-    pub const DOCK: [Self; 17] = [
+    pub const DOCK: [Self; 18] = [
         Self::Home,
         Self::System,
         Self::Media,
@@ -1170,11 +1172,12 @@ impl Destination {
         Self::Units,
         Self::Message,
         Self::Drop,
+        Self::Play,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 16] = [
+    pub const MORE_ITEMS: [Self; 17] = [
         Self::System,
         Self::Media,
         Self::Clipboard,
@@ -1191,6 +1194,7 @@ impl Destination {
         Self::Units,
         Self::Message,
         Self::Drop,
+        Self::Play,
     ];
 
     /// The context line shown after the page title.
@@ -1213,6 +1217,7 @@ impl Destination {
             Self::ScreenTime => "subtitle_screen_time",
             Self::Agenda => "subtitle_agenda",
             Self::Drop => "subtitle_drop",
+            Self::Play => "subtitle_play",
         }
     }
 
@@ -1237,6 +1242,7 @@ impl Destination {
             Self::ScreenTime => Icon::Chart,
             Self::Agenda => Icon::Calendar,
             Self::Drop => Icon::Phone,
+            Self::Play => Icon::Pet,
         }
     }
 
@@ -1260,6 +1266,7 @@ impl Destination {
             Self::ScreenTime => "dashboard_screen_time",
             Self::Agenda => "dashboard_agenda",
             Self::Drop => "dashboard_drop",
+            Self::Play => "dashboard_play",
         }
     }
 }
@@ -2342,6 +2349,11 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
 }
 
 /// Whether `destination` is the active dashboard page.
+/// Whether the Play tab is open with a game running (it needs smooth frames).
+pub fn play_animating() -> bool {
+    showing(Destination::Play) && tabs::play::animating()
+}
+
 pub fn showing(destination: Destination) -> bool {
     PAGE.with(|page| page.borrow().active == destination)
 }
