@@ -448,6 +448,11 @@ fn draw_compact_layer(
             .iter()
             .any(|slot| slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)),
     });
+    // The robot walks fully past these edges between scenes.
+    crate::ui::widget::compact::mascot::set_notch_span(
+        layout.island_x,
+        layout.island_x + layout.current_w,
+    );
     crate::ui::widget::compact::draw(
         painter,
         style.compact_widget_layout,

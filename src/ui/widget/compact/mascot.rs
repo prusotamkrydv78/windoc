@@ -770,26 +770,41 @@ fn greeting(name: &str) -> String {
 }
 
 /// How long the robot takes to walk on with a new scene, and off at its end.
-const ENTER_SECONDS: f32 = 1.2;
-const EXIT_SECONDS: f32 = 1.0;
-/// How far it walks, in robot units. Short and fixed: it fades as it goes, so the
-/// transition looks the same in a narrow or a wide notch and is never cut by its edge.
-const STROLL: f32 = 18.0;
+const ENTER_SECONDS: f32 = 1.3;
+const EXIT_SECONDS: f32 = 1.1;
+/// Walk distance in robot units when the notch's edges are unknown.
+const STROLL: f32 = 75.0;
+/// Extra room past the notch edge so nothing peeks in, in robot units.
+const CLEARANCE: f32 = 4.0;
+
+thread_local! {
+    /// The notch's left and right edges, set each frame before the robot draws.
+    static NOTCH_SPAN: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Records the notch's current left and right edges, so the robot walks fully past them.
+pub(crate) fn set_notch_span(left: f32, right: f32) {
+    NOTCH_SPAN.with(|cell| cell.set(Some((left, right))));
+}
+
+/// How far, in robot units, the robot standing at `x` must walk left (to enter from) and
+/// right (to leave by) so it and its props are wholly outside the notch. Props reach
+/// `left_reach` units to its left and `right_reach` to its right.
+fn walk_distances(x: f32, unit: f32, left_reach: f32, right_reach: f32) -> (f32, f32) {
+    NOTCH_SPAN.with(std::cell::Cell::get).map_or((STROLL, STROLL), |(left, right)| {
+        let unit = unit.max(0.01);
+        (
+            ((x - left) / unit + right_reach + CLEARANCE).max(0.0),
+            ((right - x) / unit + left_reach + CLEARANCE).max(0.0),
+        )
+    })
+}
 
 /// Test hook: with `WINISLAND_MASCOT_DEMO=1` scenes change every few seconds, day or night,
 /// so transitions can be watched without waiting.
 fn demo() -> bool {
     static DEMO: OnceLock<bool> = OnceLock::new();
     *DEMO.get_or_init(|| std::env::var_os("WINISLAND_MASCOT_DEMO").is_some_and(|v| v == "1"))
-}
-
-/// How visible the robot and its props are at `elapsed` seconds into a scene: it fades in
-/// as it walks on and out as it walks off, finishing exactly at the scene's edges.
-fn scene_visibility(scene: Scene, elapsed: f32, length: f32) -> f32 {
-    if matches!(scene, Scene::Night) {
-        return 1.0;
-    }
-    ease(elapsed / ENTER_SECONDS) * ease((length - elapsed) / EXIT_SECONDS)
 }
 
 /// A little hop per step while the robot is walking on or off, in robot units.
@@ -801,15 +816,16 @@ fn step_bob(shift: f32, time: f32) -> f32 {
 }
 
 /// Sideways offset in robot units at `elapsed` seconds into a scene: the robot carries the
-/// scene's props in from the left, then out to the right, so nothing pops into place.
-fn scene_shift(scene: Scene, elapsed: f32, length: f32) -> f32 {
+/// scene's props in from beyond the notch's left edge (`from` units away), then out past
+/// its right edge (`to` units), so it is wholly outside the notch at every scene change.
+fn scene_shift(scene: Scene, elapsed: f32, length: f32, (from, to): (f32, f32)) -> f32 {
     if matches!(scene, Scene::Night) {
         return 0.0;
     }
     let enter = 1.0 - ease(elapsed / ENTER_SECONDS);
     let exit = 1.0 - ease((length - elapsed) / EXIT_SECONDS);
     // Ease in harder on the way out so it sets off gently.
-    -enter * STROLL + exit * exit * STROLL
+    -enter * from + exit * exit * to
 }
 
 #[derive(Clone, Copy)]
@@ -899,12 +915,13 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
             rect.center_x() - 4.0 * unit
         };
         // It walks on with the reaction and off again, like a scene.
-        let shift = scene_shift(Scene::Wave, elapsed, reaction.seconds());
-        let visible = scene_visibility(Scene::Wave, elapsed, reaction.seconds());
+        // Reactions reach about 9 units left of the robot and up to their caption right.
+        let distances = walk_distances(x, unit, 9.0, caption / unit + 12.0);
+        let shift = scene_shift(Scene::Wave, elapsed, reaction.seconds(), distances);
         let stage = Stage {
             painter,
             unit,
-            alpha: (f32::from(alpha) * visible) as u8,
+            alpha,
             x: x + shift * unit,
             floor: rect.center_y() + (11.0 - step_bob(shift, time)) * unit,
             mid: rect.center_y(),
@@ -940,21 +957,20 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     // Wide scenes shrink just enough to fit the slot; the rest use the full height.
     let unit = unit.min(rect.width() / (left_reach + reach + 2.0)).max(0.5 * scale);
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
-    let (shift, visible) = if walk == 0.0 {
-        (
-            scene_shift(scene, elapsed, length),
-            scene_visibility(scene, elapsed, length),
-        )
+    let home = rect.left + (offset + left_reach) * unit;
+    let shift = if walk == 0.0 {
+        let distances = walk_distances(home, unit, left_reach, reach);
+        scene_shift(scene, elapsed, length, distances)
     } else {
-        (0.0, 1.0)
+        0.0
     };
     let stage = Stage {
         painter,
         unit,
-        alpha: (f32::from(alpha) * visible) as u8,
+        alpha,
         // After a card it walks back in from the side, carrying its scene; at each scene
         // change it carries the old props out and the new ones in.
-        x: rect.left + (offset + left_reach + walk + shift) * unit,
+        x: home + (walk + shift) * unit,
         floor: rect.center_y() + (11.0 - step_bob(shift, time)) * unit,
         mid: rect.center_y(),
         time,
@@ -2763,22 +2779,26 @@ mod tests {
 
     #[test]
     fn robot_walks_on_and_off_at_scene_edges() {
-        // Invisible at both edges, so a scene change never cuts it off.
-        assert_eq!(scene_visibility(Scene::Chai, 0.0, SCENE_SECONDS), 0.0);
-        assert!(scene_visibility(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS) > 0.99);
-        assert_eq!(scene_visibility(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS), 0.0);
+        // A robot at x = 100 in a notch from 0 to 300, unit 2, props 10 left and 30 right:
+        // it must enter from 50 + 30 + clearance units left and leave 100 + 10 + clearance
+        // units right, so it is wholly outside the notch at each scene change.
+        set_notch_span(0.0, 300.0);
+        let (from, to) = walk_distances(100.0, 2.0, 10.0, 30.0);
+        assert_eq!(from, 50.0 + 30.0 + CLEARANCE);
+        assert_eq!(to, 100.0 + 10.0 + CLEARANCE);
+        let span = (from, to);
         // Starts off to the left, stands in place mid-scene, ends off to the right.
-        assert!(scene_shift(Scene::Chai, 0.0, SCENE_SECONDS) <= -STROLL + 0.01);
-        assert_eq!(scene_shift(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS), 0.0);
-        assert!(scene_shift(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS) >= STROLL - 0.01);
+        assert!(scene_shift(Scene::Chai, 0.0, SCENE_SECONDS, span) <= -from + 0.01);
+        assert_eq!(scene_shift(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS, span), 0.0);
+        assert!(scene_shift(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS, span) >= to - 0.01);
         // Moves steadily in, never overshooting.
-        let mut last = scene_shift(Scene::Chai, 0.0, SCENE_SECONDS);
-        for step in 1..=11 {
-            let now = scene_shift(Scene::Chai, step as f32 * 0.1, SCENE_SECONDS);
+        let mut last = scene_shift(Scene::Chai, 0.0, SCENE_SECONDS, span);
+        for step in 1..=13 {
+            let now = scene_shift(Scene::Chai, step as f32 * 0.1, SCENE_SECONDS, span);
             assert!(now >= last && now <= 0.0);
             last = now;
         }
         // Night never walks.
-        assert_eq!(scene_shift(Scene::Night, 0.0, SCENE_SECONDS), 0.0);
+        assert_eq!(scene_shift(Scene::Night, 0.0, SCENE_SECONDS, span), 0.0);
     }
 }
