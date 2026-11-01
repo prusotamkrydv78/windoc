@@ -1283,11 +1283,10 @@ impl App {
             && self.current_media_info().thumbnail.is_some();
         // The light travelling round the collapsed notch needs evenly spaced frames; widget
         // refreshes alone came every 66–140 ms and made it flicker.
-        // The robot's playground needs the same steady frames while it is out.
-        let edge_light_active = (!self.expanded
-            && !self.is_hidden()
-            && crate::ui::island::edge_light_on())
-            || crate::ui::widget::compact::mascot::roam::active();
+        let edge_light_active =
+            !self.expanded && !self.is_hidden() && crate::ui::island::edge_light_on();
+        // The robot running about the screen needs every display refresh to look smooth.
+        let robot_out = crate::ui::widget::compact::mascot::roam::active();
         let interactive_active = (pacing.is_hovering_visible
             && (!self.expanded || self.page_visible(ExpandedPage::Music)))
             || pacing.compact_overlay_visible
@@ -1302,7 +1301,7 @@ impl App {
         {
             log::warn!("Working set trim failed: {error}");
         }
-        let frame_interval = if transition_active {
+        let frame_interval = if transition_active || robot_out {
             self.animation_frame_interval
         } else if self.expanded
             && (playback_active
@@ -1331,6 +1330,7 @@ impl App {
             || dynamic_effect_active
             || interactive_active
             || edge_light_active
+            || robot_out
             || should_periodic_redraw
         {
             window.request_redraw();

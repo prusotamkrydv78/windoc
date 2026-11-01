@@ -1,12 +1,13 @@
 //! Now and then the robot leaves the notch and plays along the bottom of the screen: on top
 //! of the taskbar when it shows, or along the screen's bottom edge when it is hidden.
 //!
-//! A trip: it walks out of the notch along the top edge of the screen, climbs down the right
-//! edge and hops onto the taskbar. There it chases and kicks a ball that rolls and bounces
-//! off the screen edges, chases a wind-up mouse that turns round and chases it back, then
-//! visits the taskbar: it sits on the app icons in the middle, peeks at the clock and naps
-//! on the battery in the corner. It sits for a yawn and a wave, climbs back up the right
-//! edge and walks along the top into the notch. Meanwhile the notch stays empty.
+//! A trip: it drops out of the notch, its red-and-gold flying suit snaps on piece by piece,
+//! the boots fire and it swoops down with a barrel roll to a landing on the taskbar (see
+//! `suit`). The suit flies off and it plays: it chases and kicks a ball that rolls and
+//! bounces off the screen edges, chases a wind-up mouse that turns round and chases it
+//! back, then visits the taskbar: it sits on the app icons in the middle, peeks at the clock
+//! and naps on the battery in the corner. It sits for a yawn and a wave, suits up again and
+//! boosts back up into the notch. Meanwhile the notch stays empty.
 //!
 //! The app owns the see-through window it plays in (`window::app::roam_window`), the size of
 //! the screen's work area, and calls [`tick`] and [`draw`].
@@ -18,7 +19,8 @@ use winisland_render::text::{DrawTextCachedParams, FontManager};
 use winisland_render::{Painter, Point, Rect, Rgba, Vec2};
 
 use super::life::{self, Activity};
-use super::{Eyes, Pose, Stage, demo, ease, seconds};
+use super::suit;
+use super::{Eyes, Pose, Stage, demo, seconds};
 
 /// Logical pixels per robot unit: about 48 px tall, a toy on the taskbar.
 const UNIT: f32 = 1.9;
@@ -28,15 +30,15 @@ const BALL_SECONDS: f32 = 22.0;
 const MOUSE_SECONDS: f32 = 16.0;
 const VISIT_SECONDS: f32 = 14.0;
 const REST_SECONDS: f32 = 4.0;
-/// Running and climbing speeds in robot units per second.
+/// Running speeds in robot units per second.
 const RUN: f32 = 120.0;
 const SPRINT: f32 = 170.0;
-const CLIMB: f32 = 70.0;
-/// Where the robot walks along the top edge and climbs, in robot units from the edges.
-const LEDGE: f32 = 24.0;
+/// Room kept from the screen edges, in robot units.
 const WALL: f32 = 12.0;
-/// The notch's half width in robot units, where the robot steps in and out of it.
-const NOTCH_HALF: f32 = 46.0;
+/// How far below the top of the screen the robot hangs under the notch, in robot units.
+const UNDER_NOTCH: f32 = 26.0;
+/// Smoke puffs drawn behind the flying robot.
+const TRAIL_PUFFS: usize = 20;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Phase {
@@ -89,6 +91,8 @@ struct Roam {
     hop_at: Option<f32>,
     /// The app icon it sits on during the visit, in robot units.
     icon_x: f32,
+    /// Where it took off for home.
+    launch_x: f32,
     bits: Vec<Bit>,
     seed: u32,
 }
@@ -118,6 +122,7 @@ impl Default for Roam {
             last_kick: -10.0,
             hop_at: None,
             icon_x: 0.0,
+            launch_x: 0.0,
             bits: Vec::new(),
             seed: 0x9e37_79b9,
         }
@@ -133,10 +138,14 @@ impl Roam {
         (self.seed % 10_000) as f32 / 10_000.0
     }
 
-    /// How long the walk along the top and the climb down take, in seconds.
-    fn arrive_seconds(&self) -> f32 {
-        let along = (self.width - WALL) - (self.width / 2.0 + NOTCH_HALF);
-        along.max(0.0) / RUN + (self.height - LEDGE) / CLIMB + 0.5
+    /// Where the robot hangs under the notch, in robot units with y up from the floor.
+    fn notch_spot(&self) -> (f32, f32) {
+        (self.width / 2.0, self.height - UNDER_NOTCH)
+    }
+
+    /// Where it lands: to the right of the middle, clear of the corner.
+    fn land_x(&self) -> f32 {
+        self.width * 0.68
     }
 }
 
@@ -260,58 +269,15 @@ fn finish(roam: &mut Roam) {
     roam.next_trip = Some(now + gap);
 }
 
-/// Where the robot is, in robot units with y measured up from the floor, and how it is
-/// turned (0 upright, 90 climbing the right wall).
-#[derive(Clone, Copy)]
-struct Spot {
-    x: f32,
-    y: f32,
-    turn: f32,
-}
-
-/// The robot's spot while arriving or heading home along the top edge and the right wall,
-/// `along` seconds into that journey. `None` once the journey is over.
-fn journey_spot(roam: &Roam, along: f32, home: bool) -> Option<Spot> {
-    let (width, height) = (roam.width, roam.height);
-    let start_x = width / 2.0 + NOTCH_HALF;
-    let wall_x = width - WALL;
-    let top_y = height - LEDGE;
-    let walk = (wall_x - start_x).max(0.0) / RUN;
-    let climb = (top_y - 0.0) / CLIMB;
-    let total = walk + climb + 0.5;
-    if along >= total {
-        return None;
+/// The robot in flight, if it is flying: arriving from the notch before the play begins,
+/// or heading home after it.
+fn flight(roam: &Roam, now: f32, started: f32) -> Option<suit::Flight> {
+    let (notch_x, top_y) = roam.notch_spot();
+    match (roam.play_from, roam.home_from) {
+        (_, Some(home_from)) => suit::departure(now - home_from, roam.launch_x, notch_x, top_y),
+        (None, None) => suit::arrival(now - started, notch_x, top_y, roam.land_x()),
+        _ => None,
     }
-    // Home is the arrival played backwards: up the wall, then left along the top.
-    let at = if home { total - along } else { along };
-    Some(if at < walk {
-        Spot {
-            x: start_x + (wall_x - start_x) * (at / walk.max(0.01)),
-            y: top_y,
-            turn: 0.0,
-        }
-    } else if at < walk + 0.25 {
-        // Swinging round onto the wall.
-        Spot {
-            x: wall_x,
-            y: top_y,
-            turn: 90.0 * ease((at - walk) / 0.25),
-        }
-    } else if at < walk + 0.25 + climb {
-        Spot {
-            x: wall_x,
-            y: top_y - (at - walk - 0.25) * CLIMB,
-            turn: 90.0,
-        }
-    } else {
-        // A little hop off the wall onto the floor.
-        let hop = ((at - walk - 0.25 - climb) / 0.25).clamp(0.0, 1.0);
-        Spot {
-            x: wall_x - hop * 4.0,
-            y: (hop * PI).sin() * 4.0,
-            turn: 90.0 * (1.0 - hop),
-        }
-    })
 }
 
 /// The robot's spot in the playground in physical pixels, for hit testing.
@@ -358,7 +324,7 @@ enum Play {
     /// Curled up on the battery.
     Battery,
     Rest,
-    /// Running to the right wall to climb home.
+    /// Suiting up to fly home.
     Leave,
 }
 
@@ -398,25 +364,22 @@ fn step(roam: &mut Roam, now: f32, started: f32) {
     let width = roam.width;
     let margin = 12.0;
 
-    // Arriving: nothing on the floor yet.
-    let arrive = roam.arrive_seconds();
-    if roam.home_from.is_none() && now - started < arrive {
+    // Flying in: nothing on the floor yet.
+    if roam.home_from.is_none() && now - started < suit::ARRIVE_SECONDS {
         return;
     }
-    let play_from = *roam.play_from.get_or_insert_with(|| {
-        // Landed by the right wall, the ball tumbling down after it.
-        now
-    });
+    let play_from = *roam.play_from.get_or_insert(now);
     if roam.robot_x == 0.0 && roam.ball_x == 0.0 {
-        roam.robot_x = width - WALL - 4.0;
-        roam.ball_x = width - WALL - 10.0;
-        roam.ball_y = 20.0;
-        roam.ball_vx = -RUN;
+        // Landed; the ball drops in beside it.
+        roam.robot_x = roam.land_x();
+        roam.ball_x = roam.land_x() - 14.0;
+        roam.ball_y = 40.0;
+        roam.ball_vx = -RUN * 0.6;
         roam.icon_x = width / 2.0 + (roam.random() - 0.5) * 60.0;
     }
-    if let Some(home_from) = roam.home_from {
-        // Climbing home: the journey is drawn from time alone.
-        if journey_spot(roam, now - home_from, true).is_none() {
+    if roam.home_from.is_some() {
+        // Flying home: drawn from time alone.
+        if flight(roam, now, started).is_none() {
             finish(roam);
         }
         return;
@@ -454,8 +417,7 @@ fn step(roam: &mut Roam, now: f32, started: f32) {
         Play::Icon => roam.icon_x,
         Play::Clock => width - CLOCK_FROM_RIGHT,
         Play::Battery => width - BATTERY_FROM_RIGHT,
-        Play::Rest => roam.robot_x,
-        Play::Leave => width - WALL,
+        Play::Rest | Play::Leave => roam.robot_x,
     };
     let gap = target - roam.robot_x;
     let speed = if matches!(play, Play::Mouse { .. }) {
@@ -474,8 +436,10 @@ fn step(roam: &mut Roam, now: f32, started: f32) {
     if roam.robot_v.abs() > 8.0 {
         roam.facing = roam.robot_v.signum();
     }
-    if play == Play::Leave && (roam.robot_x - (width - WALL)).abs() < 2.0 {
+    if play == Play::Leave {
+        // Suits up where it stands and takes off for home.
         roam.home_from = Some(now);
+        roam.launch_x = roam.robot_x;
         return;
     }
 
@@ -544,7 +508,13 @@ struct Frame {
     t: f32,
     /// Seconds into the play on the floor, if it has begun.
     play_t: Option<f32>,
-    journey: Option<Spot>,
+    /// The flight now and a few moments ago, for the smoke trail.
+    flight: Option<suit::Flight>,
+    trail: Vec<suit::Flight>,
+    /// Seconds since taking off for home, for the launch shockwave.
+    home_t: Option<f32>,
+    launch_x: f32,
+    land_x: f32,
     robot_x: f32,
     robot_v: f32,
     facing: f32,
@@ -571,15 +541,21 @@ pub(crate) fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32) {
         if !matches!(roam.phase, Phase::Out(_)) {
             return None;
         }
-        let journey = match (roam.play_from, roam.home_from) {
-            (_, Some(home_from)) => journey_spot(&roam, now - home_from, true),
-            (None, None) => journey_spot(&roam, now - started, false),
-            _ => None,
-        };
+        let flight_now = flight(&roam, now, started);
+        // Close-set puffs over the last half second, while the thrusters burn hard, so they
+        // merge into one plume.
+        let trail = (1..=TRAIL_PUFFS)
+            .filter_map(|back| flight(&roam, now - back as f32 * 0.025, started))
+            .filter(|past| past.thrust > 0.7)
+            .collect();
         Some(Frame {
             t: now - started,
             play_t: roam.play_from.map(|from| now - from),
-            journey,
+            flight: flight_now,
+            trail,
+            home_t: roam.home_from.map(|from| now - from),
+            launch_x: roam.launch_x,
+            land_x: roam.land_x(),
             robot_x: roam.robot_x,
             robot_v: roam.robot_v,
             facing: roam.facing,
@@ -606,29 +582,35 @@ pub(crate) fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32) {
         fade: 1.0,
     };
 
-    // On the way: along the top edge and down (or up) the right wall.
-    if let Some(spot) = frame.journey {
-        let stage = stage_at(spot.x, spot.y);
-        let mut pose = Pose::new(Eyes::Open(1.0, 0.4));
-        let step = (now * 12.0).sin();
-        pose.right_arm = if spot.turn > 45.0 { -0.4 + step * 0.5 } else { 0.7 + step * 0.6 };
-        pose.left_arm = if spot.turn > 45.0 { -0.4 - step * 0.5 } else { 0.7 - step * 0.6 };
-        pose.rise = step.abs() * 1.0;
-        let save = painter.save();
-        if spot.turn != 0.0 {
-            // Feet against the wall: turn about the feet.
-            let pivot = stage.at(0.0, 0.0);
-            painter.translate(Vec2::new(pivot.x, pivot.y));
-            painter.rotate_degrees(-spot.turn);
-            painter.translate(Vec2::new(-pivot.x, -pivot.y));
+    // In the air: the smoke trail, then the suited robot.
+    if let Some(flying) = frame.flight {
+        // Oldest first, so newer, brighter smoke sits on top.
+        for (index, past) in frame.trail.iter().enumerate().rev() {
+            let age = (index + 1) as f32 / (TRAIL_PUFFS + 1) as f32;
+            painter.fill_circle(
+                Point::new(past.x * unit, floor - (past.y - 1.0) * unit),
+                (1.4 + age * 3.4) * unit * past.scale,
+                Rgba::from_argb((70.0 * (1.0 - age)) as u8, 225, 225, 232),
+            );
         }
-        stage.robot(pose);
-        painter.restore_to(save);
+        // Blast-off from the floor on the way home.
+        if let Some(home_t) = frame.home_t {
+            let boost = home_t - suit::DEPART_SECONDS + 2.8;
+            suit::shockwave(painter, Point::new(frame.launch_x * unit, floor), unit, boost / 0.8);
+        }
+        stage_at(flying.x, flying.y).fly(flying, now);
         return;
     }
     let Some(play_t) = frame.play_t else {
         return;
     };
+    // Just landed: a ring of dust, and the suit pieces flying off.
+    if play_t < 1.0 {
+        suit::shockwave(painter, Point::new(frame.land_x * unit, floor), unit, play_t);
+    }
+    if play_t < suit::UNSUIT_SECONDS {
+        stage_at(frame.robot_x, 0.0).unsuit(play_t / suit::UNSUIT_SECONDS);
+    }
     let play = play_at(play_t);
     let (ball_x, ball_y, spin) = frame.ball;
 
@@ -862,27 +844,25 @@ mod tests {
         }
         assert!(kicked, "the robot kicks the ball");
         assert!(visited.0 && visited.1, "it visits the clock and the battery");
-        assert_eq!(roam.phase, Phase::Home, "it climbs home");
+        assert_eq!(roam.phase, Phase::Home, "it flies home");
     }
 
     #[test]
-    fn the_journey_walks_the_top_climbs_the_wall_and_lands() {
-        let roam = Roam {
+    fn it_lands_where_the_flight_ends_and_takes_off_where_it_stands() {
+        let mut roam = Roam {
             width: 600.0,
             height: 300.0,
+            phase: Phase::Out(0.0),
             ..Roam::default()
         };
-        let first = journey_spot(&roam, 0.0, false).unwrap();
-        assert_eq!(first.turn, 0.0);
-        assert!(first.y > 250.0, "starts along the top");
-        let total = roam.arrive_seconds();
-        let climbing = journey_spot(&roam, total * 0.7, false).unwrap();
-        assert_eq!(climbing.turn, 90.0);
-        assert!(journey_spot(&roam, total + 0.1, false).is_none());
-        // Going home starts where arriving ended.
-        let landed = journey_spot(&roam, total - 0.01, false).unwrap();
-        let leaving = journey_spot(&roam, 0.01, true).unwrap();
-        assert!((landed.x - leaving.x).abs() < 1.0 && (landed.y - leaving.y).abs() < 1.0);
+        let landing = flight(&roam, suit::ARRIVE_SECONDS - 0.01, 0.0).unwrap();
+        step(&mut roam, suit::ARRIVE_SECONDS + 0.01, 0.0);
+        assert!((roam.robot_x - landing.x).abs() < 1.0, "play starts where it landed");
+        roam.robot_x = 150.0;
+        roam.launch_x = 150.0;
+        roam.home_from = Some(100.0);
+        let takeoff = flight(&roam, 100.0, 0.0).unwrap();
+        assert_eq!(takeoff.x, 150.0);
     }
 
     #[test]

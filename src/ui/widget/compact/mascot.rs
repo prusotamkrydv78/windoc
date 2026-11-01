@@ -10,6 +10,7 @@
 mod extras;
 pub(crate) mod life;
 pub(crate) mod roam;
+mod suit;
 
 use std::cell::RefCell;
 use std::f32::consts::{PI, TAU};
