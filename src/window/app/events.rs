@@ -106,6 +106,7 @@ impl App {
                 PlatformEvent::DroppedFile { path, .. } => {
                     log::info!("File dropped on shelf");
                     self.file_drag_hover = false;
+                    crate::ui::widget::compact::mascot::life::file_dropped();
                     self.push_drop_activity(
                         path.file_name()
                             .map(|name| name.to_string_lossy().into_owned()),

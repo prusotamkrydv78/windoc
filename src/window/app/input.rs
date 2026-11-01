@@ -505,9 +505,8 @@ impl App {
                             slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)
                         });
                     if robot_resting && !self.expanded {
-                        crate::ui::widget::compact::mascot::react(
-                            crate::ui::widget::compact::mascot::Reaction::Jump,
-                        );
+                        // A hop, or a spin for a double-click.
+                        crate::ui::widget::compact::mascot::life::clicked();
                     } else {
                         self.expand();
                     }

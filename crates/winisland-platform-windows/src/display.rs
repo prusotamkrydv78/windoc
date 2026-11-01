@@ -134,6 +134,34 @@ fn rect(value: RECT) -> Rect {
     }
 }
 
+/// The foreground window's executable name, such as `Code.exe`, and whether it covers its
+/// whole monitor. `None` for no window or one of our own.
+pub fn foreground_app() -> Option<(String, bool)> {
+    // SAFETY: Read-only queries on the current foreground window.
+    let process_id = unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        process_id
+    };
+    if process_id == 0 || process_id == std::process::id() {
+        return None;
+    }
+    let executable = crate::process::open(process_id)
+        .and_then(|process| crate::process::executable_name(*process))?;
+    // An empty target means any monitor.
+    let anywhere = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    Some((executable, foreground_fullscreen(anywhere)))
+}
+
 fn foreground_fullscreen(target: Rect) -> bool {
     // SAFETY: All handles and buffers are used only for synchronous read-only queries.
     unsafe {

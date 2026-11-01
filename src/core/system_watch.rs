@@ -29,6 +29,10 @@ pub struct WifiInfo {
 pub struct SystemSnapshot {
     pub microphone: bool,
     pub camera: bool,
+    /// The foreground app's executable, such as `Code.exe`, empty for none or our own.
+    pub foreground_app: String,
+    /// Whether the foreground window covers its whole monitor (a video or a game).
+    pub foreground_fullscreen: bool,
     pub do_not_disturb: bool,
     pub battery: Option<(u8, bool)>,
     /// Taskbar-style app windows.
@@ -205,9 +209,13 @@ impl Sampler {
             push(&mut self.upload_history, up as f32);
         }
 
+        let (foreground_app, foreground_fullscreen) =
+            winisland_platform_windows::foreground_app().unwrap_or_default();
         SystemSnapshot {
             microphone,
             camera,
+            foreground_app,
+            foreground_fullscreen,
             do_not_disturb: crate::platform::do_not_disturb(),
             battery: crate::platform::battery(),
             apps: shell_bar::app_windows(),

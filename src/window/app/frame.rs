@@ -133,7 +133,12 @@ impl App {
         if self.weather.poll(&self.config, now) {
             window.request_redraw();
         }
-        crate::ui::dashboard::set_weather(self.weather.summary(&self.config));
+        let weather = self.weather.summary(&self.config);
+        // An umbrella or sunglasses for the robot, when weather is on.
+        crate::ui::widget::compact::mascot::life::set_weather(
+            weather.as_ref().map(|summary| summary.condition_key),
+        );
+        crate::ui::dashboard::set_weather(weather);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::Weather) {
             crate::ui::dashboard::set_weather_rows(self.weather.detail_rows(&self.config));
             crate::ui::dashboard::set_weather_hourly(
@@ -353,6 +358,8 @@ impl App {
         let interaction_suppressed = cursor_interaction_suppressed
             || (self.fullscreen_hide_active() && !self.hide.overlay_reveal);
         let is_hovering_visible = !interaction_suppressed && is_hovering_island;
+        // Resting the cursor on the collapsed notch gets the robot's attention.
+        crate::ui::widget::compact::mascot::life::hovering(is_hovering_visible && !self.expanded);
         let is_on_hidden_reveal = !interaction_suppressed
             && is_over_hidden_reveal
             && self.config.hidden_width <= MIN_HIDDEN_WIDTH
@@ -1947,6 +1954,10 @@ impl App {
             self.config.robot_pc_reactions,
             &self.config.birthday,
         );
+        crate::ui::widget::compact::mascot::life::set_look(
+            self.config.robot_color,
+            self.config.robot_accessory,
+        );
         let media = self.current_media_info();
         let playing_track = media.is_playing.then(|| media.title.clone());
         crate::ui::widget::compact::mascot::set_context(
@@ -1959,6 +1970,12 @@ impl App {
         let system = crate::core::system_watch::snapshot();
         if system.sampled {
             crate::ui::widget::compact::mascot::set_system(system.online, system.cpu_percent);
+            // Typing along in an editor, a headset in a meeting, popcorn for a video.
+            crate::ui::widget::compact::mascot::life::set_activity(
+                &system.foreground_app,
+                system.foreground_fullscreen,
+                system.microphone || system.camera,
+            );
         }
         if crate::core::screenshot_watch::poll_downloads(std::time::Instant::now()).is_some() {
             crate::ui::widget::compact::mascot::react(
@@ -1976,6 +1993,7 @@ impl App {
         {
             // The robot holds up the new picture; the tall card grows the notch for it.
             crate::core::chime::play(crate::core::chime::Sound::Shutter);
+            crate::ui::widget::compact::mascot::life::screenshot_taken();
             let name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())

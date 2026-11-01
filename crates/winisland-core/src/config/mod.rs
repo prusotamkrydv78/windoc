@@ -145,6 +145,26 @@ pub struct AppConfig {
     #[educe(Default = true)]
     #[setting(toggle, label = "robot_pc_reactions")]
     pub robot_pc_reactions: bool,
+    /// The robot's shell colour: 0 cream, 1 mint, 2 sky, 3 blush, 4 lilac.
+    #[setting(choice(
+        0 => "robot_color_cream",
+        1 => "robot_color_mint",
+        2 => "robot_color_sky",
+        3 => "robot_color_blush",
+        4 => "robot_color_lilac",
+    ), label = "robot_color")]
+    pub robot_color: u8,
+    /// What the robot wears: 0 nothing, 1 the newest it has unlocked, then the scarf, the
+    /// glasses or the cap once unlocked.
+    #[educe(Default = 1)]
+    #[setting(choice(
+        0 => "robot_accessory_none",
+        1 => "robot_accessory_auto",
+        2 => "robot_accessory_scarf",
+        3 => "robot_accessory_glasses",
+        4 => "robot_accessory_cap",
+    ), label = "robot_accessory")]
+    pub robot_accessory: u8,
     /// The user.s birthday as `MM-DD`, for a cake on the day. Empty when not set.
     pub birthday: String,
     /// Tiny sounds with the robot's reactions. Off by default; never during Do Not Disturb.

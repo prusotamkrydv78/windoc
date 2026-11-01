@@ -2,6 +2,13 @@
 //! goes about its day, sipping chai, typing, reading, watering a plant, stretching, looking
 //! around, waving and napping, a scene at a time. It works on its laptop while a Focus
 //! timer runs and sleeps under the moon at night. Greetings use its waving pose.
+//!
+//! It also notices what the user is doing (typing along in a code editor, a headset on in a
+//! meeting, popcorn for a fullscreen video), has a mood that builds over the day, remembers
+//! Focus streaks and milestones (see `core::mascot_memory`), and slowly unlocks accessories.
+
+mod extras;
+pub(crate) mod life;
 
 use std::cell::RefCell;
 use std::f32::consts::{PI, TAU};
@@ -23,6 +30,14 @@ const ROBOT_HEIGHT: f32 = 22.0;
 const ARM_LENGTH: f32 = 5.6;
 
 const SHELL: (u8, u8, u8) = (242, 238, 228);
+/// Shell colours to choose from in Settings: cream, mint, sky, blush and lilac.
+const SHELLS: [(u8, u8, u8); 5] = [
+    SHELL,
+    (208, 238, 218),
+    (206, 224, 248),
+    (248, 214, 218),
+    (226, 216, 248),
+];
 const SCREEN: (u8, u8, u8) = (14, 14, 16);
 const FEET: (u8, u8, u8) = (178, 178, 182);
 const WHITE: (u8, u8, u8) = (255, 255, 255);
@@ -57,6 +72,32 @@ enum Scene {
     /// Headphones on, nodding along.
     Groove,
     Night,
+    /// The microphone or camera is in use: a headset on, listening quietly at the laptop.
+    Meeting,
+    /// A fullscreen video or game is in front: leaning back with popcorn.
+    Popcorn,
+}
+
+/// A prop a scene sets out, so neighbouring scenes that share one skip the walk off and on.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Prop {
+    Laptop,
+    Cushion,
+}
+
+impl Scene {
+    fn prop(self) -> Option<Prop> {
+        match self {
+            Self::Laptop | Self::Meeting => Some(Prop::Laptop),
+            Self::Nap | Self::Night => Some(Prop::Cushion),
+            _ => None,
+        }
+    }
+}
+
+/// Whether `next` can follow `scene` in place, without walking off and back on.
+fn shares_props(scene: Scene, next: Scene) -> bool {
+    scene == next || scene.prop().is_some_and(|prop| next.prop() == Some(prop))
 }
 
 /// The daytime order: a hello, then chai, then the rest of the day.
@@ -115,6 +156,9 @@ pub(crate) fn set_context(
         react(Reaction::WelcomeBack);
     }
     nudge(away, focus_running);
+    let active_seconds = CONTEXT.with(|context| context.borrow().active_since)
+        .map(|since| seconds() - since);
+    life::tick(focus_running, away, active_seconds);
     CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.name != name {
@@ -179,6 +223,24 @@ pub(crate) enum Reaction {
     NewYear,
     /// The user's birthday: a party hat and a cake with candles.
     Birthday,
+    /// A long stretch of steady work: arms up, "On a roll!".
+    Cheer,
+    /// Still up after 1 am: a yawn and a point at the moon.
+    Bedtime,
+    /// Double-clicked: a spin.
+    Trick,
+    /// The cursor rested on it: it looks up and waves.
+    Notice,
+    /// A file was parked on the Shelf: it catches a falling page.
+    Catch,
+    /// Focus sessions on consecutive days: a little flame.
+    Streak,
+    /// Once a week: last week's focus hours on a little chart.
+    Recap,
+    /// A clipboard milestone (100, 500, 1000 copies): a starred note and confetti.
+    Milestone,
+    /// The first screenshot of the day: a camera flash.
+    FirstShot,
 }
 
 impl Reaction {
@@ -203,6 +265,13 @@ impl Reaction {
             Self::Christmas => Some("reaction_christmas"),
             Self::NewYear => Some("reaction_new_year"),
             Self::Birthday => Some("reaction_birthday"),
+            Self::Cheer => Some("reaction_cheer"),
+            Self::Bedtime => Some("nudge_bedtime"),
+            Self::Catch => Some("reaction_caught"),
+            Self::Streak => Some("reaction_streak"),
+            Self::Recap => Some("reaction_recap"),
+            Self::Milestone => Some("reaction_milestone"),
+            Self::FirstShot => Some("reaction_first_shot"),
             _ => None,
         }
     }
@@ -221,8 +290,21 @@ impl Reaction {
             Self::Charging | Self::Drive => 4.0,
             Self::Copied => 3.0,
             Self::Surprised => 2.6,
+            Self::Cheer => 4.0,
+            Self::Bedtime => 5.0,
+            Self::Trick => 1.6,
+            Self::Notice => 2.4,
+            Self::Catch => 3.0,
+            Self::Streak | Self::Recap | Self::Milestone => 5.0,
+            Self::FirstShot => 3.5,
         }
     }
+}
+
+/// The caption for `key`, with the current reaction's number (a streak, hours, a count)
+/// filled in where the text has a `{0}`.
+fn caption_text(key: &str) -> String {
+    winisland_core::i18n::tr_args(key, &[&life::caption_arg()])
 }
 
 thread_local! {
@@ -253,6 +335,12 @@ impl Reaction {
             | Self::NewYear
             | Self::Birthday => 0.0,
             Self::Celebrate => 0.0,
+            Self::Cheer => 1800.0,
+            Self::Bedtime => 3600.0,
+            Self::Trick => 1.5,
+            Self::Notice => 30.0,
+            Self::Catch => 3.0,
+            Self::Streak | Self::Recap | Self::Milestone | Self::FirstShot => 0.0,
         }
     }
 
@@ -262,7 +350,24 @@ impl Reaction {
 }
 
 thread_local! {
-    static LAST_PLAYED: std::cell::Cell<[Option<f32>; 24]> = const { std::cell::Cell::new([None; 24]) };
+    static LAST_PLAYED: std::cell::Cell<[Option<f32>; ALL_REACTIONS.len()]> =
+        const { std::cell::Cell::new([None; ALL_REACTIONS.len()]) };
+    /// A reaction to play once the current one ends, such as a streak after a celebration.
+    static QUEUED: std::cell::Cell<Option<Reaction>> = const { std::cell::Cell::new(None) };
+}
+
+/// Plays `reaction` right after the reaction that is about to start or is playing.
+fn queue_after(reaction: Reaction) {
+    QUEUED.with(|cell| cell.set(Some(reaction)));
+}
+
+/// Plays `reaction` after the current one, or now if nothing is playing.
+fn queue(reaction: Reaction) {
+    if REACTION.with(std::cell::Cell::get).is_some() {
+        QUEUED.with(|cell| cell.set(Some(reaction)));
+    } else {
+        react(reaction);
+    }
 }
 
 /// Whether `reaction` may play now; records it as played if so.
@@ -281,7 +386,29 @@ fn cooled_down(reaction: Reaction) -> bool {
 
 /// Plays `reaction` the next time the robot is on screen, replacing any earlier one.
 pub(crate) fn react(reaction: Reaction) {
+    // Remembering (breaks, Focus sessions, copies) happens whether or not it shows; a
+    // milestone can take the reaction's place.
+    let reaction = life::on_reaction(reaction);
     if !allowed(reaction) {
+        return;
+    }
+    // In a meeting the robot keeps quiet: only things the user should know about show.
+    if life::activity() == life::Activity::Meeting
+        && matches!(
+            reaction,
+            Reaction::Cheer
+                | Reaction::Bedtime
+                | Reaction::Water
+                | Reaction::StretchBreak
+                | Reaction::Lunch
+                | Reaction::WrapUp
+                | Reaction::Diwali
+                | Reaction::Holi
+                | Reaction::Christmas
+                | Reaction::NewYear
+                | Reaction::Birthday
+        )
+    {
         return;
     }
     if !cooled_down(reaction) {
@@ -304,7 +431,14 @@ pub(crate) fn react(reaction: Reaction) {
         Reaction::Water | Reaction::StretchBreak | Reaction::Lunch | Reaction::WrapUp => {
             Some(Sound::Reminder)
         }
+        Reaction::Bedtime => Some(Sound::Reminder),
+        Reaction::Streak | Reaction::Milestone | Reaction::Recap => Some(Sound::Done),
+        Reaction::Catch => Some(Sound::Copy),
         Reaction::Jump
+        | Reaction::Trick
+        | Reaction::Notice
+        | Reaction::Cheer
+        | Reaction::FirstShot
         | Reaction::WelcomeBack
         | Reaction::Diwali
         | Reaction::Holi
@@ -333,7 +467,8 @@ fn active_reaction(time: f32, alpha: u8) -> Option<(Reaction, f32)> {
         };
         let elapsed = time - started;
         if elapsed >= reaction.seconds() {
-            cell.set(None);
+            // The next queued reaction, if any, starts as this one ends.
+            cell.set(QUEUED.with(std::cell::Cell::take).map(|next| (next, None)));
             return None;
         }
         Some((reaction, elapsed))
@@ -503,12 +638,21 @@ fn allowed(reaction: Reaction) -> bool {
         | Reaction::Christmas
         | Reaction::NewYear
         | Reaction::Birthday => preferences.festive,
-        Reaction::Celebrate | Reaction::Trophy | Reaction::WelcomeBack | Reaction::Jump => true,
+        Reaction::Cheer | Reaction::Bedtime => preferences.nudges,
+        Reaction::Catch | Reaction::FirstShot | Reaction::Milestone => preferences.pc_reactions,
+        Reaction::Celebrate
+        | Reaction::Trophy
+        | Reaction::WelcomeBack
+        | Reaction::Jump
+        | Reaction::Trick
+        | Reaction::Notice
+        | Reaction::Streak
+        | Reaction::Recap => true,
     }
 }
 
 /// Every reaction, in the order the Settings preview plays them.
-const ALL_REACTIONS: [Reaction; 22] = [
+const ALL_REACTIONS: [Reaction; 31] = [
     Reaction::MouseArrived,
     Reaction::Charging,
     Reaction::Surprised,
@@ -531,6 +675,15 @@ const ALL_REACTIONS: [Reaction; 22] = [
     Reaction::Christmas,
     Reaction::NewYear,
     Reaction::Birthday,
+    Reaction::Cheer,
+    Reaction::Bedtime,
+    Reaction::Trick,
+    Reaction::Notice,
+    Reaction::Catch,
+    Reaction::Streak,
+    Reaction::Recap,
+    Reaction::Milestone,
+    Reaction::FirstShot,
 ];
 
 /// Plays the next reaction in turn right away, ignoring settings and cooldowns.
@@ -761,6 +914,21 @@ fn current_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
     (DAY[index % DAY.len()], time % scene_seconds())
 }
 
+/// The scene for `time`, after what the user is doing and the robot's mood have had their
+/// say: a meeting or a fullscreen video takes over, an editor means typing along, and the
+/// mood swaps some daytime scenes for others.
+fn day_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
+    let (scene, elapsed) = current_scene(time, hour, focus_running);
+    let scene = match life::activity() {
+        life::Activity::Meeting => Scene::Meeting,
+        life::Activity::Fullscreen => Scene::Popcorn,
+        life::Activity::Editor => Scene::Laptop,
+        life::Activity::Idle if scene == Scene::Night => scene,
+        life::Activity::Idle => life::mood_scene(scene, life::mood()),
+    };
+    (scene, elapsed)
+}
+
 fn greeting(name: &str) -> String {
     if name.is_empty() {
         "Hi".to_string()
@@ -822,8 +990,10 @@ fn scene_shift(scene: Scene, elapsed: f32, length: f32, (from, to): (f32, f32)) 
     if matches!(scene, Scene::Night) {
         return 0.0;
     }
-    let enter = 1.0 - ease(elapsed / ENTER_SECONDS);
-    let exit = 1.0 - ease((length - elapsed) / EXIT_SECONDS);
+    // Sleepy walks are slow, happy ones brisk.
+    let pace = life::walk_pace(life::mood());
+    let enter = 1.0 - ease(elapsed / (ENTER_SECONDS * pace));
+    let exit = 1.0 - ease((length - elapsed) / (EXIT_SECONDS * pace));
     // Ease in harder on the way out so it sets off gently.
     -enter * from + exit * exit * to
 }
@@ -847,6 +1017,8 @@ struct Pose {
     rise: f32,
     /// Lean in degrees around the feet.
     lean: f32,
+    /// A headset over the head, for meetings.
+    headset: bool,
 }
 
 impl Pose {
@@ -859,6 +1031,7 @@ impl Pose {
             left_arm: Self::REST,
             rise: 0.0,
             lean: 0.0,
+            headset: false,
         }
     }
 }
@@ -869,10 +1042,12 @@ struct Hands {
     left: Point,
 }
 
-/// A blink every few seconds turns open eyes shut for a moment.
+/// A blink every few seconds turns open eyes shut for a moment; sleepy eyes blink slower
+/// and more often.
 fn blink(eyes: Eyes, time: f32) -> Eyes {
+    let (period, length) = life::blink_timing(life::mood());
     match eyes {
-        Eyes::Open(..) if (time % 3.7) < 0.13 => Eyes::Closed,
+        Eyes::Open(..) if (time % period) < length => Eyes::Closed,
         other => other,
     }
 }
@@ -887,11 +1062,16 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         (context.name.clone(), context.focus_running)
     });
     let away = CONTEXT.with(|context| context.borrow().away);
+    // Neighbouring scenes, to skip the walk when they share the props (or are the same
+    // scene, as when the user stays in a meeting or an editor).
+    let (mut before, mut after) = (None, None);
     let (scene, elapsed, length) = match dancing(time) {
         _ if away => (Scene::Nap, scene_seconds() / 2.0, scene_seconds()),
         Some(elapsed) => music_scene(elapsed),
         None => {
-            let (scene, elapsed) = current_scene(time, hour, focus_running);
+            let (scene, elapsed) = day_scene(time, hour, focus_running);
+            before = Some(day_scene(time - elapsed - 0.01, hour, focus_running).0);
+            after = Some(day_scene(time - elapsed + scene_seconds() + 0.01, hour, focus_running).0);
             (scene, elapsed, scene_seconds())
         }
     };
@@ -904,7 +1084,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         let caption = reaction.caption_key().map_or(0.0, |key| {
             11.0 * unit
                 + FontManager::global().measure_text_cached(
-                    &winisland_core::i18n::tr(key),
+                    &caption_text(key),
                     CAPTION_SIZE * unit,
                     winisland_render::FontStyle::bold(),
                 )
@@ -952,6 +1132,8 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::Paint => 31.0,
         Scene::Dance => 13.0,
         Scene::SipWater | Scene::Groove => 13.0,
+        Scene::Meeting => 26.0,
+        Scene::Popcorn => 14.0,
     };
     let left_reach = 10.0;
     // Wide scenes shrink just enough to fit the slot; the rest use the full height.
@@ -959,8 +1141,19 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
     let home = rect.left + (offset + left_reach) * unit;
     let shift = if walk == 0.0 {
-        let distances = walk_distances(home, unit, left_reach, reach);
-        scene_shift(scene, elapsed, length, distances)
+        let (from, to) = walk_distances(home, unit, left_reach, reach);
+        // A neighbour that shares the props takes over in place, without a walk.
+        let from = if before.is_some_and(|before| shares_props(before, scene)) {
+            0.0
+        } else {
+            from
+        };
+        let to = if after.is_some_and(|after| shares_props(scene, after)) {
+            0.0
+        } else {
+            to
+        };
+        scene_shift(scene, elapsed, length, (from, to))
     } else {
         0.0
     };
@@ -995,6 +1188,8 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::LookAround => stage.look_around(),
         Scene::Nap => stage.sleep(evening),
         Scene::Night => stage.sleep(true),
+        Scene::Meeting => stage.meeting(),
+        Scene::Popcorn => stage.popcorn(),
         Scene::Paint => stage.paint(),
         Scene::Dance => stage.dance(),
         Scene::SipWater => stage.sip_water(),
@@ -1134,9 +1329,11 @@ impl Stage<'_> {
             left_shoulder.x - pose.left_arm.cos() * ARM_LENGTH * unit,
             left_shoulder.y + pose.left_arm.sin() * ARM_LENGTH * unit,
         );
-        self.line(right_shoulder, right, 2.4, self.color(1.0, SHELL));
-        self.line(left_shoulder, left, 2.4, self.color(1.0, SHELL));
-        painter.fill_round_rect(body, Radius::uniform(2.4 * unit), self.color(1.0, SHELL));
+        // The shell colour chosen in Settings; the face stays cream-white.
+        let shell = SHELLS[life::colour().min(SHELLS.len() - 1)];
+        self.line(right_shoulder, right, 2.4, self.color(1.0, shell));
+        self.line(left_shoulder, left, 2.4, self.color(1.0, shell));
+        painter.fill_round_rect(body, Radius::uniform(2.4 * unit), self.color(1.0, shell));
 
         // Head: a cream shell around a black screen, with a thicker chin like a monitor.
         let head = Rect::from_xywh(
@@ -1145,7 +1342,7 @@ impl Stage<'_> {
             16.0 * unit,
             13.6 * unit,
         );
-        painter.fill_round_rect(head, Radius::uniform(3.8 * unit), self.color(1.0, SHELL));
+        painter.fill_round_rect(head, Radius::uniform(3.8 * unit), self.color(1.0, shell));
         let screen = Rect::from_xywh(
             head.left + 2.0 * unit,
             head.top + 2.0 * unit,
@@ -1189,6 +1386,27 @@ impl Stage<'_> {
                 }
             }
         }
+        if pose.headset {
+            // A band over the top of the head and ear cups at its sides, a mic at the mouth.
+            let band = self.color(1.0, (60, 60, 70));
+            let top = Point::new(head.center_x(), head.top - 1.0 * unit);
+            for side in [-1.0, 1.0] {
+                let ear = Point::new(head.center_x() + side * 8.6 * unit, head.center_y());
+                self.line(top, Point::new(ear.x, ear.y - 2.0 * unit), 0.8, band);
+                painter.fill_round_rect(
+                    Rect::from_xywh(ear.x - 1.4 * unit, ear.y - 2.2 * unit, 2.8 * unit, 4.4 * unit),
+                    Radius::uniform(1.2 * unit),
+                    band,
+                );
+            }
+            self.line(
+                Point::new(head.center_x() + 8.6 * unit, head.center_y() + 1.6 * unit),
+                Point::new(head.center_x() + 4.0 * unit, head.bottom - 1.2 * unit),
+                0.5,
+                band,
+            );
+        }
+        self.wear(head, screen, body, eye_y);
         painter.restore_to(save);
         Hands { right, left }
     }
@@ -1452,10 +1670,28 @@ impl Stage<'_> {
                 );
             }
         }
-        // The plant grows through the scene.
+        // The plant grows through the scene, and a little taller for every day the robot has
+        // been looked after, flowering once fully grown.
+        let stage = crate::core::mascot_memory::plant_stage(life::active_days());
         let growth = 0.5 + 0.5 * ease(self.elapsed / (scene_seconds() * 0.7));
+        let height = 6.0 + f32::from(stage) * 0.8;
         let stem_base = self.at(22.0, -4.4);
-        let stem_top = self.at(22.0, -4.4 - 6.0 * growth);
+        let stem_top = self.at(22.0, -4.4 - height * growth);
+        if stage >= 5 {
+            for petal in 0..5 {
+                let angle = petal as f32 * TAU / 5.0 + self.time * 0.3;
+                self.painter.fill_circle(
+                    Point::new(
+                        stem_top.x + angle.cos() * 1.1 * self.unit,
+                        stem_top.y + angle.sin() * 1.1 * self.unit,
+                    ),
+                    0.8 * self.unit,
+                    self.prop(growth, (255, 150, 190)),
+                );
+            }
+            self.painter
+                .fill_circle(stem_top, 0.7 * self.unit, self.prop(growth, (255, 214, 90)));
+        }
         self.line(stem_base, stem_top, 0.9, self.prop(1.0, LEAF));
         for (side, height) in [(-1.0, 0.45), (1.0, 0.7), (-1.0, 0.95)] {
             let y = stem_base.y + (stem_top.y - stem_base.y) * height;
@@ -1802,7 +2038,7 @@ impl Stage<'_> {
     /// A short line of text beside the robot, fading in.
     fn caption(&self, key: &str, t: f32) {
         self.text(
-            &winisland_core::i18n::tr(key),
+            &caption_text(key),
             self.x + 11.0 * self.unit,
             self.mid + 3.0 * self.unit,
             CAPTION_SIZE,
@@ -2032,6 +2268,17 @@ impl Stage<'_> {
                 self.caption("reaction_trophy", t);
             }
             Reaction::Diwali => self.diwali(rect),
+            Reaction::Cheer
+            | Reaction::Bedtime
+            | Reaction::Trick
+            | Reaction::Notice
+            | Reaction::Catch
+            | Reaction::Streak
+            | Reaction::Recap
+            | Reaction::Milestone
+            | Reaction::FirstShot => {
+                self.react_more(reaction, rect);
+            }
             Reaction::Holi | Reaction::Christmas | Reaction::NewYear | Reaction::Birthday => {
                 self.festival(reaction, rect);
             }
