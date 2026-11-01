@@ -19,7 +19,8 @@ pub const STEPPER_BTN_SIZE: f32 = 28.0;
 pub const STEPPER_VALUE_W: f32 = 52.0;
 pub const STEPPER_GAP: f32 = 0.0;
 
-pub const POPUP_BTN_W: f32 = 112.0;
+/// Wide enough for choices such as "Display 1: Generic monitor" without cutting them off.
+pub const POPUP_BTN_W: f32 = 176.0;
 pub const POPUP_BTN_H: f32 = 28.0;
 /// Width of the trailing box in a text field row.
 pub const TEXT_FIELD_W: f32 = 200.0;

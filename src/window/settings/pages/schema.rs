@@ -16,7 +16,12 @@ impl<A> SettingsPage<A> {
             (Kind::Toggle, Value::Bool(on)) => SettingsItem::RowSwitch { label, on, enabled },
             (Kind::Number(number), Value::Number(value)) => SettingsItem::RowStepper {
                 label,
-                value: number.format(value),
+                // A font size of 0 means the default size, not zero.
+                value: if field == AppConfigField::FontSize && value == 0.0 {
+                    tr("value_auto")
+                } else {
+                    number.format(value)
+                },
                 enabled,
             },
             (Kind::Choice(choices), Value::Text(value)) => SettingsItem::RowSourceSelect {

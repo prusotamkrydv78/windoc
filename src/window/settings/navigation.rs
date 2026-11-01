@@ -60,7 +60,7 @@ pub(crate) const GENERAL_VIEWS: [GeneralView; 5] = [
     GeneralView {
         title: "nav_panel_tools",
         subtitle: "nav_panel_tools_hint",
-        icon: Icon::Grid,
+        icon: Icon::Clipboard,
         sections: &[
             "section_screen_time",
             "section_clipboard",
@@ -208,11 +208,20 @@ impl SettingsApp {
         let items = self.build_general_items();
         let ranges = self.general_view_ranges(&items);
         let mut items: Vec<Option<SettingsItem>> = items.into_iter().map(Some).collect();
-        ranges
+        let mut shown: Vec<SettingsItem> = ranges
             .into_iter()
             .flat_map(|range| range.collect::<Vec<_>>())
             .filter_map(|index| items[index].take())
-            .collect()
+            .collect();
+        // The page title already names the first section ("Appearance" under "Appearance"):
+        // keep its spacing but drop the repeated words.
+        let title = tr(GENERAL_VIEWS[self.general_view.min(GENERAL_VIEWS.len() - 1)].title);
+        if let Some(SettingsItem::SectionHeader { label }) = shown.first_mut()
+            && *label == title
+        {
+            label.clear();
+        }
+        shown
     }
 
     /// A click in a General view, mapped to the full General page: the scroll is offset for
@@ -455,7 +464,8 @@ impl SettingsApp {
                 } else {
                     page_icon_and_label(page).1
                 };
-                let place = if section_label.is_empty() {
+                // "Robot", not "Robot › Robot", when the section is named like its page.
+                let place = if section_label.is_empty() || section_label == place {
                     place
                 } else {
                     format!("{place} \u{203a} {section_label}")
