@@ -90,6 +90,16 @@ pub fn handle_key(destination: Destination, key: &Key) -> bool {
     route!(destination, handle_key(key), false)
 }
 
+/// Mouse wheel over the visible tab; `lines` is positive for wheel up. Only tabs with a
+/// scrolling list take it.
+pub fn scroll(destination: Destination, grid: Rect, point: Point, lines: f32) -> bool {
+    match destination {
+        Destination::Clipboard => clipboard::scroll(grid, point, lines),
+        Destination::Shelf => shelf::scroll(grid, point, lines),
+        _ => false,
+    }
+}
+
 /// Called every frame for every tab (visible or not): timers, background loads.
 pub fn poll_all(now: Instant) {
     clock::poll(now);

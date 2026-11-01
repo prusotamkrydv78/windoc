@@ -24,6 +24,12 @@ pub const CHECK: &str = "M5 12.5 L10 17 L19 7";
 pub const FOLDER: &str = "M3 6.5 H9.5 L11.5 9 H21 V19 H3 Z";
 pub const TRAY: &str = "M4 13 L6.5 5 H17.5 L20 13 V19 H4 Z M4 13 H9 L10 15 H14 L15 13 H20";
 pub const CONVERT: &str = "M5 9 H18 L15 6 M19 15 H6 L9 18";
+pub const SEARCH: &str = "M11 4 A7 7 0 1 1 10.99 4 M16 16 L20 20";
+pub const COPY: &str = "M9 9 H20 V20 H9 Z M6 15 H4 V4 H15 V6";
+pub const OPEN: &str = "M14 4 H20 V10 M20 4 L11 13 M18 14 V20 H4 V6 H10";
+pub const REVEAL: &str =
+    "M3 6.5 H9.5 L11.5 9 H21 V19 H3 Z M12 12 V16.5 M9.8 14.3 L12 16.5 L14.2 14.3";
+pub const FOLDER_PLUS: &str = "M3 6.5 H9.5 L11.5 9 H21 V19 H3 Z M12 11.5 V16.5 M9.5 14 H14.5";
 
 /// A text style with tabular figures off.
 pub const fn style(size: f32, weight: u16) -> TextStyle {
@@ -398,4 +404,77 @@ pub fn icon_button(
         square(Point::new(rect.center_x(), rect.center_y()), 16.0),
         color,
     );
+}
+
+/// A small rounded type badge (the file's colour with its short label), for list rows.
+pub fn badge(painter: Painter<'_>, rect: Rect, kind: &Kind, dim: bool) {
+    let fill = if dim {
+        kind.color.with_alpha(90)
+    } else {
+        kind.color
+    };
+    painter.fill_round_rect(rect, Radius::uniform(rect.height() * 0.26), fill);
+    let size = if kind.label.chars().count() > 3 {
+        rect.height() * 0.28
+    } else {
+        rect.height() * 0.33
+    };
+    text_center(
+        painter,
+        &kind.label,
+        style(size.max(8.0), 700),
+        rect,
+        Rgba::WHITE.with_alpha(if dim { 150 } else { 255 }),
+    );
+}
+
+/// Whether a blinking text caret is in its visible half.
+pub fn caret_visible() -> bool {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(true, |elapsed| {
+            (elapsed.as_millis() / 530).is_multiple_of(2)
+        })
+}
+
+/// A pill search field with a placeholder, the query and a caret.
+pub fn search_field(
+    painter: Painter<'_>,
+    rect: Rect,
+    query: &str,
+    placeholder: &str,
+    colors: &SemanticColors,
+) {
+    let radius = Radius::uniform(rect.height() / 2.0);
+    painter.fill_round_rect(rect, radius, colors.surface_raised);
+    painter.stroke_round_rect(rect, radius, 1.0, colors.border_strong);
+    glyph(
+        painter,
+        SEARCH,
+        square(Point::new(rect.left + 15.0, rect.center_y()), 14.0),
+        colors.text_secondary,
+    );
+    let text_left = rect.left + 28.0;
+    let text_rect = Rect::from_ltrb(text_left, rect.top, rect.right - 24.0, rect.bottom);
+    let style = winisland_render::tokens::typography::LABEL;
+    if query.is_empty() {
+        text(painter, placeholder, style, text_rect, colors.text_disabled);
+    } else {
+        text(painter, query, style, text_rect, colors.text_primary);
+    }
+    if caret_visible() {
+        let x = (text_left + text_width(query, style) + 1.0).min(text_rect.right);
+        painter.stroke_line(
+            Point::new(x, rect.center_y() - 7.0),
+            Point::new(x, rect.center_y() + 7.0),
+            1.2,
+            colors.accent_primary,
+            StrokeCap::Butt,
+        );
+    }
+}
+
+/// The close "x" area inside a [`search_field`].
+pub fn search_close(rect: Rect) -> Rect {
+    Rect::from_xywh(rect.right - 24.0, rect.top, 22.0, rect.height())
 }

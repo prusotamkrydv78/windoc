@@ -32,6 +32,7 @@ pub mod glyphs {
     pub const NOTE: &str = "M5 4 H19 V14 L13 20 H5 Z M13 20 V14 H19";
     pub const CHECK_BOX: &str = "M5 5 H19 V19 H5 Z M8.5 12 L11 14.5 L15.5 9.5";
     pub const BULLETS: &str = "M9 6 H20 M9 12 H20 M9 18 H20";
+    pub const DOWNLOAD: &str = "M12 4 V15 M7 10 L12 15 L17 10 M5 19 H19";
     pub const CHECK: &str = "M6 12.5 L10 16.5 L18 8";
     pub const CHEVRON_DOWN: &str = "M8 10 L12 14 L16 10";
 }
@@ -358,6 +359,15 @@ pub fn clock(time: SystemTime) -> String {
         other => other,
     };
     format!("{hour12}:{minute:02} {suffix}")
+}
+
+/// "59.4 KB".
+pub fn byte_size(bytes: u64) -> String {
+    match bytes {
+        0..1024 => format!("{bytes} B"),
+        1024..1_048_576 => format!("{:.1} KB", bytes as f64 / 1024.0),
+        _ => format!("{:.1} MB", bytes as f64 / 1_048_576.0),
+    }
 }
 
 /// "now", "4m ago", "23h ago", "3d ago", then the date.

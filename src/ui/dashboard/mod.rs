@@ -772,6 +772,24 @@ fn cards_for(active: Destination) -> &'static [SampleCard] {
     }
 }
 
+/// Mouse wheel over the visible tab, in device pixels like [`hit_test`]. `lines` is positive
+/// for wheel up. `true` when the tab scrolled (or at least claimed the wheel).
+pub fn scroll(
+    ox: f32,
+    oy: f32,
+    width: f32,
+    height: f32,
+    scale: f32,
+    point: Point,
+    lines: f32,
+) -> bool {
+    let layout = page_layout(width, height, scale);
+    let scale = scale.max(f32::EPSILON);
+    let local = Point::new((point.x - ox) / scale, (point.y - oy) / scale);
+    let active = PAGE.with(|page| page.borrow().active);
+    tabs::scroll(active, layout.grid, local, lines)
+}
+
 /// Hit test in device pixels for a page drawn at (`ox`, `oy`).
 pub fn hit_test(
     ox: f32,
