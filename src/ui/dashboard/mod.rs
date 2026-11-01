@@ -246,7 +246,7 @@ fn draw_clipboard_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec, draw_list_row};
+    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec};
     use winisland_render::tokens::Density;
     CLIPBOARD_VIEW.with(|view| {
         let view = view.borrow();
@@ -282,7 +282,7 @@ fn draw_clipboard_page(
             }
             let row = ListRowLayout::new(list.left, top, list.width(), spec);
             let subtitle = (!subtitle.is_empty()).then_some(subtitle.as_str());
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 title,
@@ -333,7 +333,7 @@ fn list_row(
     use winisland_render::tokens::Density;
     let spec = ListRowSpec {
         density: Density::Compact,
-        has_leading: false,
+        has_leading: ROW_ICON.with(Cell::get).is_some(),
         has_subtitle,
         trailing_width: 0.0,
     };
@@ -358,7 +358,7 @@ fn draw_more_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec, draw_list_row};
+    use crate::ui::components::list_row::{ListRowLayout, ListRowSpec};
     use winisland_render::tokens::Density;
     let spec = ListRowSpec {
         density: Density::Compact,
@@ -382,7 +382,7 @@ fn draw_more_page(
             hovered,
             ..InteractionState::default()
         };
-        draw_list_row(
+        draw_row(
             painter,
             &row,
             &tr(destination.label_key()),
@@ -505,7 +505,6 @@ fn draw_notes_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::draw_list_row;
     if editor::is_open() {
         editor::draw(painter, grid, colors);
         return;
@@ -513,7 +512,7 @@ fn draw_notes_page(
     NOTE_ROWS.with(|cell| {
         let rows = cell.borrow();
         let new_row = list_row(grid, 0, true);
-        draw_list_row(
+        draw_row(
             painter,
             &new_row,
             &tr("notes_new"),
@@ -530,7 +529,7 @@ fn draw_notes_page(
                 break;
             }
             let detail = (!detail.is_empty()).then_some(detail.as_str());
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 title,
@@ -741,11 +740,49 @@ fn page_layout(width: f32, height: f32, scale: f32) -> DashboardLayout {
         .collect();
     let mut layout =
         DashboardLayout::new(Rect::from_xywh(0.0, 0.0, width, height), size_class, &spans);
+    let active = PAGE.with(|page| page.borrow().active);
+    ROW_ICON.with(|cell| cell.set(row_icon(active)));
     // List pages sit inside one card with even padding, so nothing touches the panel edge.
-    if PAGE.with(|page| in_card(page.borrow().active)) {
+    if in_card(active) {
         layout.grid = layout.grid.inset(PAGE_PAD);
     }
     layout
+}
+
+thread_local! {
+    /// The icon at the start of every list row on the current page, if it has one.
+    static ROW_ICON: Cell<Option<crate::ui::components::icon::Icon>> = const { Cell::new(None) };
+}
+
+/// The icon that leads each row on `destination`'s list.
+fn row_icon(destination: Destination) -> Option<crate::ui::components::icon::Icon> {
+    use crate::ui::components::icon::Icon;
+    match destination {
+        Destination::Notes => Some(Icon::Notes),
+        Destination::Shelf => Some(Icon::Shelf),
+        Destination::Links => Some(Icon::Link),
+        Destination::Agenda => Some(Icon::Calendar),
+        Destination::Clock => Some(Icon::Clock),
+        Destination::AiUsage => Some(Icon::Chart),
+        Destination::Clipboard => Some(Icon::Clipboard),
+        _ => None,
+    }
+}
+
+/// A list row with the page's icon in a small tile at its start.
+fn draw_row(
+    painter: Painter<'_>,
+    row: &crate::ui::components::list_row::ListRowLayout,
+    title: &str,
+    subtitle: Option<&str>,
+    colors: &SemanticColors,
+    state: InteractionState,
+) {
+    crate::ui::components::list_row::draw_list_row(painter, row, title, subtitle, colors, state);
+    if let (Some(rect), Some(icon)) = (row.leading, ROW_ICON.with(Cell::get)) {
+        painter.fill_round_rect(rect, Radius::uniform(6.0), colors.surface_interactive);
+        crate::ui::components::icon::draw_icon(painter, icon, rect.inset(5.0), colors.text_secondary);
+    }
 }
 
 /// Padding between a page's card and its content.
@@ -1307,9 +1344,15 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
             draw_card_value(painter, &card_layout, &value, &detail, colors);
         }
         if card.kind == CardKind::Focus
-            && let Some(progress) = focus.as_ref().and_then(|view| view.progress)
+            && let Some(view) = focus.as_ref()
         {
-            draw_progress_ring(painter, card_layout.content, 1.0 - progress, colors);
+            if view.state == TimerState::Running
+                && let Some(progress) = view.progress
+            {
+                draw_progress_ring(painter, card_layout.content, 1.0 - progress, colors);
+            } else {
+                draw_start_button(painter, card_layout.content, colors);
+            }
         }
         if card.kind == CardKind::ScreenTime {
             draw_mini_week(painter, card_layout.content, colors);
@@ -1757,7 +1800,6 @@ pub fn set_world_clocks(keys: &[String]) {
 }
 
 fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
-    use crate::ui::components::list_row::draw_list_row;
     WORLD_CLOCKS.with(|cell| {
         let keys = cell.borrow();
         if keys.is_empty() {
@@ -1789,7 +1831,7 @@ fn draw_clock_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
             let time = winisland_platform_windows::now_in_zone(key)
                 .map(|now| format!("{:02}:{:02}", now.hour, now.minute))
                 .unwrap_or_else(|| "—".to_string());
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 &time,
@@ -1881,11 +1923,10 @@ fn draw_shelf_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::draw_list_row;
     SHELF.with(|cell| {
         let view = cell.borrow();
         let header = list_row(grid, 0, true);
-        draw_list_row(
+        draw_row(
             painter,
             &header,
             &view.name,
@@ -1922,7 +1963,7 @@ fn draw_shelf_page(
                 disabled: !exists,
                 ..InteractionState::default()
             };
-            draw_list_row(painter, &row, name, Some(detail.as_str()), colors, state);
+            draw_row(painter, &row, name, Some(detail.as_str()), colors, state);
         }
     });
 }
@@ -2065,7 +2106,6 @@ pub fn sync_ai_usage(
 }
 
 fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
-    use crate::ui::components::list_row::draw_list_row;
     AI_USAGE.with(|cell| {
         let view = cell.borrow();
         let empty = match view.key {
@@ -2084,12 +2124,43 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
             );
             return;
         }
-        for (index, (title, detail)) in view.rows.iter().enumerate() {
-            let row = list_row(grid, index, true);
-            if row.bounds.top >= grid.bottom {
+        // The headline figures as tiles across the top, the rest as a list below.
+        const TILES: usize = 4;
+        let tile_height = 56.0;
+        let gap = space::S2;
+        let tile_width = (grid.width() - gap * (TILES as f32 - 1.0)) / TILES as f32;
+        for (index, (title, detail)) in view.rows.iter().take(TILES).enumerate() {
+            let tile = Rect::from_xywh(
+                grid.left + index as f32 * (tile_width + gap),
+                grid.top,
+                tile_width,
+                tile_height,
+            );
+            painter.fill_round_rect(tile, Radius::uniform(radius::ROW), colors.surface_interactive);
+            draw_text(
+                painter,
+                title,
+                typography::BODY,
+                Rect::from_xywh(tile.left + 10.0, tile.top + 8.0, tile.width() - 20.0, 20.0),
+                Align::Start,
+                colors.text_primary,
+            );
+            draw_text(
+                painter,
+                detail,
+                typography::CAPTION,
+                Rect::from_xywh(tile.left + 10.0, tile.top + 30.0, tile.width() - 20.0, 16.0),
+                Align::Start,
+                colors.text_secondary,
+            );
+        }
+        let list = Rect::from_ltrb(grid.left, grid.top + tile_height + space::S3, grid.right, grid.bottom);
+        for (index, (title, detail)) in view.rows.iter().skip(TILES).enumerate() {
+            let row = list_row(list, index, true);
+            if row.bounds.bottom > list.bottom {
                 break;
             }
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 title,
@@ -2150,7 +2221,6 @@ fn draw_links_page(
     hovered_row: Option<usize>,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::draw_list_row;
     LINKS.with(|cell| {
         let links = cell.borrow();
         if links.is_empty() {
@@ -2175,7 +2245,7 @@ fn draw_links_page(
                 .nth(1)
                 .and_then(|rest| rest.split('/').next())
                 .unwrap_or(url);
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 name,
@@ -2218,7 +2288,6 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
     } else {
         grid
     };
-    use crate::ui::components::list_row::draw_list_row;
     WEATHER_ROWS.with(|cell| {
         let rows = cell.borrow();
         if rows.is_empty() {
@@ -2238,7 +2307,7 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
                 break;
             }
             let detail = (!detail.is_empty()).then_some(detail.as_str());
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 title,
@@ -2277,7 +2346,6 @@ fn draw_rows_page(
     grid: Rect,
     colors: &SemanticColors,
 ) {
-    use crate::ui::components::list_row::draw_list_row;
     rows.with(|cell| {
         let rows = cell.borrow();
         if rows.is_empty() {
@@ -2297,7 +2365,7 @@ fn draw_rows_page(
                 break;
             }
             let detail = (!detail.is_empty()).then_some(detail.as_str());
-            draw_list_row(
+            draw_row(
                 painter,
                 &row,
                 title,
@@ -4220,5 +4288,27 @@ fn draw_screen_time_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColo
                 colors.text_secondary
             },
         );
+    }
+}
+
+/// A round play button at the right of a card, for a timer that is not running.
+fn draw_start_button(painter: Painter<'_>, content: Rect, colors: &SemanticColors) {
+    let size = content.height().min(44.0);
+    if size < 20.0 {
+        return;
+    }
+    let center = Point::new(content.right - size / 2.0, content.bottom - size / 2.0);
+    painter.fill_circle(center, size / 2.0, colors.surface_interactive);
+    let half = size * 0.18;
+    if let Some(path) = winisland_render::Path::from_svg(&format!(
+        "M{} {} L{} {} L{} {} Z",
+        center.x - half * 0.7,
+        center.y - half,
+        center.x + half,
+        center.y,
+        center.x - half * 0.7,
+        center.y + half
+    )) {
+        painter.fill_path(&path, colors.text_primary);
     }
 }
