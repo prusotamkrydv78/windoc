@@ -118,6 +118,7 @@ impl App {
 
     pub(super) fn pager_contains(&self, rel_x: i32, rel_y: i32, layout: &IslandLayout) -> bool {
         self.expanded
+            && !self.config.notch_shape
             && self.current_page != ExpandedPage::Home
             && pager::contains(
                 self.island_rect(layout),

@@ -484,7 +484,9 @@ fn draw_pager(
     alpha: f32,
 ) {
     let pages = params.style.pages;
-    if alpha <= MIN_VISIBLE_OPACITY {
+    // As a notch the panel navigates with its own dock, so the old pager (a bar and a close
+    // button under the panel) is never shown.
+    if alpha <= MIN_VISIBLE_OPACITY || params.style.attached {
         return;
     }
     // The dashboard has its own dock; a second pager under it is just noise.
