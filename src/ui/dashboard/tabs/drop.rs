@@ -33,6 +33,7 @@ const FEEDBACK: Duration = Duration::from_millis(1600);
 
 const TITLE: TextStyle = style(16.0, 650);
 const NAME: TextStyle = style(13.0, 500);
+const BUTTON: TextStyle = style(12.0, 600);
 const URL: TextStyle = TextStyle {
     size: 11.0,
     weight: 400,
@@ -95,17 +96,17 @@ fn layout(grid: Rect) -> Layout {
     let left = Rect::from_xywh(grid.left, grid.top, left_w, grid.height());
     let right = Rect::from_ltrb(left.right + GAP, grid.top, grid.right, grid.bottom);
     let inner = left.inset(PAD);
-    let side = inner.height().min(inner.width() * 0.5).max(0.0);
+    let side = inner.height().min(inner.width() * 0.4).max(0.0);
     let qr = Rect::from_xywh(inner.left, inner.center_y() - side / 2.0, side, side);
     let info = Rect::from_ltrb(qr.right + PAD, inner.top, inner.right, inner.bottom);
-    let new_link_w = text_width("New link", typography::LABEL) + 40.0;
+    let new_link_w = text_width("New link", BUTTON) + 40.0;
     let new_link = Rect::from_xywh(info.left, info.top + 76.0, new_link_w.min(info.width()), 28.0);
     let wifi = Rect::from_ltrb(info.left, info.bottom - 16.0, info.right, info.bottom);
     let url = Rect::from_ltrb(info.left, wifi.top - 34.0, info.right, wifi.top - 6.0);
     let copy = Rect::from_ltrb(url.right - 28.0, url.top, url.right, url.bottom);
     let right_inner = right.inset(PAD);
     let header = Rect::from_xywh(right_inner.left, right_inner.top, right_inner.width(), 26.0);
-    let folder_w = text_width("Open folder", typography::LABEL) + 38.0;
+    let folder_w = text_width("Open folder", BUTTON) + 38.0;
     let open_folder = Rect::from_xywh(header.right - folder_w, header.top, folder_w, 26.0);
     let rows = Rect::from_ltrb(
         right_inner.left - 6.0,
@@ -206,7 +207,7 @@ fn button(
     } else {
         colors.text_secondary
     };
-    let label_w = text_width(label, typography::LABEL);
+    let label_w = text_width(label, BUTTON);
     let glyph_w = if svg.is_some() { 18.0 } else { 0.0 };
     let start = rect.center_x() - (label_w + glyph_w) / 2.0;
     if let Some(svg) = svg {
@@ -220,7 +221,7 @@ fn button(
     text(
         ctx.painter,
         label,
-        style(12.0, 600),
+        BUTTON,
         Rect::from_xywh(start + glyph_w, rect.top, label_w + 2.0, rect.height()),
         color,
     );
@@ -280,14 +281,14 @@ fn draw_link_card(
     let info = layout.info;
     text(
         painter,
-        "Scan with your phone",
+        "Scan with phone",
         TITLE,
         Rect::from_xywh(info.left, info.top, info.width(), 22.0),
         colors.text_primary,
     );
     text(
         painter,
-        "Point the camera at the code",
+        "Point the camera here",
         typography::LABEL,
         Rect::from_xywh(info.left, info.top + 22.0, info.width(), 17.0),
         colors.text_secondary,
@@ -386,7 +387,7 @@ fn draw_link_card(
     );
     text(
         painter,
-        "Phone and PC on the same Wi-Fi",
+        "Same Wi-Fi as this PC",
         typography::CAPTION,
         Rect::from_ltrb(
             layout.wifi.left + 20.0,
@@ -520,9 +521,9 @@ fn draw_steps(ctx: &TabContext<'_>, layout: &Layout) {
     let painter = ctx.painter;
     let colors = ctx.colors;
     let steps = [
-        "Scan the code with your phone camera",
-        "Pick files on the page that opens",
-        "They land in Downloads › WinIsland Drop",
+        "Scan the code",
+        "Pick photos or files",
+        "They land in Downloads",
     ];
     let left = layout.rows.left + 8.0;
     let right = layout.rows.right - 8.0;
@@ -548,7 +549,7 @@ fn draw_steps(ctx: &TabContext<'_>, layout: &Layout) {
     }
     text(
         painter,
-        "Files on your Shelf can be downloaded from the same page",
+        "Shelf files can be downloaded there too",
         typography::CAPTION,
         Rect::from_ltrb(left, top + 2.0, right, top + 18.0),
         colors.text_secondary,
