@@ -1,5 +1,7 @@
-//! Tiny generated sounds for the robot: soft sine notes with a quick fade, played on the
-//! default output device from a short-lived thread. No audio files are shipped.
+//! Tiny generated sounds for things the user should notice (charger, devices, downloads,
+//! network, breaks, finished sessions): soft sine notes with a quick fade, played on the
+//! default output device from a short-lived thread. Each event has its own sound so it can
+//! be told apart without looking. No audio files are shipped.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -7,37 +9,79 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-/// At most one sound this often, however many reactions fire.
-const MIN_GAP_MS: u64 = 30_000;
+/// The same sound at most this often, so a flapping device or network does not chatter.
+const MIN_GAP_MS: u64 = 4_000;
+/// Any sound at most this often, so two events at once do not overlap.
+const ANY_GAP_MS: u64 = 700;
 const VOLUME: f32 = 0.16;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
-static LAST_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_ANY_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_MS: [AtomicU64; Sound::COUNT] = [const { AtomicU64::new(0) }; Sound::COUNT];
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sound {
-    /// Two rising notes: hello, welcome back, charging.
-    Hello,
     /// A bright three-note arpeggio: a finished Focus session.
     Done,
-    /// Quick high chirps: the little mouse.
-    Squeak,
-    /// A short soft pop: something caught or saved.
-    Pop,
+    /// A short fanfare: a trophy for the day's third session.
+    Fanfare,
+    /// A rising power-up sweep: the charger went in.
+    PowerOn,
+    /// Two falling notes: the charger came out.
+    PowerOff,
+    /// Three slow falling notes: the battery is low.
+    LowBattery,
+    /// A low-high pair: a device (mouse, drive) was plugged in.
+    DeviceIn,
+    /// Two quick bright dings: a download finished.
+    Download,
+    /// A quick double click: a screenshot was saved.
+    Shutter,
+    /// A tiny tick: something was copied.
+    Copy,
+    /// A soft falling minor third: the internet dropped.
+    Offline,
+    /// A rising major third: the internet is back.
+    Online,
+    /// Two low pulses: the PC is working hard.
+    Warning,
+    /// A gentle bell: a water, stretch, lunch or wrap-up break.
+    Reminder,
 }
 
 impl Sound {
+    const COUNT: usize = 13;
+
+    fn index(self) -> usize {
+        self as usize
+    }
+
     /// `(frequency Hz, start s, length s)` for each note.
     fn notes(self) -> &'static [(f32, f32, f32)] {
         match self {
-            Self::Hello => &[(660.0, 0.0, 0.12), (880.0, 0.11, 0.18)],
             Self::Done => &[(784.0, 0.0, 0.12), (988.0, 0.1, 0.12), (1319.0, 0.2, 0.26)],
-            Self::Squeak => &[
-                (2400.0, 0.0, 0.05),
-                (2900.0, 0.08, 0.05),
-                (2600.0, 0.16, 0.06),
+            Self::Fanfare => &[
+                (523.0, 0.0, 0.1),
+                (659.0, 0.09, 0.1),
+                (784.0, 0.18, 0.1),
+                (1047.0, 0.27, 0.34),
             ],
-            Self::Pop => &[(520.0, 0.0, 0.08)],
+            Self::PowerOn => &[
+                (440.0, 0.0, 0.07),
+                (554.0, 0.05, 0.07),
+                (659.0, 0.1, 0.07),
+                (880.0, 0.15, 0.2),
+            ],
+            Self::PowerOff => &[(784.0, 0.0, 0.1), (523.0, 0.1, 0.2)],
+            Self::LowBattery => &[(659.0, 0.0, 0.14), (587.0, 0.16, 0.14), (440.0, 0.32, 0.3)],
+            Self::DeviceIn => &[(392.0, 0.0, 0.09), (784.0, 0.09, 0.16)],
+            Self::Download => &[(1175.0, 0.0, 0.12), (1568.0, 0.12, 0.22)],
+            Self::Shutter => &[(1900.0, 0.0, 0.025), (1400.0, 0.06, 0.035)],
+            Self::Copy => &[(1320.0, 0.0, 0.04)],
+            Self::Offline => &[(587.0, 0.0, 0.14), (494.0, 0.14, 0.26)],
+            Self::Online => &[(523.0, 0.0, 0.12), (659.0, 0.12, 0.22)],
+            Self::Warning => &[(330.0, 0.0, 0.12), (330.0, 0.2, 0.12)],
+            Self::Reminder => &[(880.0, 0.0, 0.5), (1320.0, 0.0, 0.35)],
         }
     }
 }
@@ -53,20 +97,23 @@ fn now_ms() -> u64 {
         .map_or(0, |time| time.as_millis() as u64)
 }
 
-/// Plays `sound` if sounds are on and none played in the last half minute.
+/// Plays `sound` if sounds are on and it has not just played.
 pub fn play(sound: Sound) {
     if !ENABLED.load(Ordering::Relaxed) {
         return;
     }
     let now = now_ms();
-    let last = LAST_MS.load(Ordering::Relaxed);
+    let slot = &LAST_MS[sound.index()];
+    let last = slot.load(Ordering::Relaxed);
     if now.saturating_sub(last) < MIN_GAP_MS
-        || LAST_MS
+        || now.saturating_sub(LAST_ANY_MS.load(Ordering::Relaxed)) < ANY_GAP_MS
+        || slot
             .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
             .is_err()
     {
         return;
     }
+    LAST_ANY_MS.store(now, Ordering::Relaxed);
     let _ = std::thread::Builder::new()
         .name("winisland-chime".into())
         .spawn(move || {
@@ -137,7 +184,22 @@ mod tests {
 
     #[test]
     fn sounds_stay_quiet_and_end_silent() {
-        for sound in [Sound::Hello, Sound::Done, Sound::Squeak, Sound::Pop] {
+        for sound in [
+            Sound::Done,
+            Sound::Fanfare,
+            Sound::PowerOn,
+            Sound::PowerOff,
+            Sound::LowBattery,
+            Sound::DeviceIn,
+            Sound::Download,
+            Sound::Shutter,
+            Sound::Copy,
+            Sound::Offline,
+            Sound::Online,
+            Sound::Warning,
+            Sound::Reminder,
+        ] {
+            assert!(sound.index() < Sound::COUNT);
             for step in 0..2000 {
                 assert!(sample(sound, step as f32 / 4000.0).abs() <= VOLUME * 3.0);
             }

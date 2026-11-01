@@ -289,26 +289,33 @@ pub(crate) fn react(reaction: Reaction) {
     if !cooled_down(reaction) {
         return;
     }
+    // Things the user should notice each get their own sound; the robot's own moments
+    // (being clicked, greetings, festivals) stay silent.
     use crate::core::chime::{Sound, play};
-    match reaction {
-        Reaction::MouseArrived => play(Sound::Squeak),
-        Reaction::Celebrate => play(Sound::Done),
-        Reaction::WelcomeBack | Reaction::Charging => play(Sound::Hello),
-        Reaction::Drive | Reaction::Surprised => play(Sound::Pop),
-        Reaction::Trophy
+    let sound = match reaction {
+        Reaction::MouseArrived | Reaction::Drive => Some(Sound::DeviceIn),
+        Reaction::Charging => Some(Sound::PowerOn),
+        Reaction::Surprised => Some(Sound::PowerOff),
+        Reaction::Copied => Some(Sound::Copy),
+        Reaction::Downloaded => Some(Sound::Download),
+        Reaction::Offline => Some(Sound::Offline),
+        Reaction::Online => Some(Sound::Online),
+        Reaction::HotCpu => Some(Sound::Warning),
+        Reaction::Celebrate => Some(Sound::Done),
+        Reaction::Trophy => Some(Sound::Fanfare),
+        Reaction::Water | Reaction::StretchBreak | Reaction::Lunch | Reaction::WrapUp => {
+            Some(Sound::Reminder)
+        }
+        Reaction::Jump
+        | Reaction::WelcomeBack
         | Reaction::Diwali
         | Reaction::Holi
         | Reaction::Christmas
         | Reaction::NewYear
-        | Reaction::Birthday => play(Sound::Done),
-        Reaction::Online => play(Sound::Hello),
-        Reaction::Downloaded => play(Sound::Pop),
-        Reaction::Jump | Reaction::Offline | Reaction::HotCpu => {}
-        Reaction::Copied
-        | Reaction::Water
-        | Reaction::StretchBreak
-        | Reaction::Lunch
-        | Reaction::WrapUp => {}
+        | Reaction::Birthday => None,
+    };
+    if let Some(sound) = sound {
+        play(sound);
     }
     REACTION.with(|cell| cell.set(Some((reaction, None))));
 }

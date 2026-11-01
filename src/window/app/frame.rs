@@ -1477,6 +1477,9 @@ impl App {
             && !self.is_hidden()
         {
             let low = !plugged && level <= LOW_BATTERY;
+            if low {
+                crate::core::chime::play(crate::core::chime::Sound::LowBattery);
+            }
             self.compact_overlay.push_activity(Activity {
                 icon: if low { Icon::PetTired } else { icon },
                 accent,
@@ -1963,7 +1966,7 @@ impl App {
             && !self.is_hidden()
         {
             // The robot holds up the new picture; the tall card grows the notch for it.
-            crate::core::chime::play(crate::core::chime::Sound::Pop);
+            crate::core::chime::play(crate::core::chime::Sound::Shutter);
             let name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
