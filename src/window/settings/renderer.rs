@@ -248,6 +248,9 @@ impl SettingsApp {
             self.draw_widget_drag_overlay(painter, win_w, win_h, &plugin_frames);
             self.draw_resource_editor(painter, &theme, win_w, win_h);
             self.draw_popup(painter, &theme);
+            if self.draw_character_preview(painter, &theme) {
+                self.request_redraw();
+            }
             painter.restore();
 
             let border_rect = Rect::from_xywh(0.5, 0.5, win_w - 1.0, win_h - 1.0);
@@ -455,6 +458,66 @@ impl SettingsApp {
                 StrokeJoin::Round,
             );
         }
+    }
+
+    /// While the Character list is open: a card beside it with the hovered (or chosen)
+    /// character waving, and its name. `true` while shown, so it keeps animating.
+    fn draw_character_preview(&self, painter: Painter<'_>, theme: &SettingsTheme) -> bool {
+        let Some(popup) = self.popup.as_ref() else {
+            return false;
+        };
+        if self.pending_setting != Some(winisland_core::config::AppConfigField::RobotCharacter) {
+            return false;
+        }
+        let index = popup.hover_idx.unwrap_or(popup.selected_idx);
+        let character = popup
+            .values
+            .get(index)
+            .and_then(|value| value.parse::<u8>().ok())
+            .unwrap_or(0);
+        let menu = popup.menu_rect();
+        let size = 190.0;
+        // Left of the list, level with its top, kept inside the window.
+        let card = Rect::from_xywh(
+            (menu.left - size - 12.0).max(SIDEBAR_W + 8.0),
+            menu.top.min(self.logical_window_size().1 - size - 46.0).max(8.0),
+            size,
+            size + 34.0,
+        );
+        let opacity = self.anim.get(POPUP_OPACITY_KEY);
+        painter.fill_round_rect(
+            card,
+            Radius::uniform(POPUP_MENU_R),
+            settings_color(theme.popup_bg).with_alpha((255.0 * opacity) as u8),
+        );
+        painter.stroke_round_rect(
+            card.inset(0.5),
+            Radius::uniform(POPUP_MENU_R),
+            1.0,
+            settings_color(theme.separator).with_alpha((255.0 * opacity) as u8),
+        );
+        // A soft spotlight behind the character.
+        let stage = Rect::from_xywh(card.left + 16.0, card.top + 14.0, size - 32.0, size - 24.0);
+        painter.fill_oval(
+            Rect::from_xywh(stage.left + 20.0, stage.bottom - 18.0, stage.width() - 40.0, 14.0),
+            Rgba::from_argb((50.0 * opacity) as u8, 0, 0, 0),
+        );
+        crate::ui::widget::compact::mascot::draw_character_preview(painter, stage, character);
+        if let Some(name) = popup.options.get(index) {
+            let width = FontManager::global().measure_text_cached(
+                name,
+                14.0,
+                winisland_render::FontStyle::bold(),
+            );
+            SettingsPainter::new(painter).text(
+                name,
+                (card.center_x() - width / 2.0, card.bottom - 14.0),
+                14.0,
+                true,
+                settings_color(theme.text_pri),
+            );
+        }
+        true
     }
 
     fn draw_page_header(&self, painter: Painter<'_>, theme: &SettingsTheme, win_w: f32) {

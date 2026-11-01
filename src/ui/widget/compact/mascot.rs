@@ -1221,6 +1221,30 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     }
 }
 
+/// Character `index` (as in Settings) waving, standing in `rect`, for previews. The notch's
+/// own character is left as it was.
+pub(crate) fn draw_character_preview(painter: Painter<'_>, rect: Rect, index: u8) {
+    let unit = rect.height() / (ROBOT_HEIGHT + 12.0);
+    let time = seconds();
+    let stage = Stage {
+        painter,
+        unit,
+        alpha: 255,
+        x: rect.center_x(),
+        floor: rect.bottom - 3.0 * unit,
+        mid: rect.center_y(),
+        time,
+        elapsed: time,
+        fade: 1.0,
+    };
+    characters::with_character(index, || {
+        let mut pose = Pose::new(Eyes::Happy);
+        pose.right_arm = -0.45 + (time / 0.9 * TAU).sin() * 0.45;
+        pose.rise = (time * 2.0).sin().abs() * 0.6;
+        stage.robot(pose);
+    });
+}
+
 /// What the robot does inside an activity card.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Gesture {

@@ -49,7 +49,24 @@ pub(crate) fn set_character(index: u8) {
     CHARACTER.with(|cell| cell.set(Character::from_index(index)));
 }
 
+/// Runs `draw` with character `index` in place, then puts the chosen one back.
+pub(super) fn with_character(index: u8, draw: impl FnOnce()) {
+    let previous = CHARACTER.with(|cell| cell.replace(Character::from_index(index)));
+    PREVIEWING.with(|cell| cell.set(true));
+    draw();
+    PREVIEWING.with(|cell| cell.set(false));
+    CHARACTER.with(|cell| cell.set(previous));
+}
+
+thread_local! {
+    /// Set while drawing a preview, so the demo hook does not override it.
+    static PREVIEWING: Cell<bool> = const { Cell::new(false) };
+}
+
 fn current() -> Character {
+    if PREVIEWING.with(Cell::get) {
+        return CHARACTER.with(Cell::get);
+    }
     // Test hook: WINISLAND_MASCOT_DEMO_CHARACTERS=1 (with WINISLAND_MASCOT_DEMO=1) shows each
     // character for three seconds in turn.
     if super::demo() && std::env::var_os("WINISLAND_MASCOT_DEMO_CHARACTERS").is_some() {

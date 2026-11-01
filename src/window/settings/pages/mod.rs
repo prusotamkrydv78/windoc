@@ -273,7 +273,9 @@ impl PageInput {
         item_index: usize,
         scroll_y: f32,
     ) -> Rect {
-        let button_x = SIDEBAR_W + CONTENT_PADDING + self.width - GROUP_INNER_PAD - POPUP_BTN_W;
+        // Measured inside the page margins, like the row draws it.
+        let content_w = self.width - CONTENT_PADDING * 2.0;
+        let button_x = SIDEBAR_W + CONTENT_PADDING + content_w - GROUP_INNER_PAD - POPUP_BTN_W;
         let button_y = self.row_top(page, item_index, scroll_y) + (ROW_HEIGHT - POPUP_BTN_H) / 2.0;
         Rect::from_xywh(button_x, button_y, POPUP_BTN_W, POPUP_BTN_H)
     }
@@ -284,7 +286,10 @@ impl PageInput {
         item_index: usize,
         scroll_y: f32,
     ) -> Rect {
-        let field_x = SIDEBAR_W + CONTENT_PADDING + self.width - GROUP_INNER_PAD - TEXT_FIELD_W;
+        // The same place the row draws its field (`trailing_control_rect`): measured inside
+        // the page margins, or the field never shows what is typed.
+        let content_w = self.width - CONTENT_PADDING * 2.0;
+        let field_x = SIDEBAR_W + CONTENT_PADDING + content_w - GROUP_INNER_PAD - TEXT_FIELD_W;
         let field_y = self.row_top(page, item_index, scroll_y) + (ROW_HEIGHT - POPUP_BTN_H) / 2.0;
         Rect::from_xywh(field_x, field_y, TEXT_FIELD_W, POPUP_BTN_H)
     }
