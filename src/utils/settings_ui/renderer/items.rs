@@ -685,15 +685,27 @@ fn draw_row_app_item(
     advance_group_row(ctx, y + ROW_HEIGHT, groups, visible);
 }
 
+/// A description, wrapped onto as many lines as it needs.
 fn draw_row_label(ctx: &ItemCtx, y: f32, label: &str, groups: &mut GroupRows) {
-    let (_, visible) = draw_row_text(
-        ctx,
-        y,
-        ROW_HEIGHT,
-        label,
-        settings_color(ctx.theme.text_sec),
-    );
-    advance_group_row(ctx, y + ROW_HEIGHT, groups, visible);
+    use crate::utils::settings_ui::items::{LABEL_LINE_H, LABEL_PAD, LABEL_SIZE, wrap_label};
+    let lines = wrap_label(label);
+    let height = (lines.len().max(1) as f32 * LABEL_LINE_H + LABEL_PAD * 2.0 - 4.0).max(ROW_HEIGHT);
+    let visible = ctx.row_visible(y, height);
+    if visible {
+        // Centre the block of lines in the row.
+        let block = lines.len() as f32 * LABEL_LINE_H;
+        let first = y + (height - block) / 2.0 + LABEL_LINE_H - 5.0;
+        for (index, line) in lines.iter().enumerate() {
+            SettingsPainter::new(ctx.painter).text(
+                line,
+                (CONTENT_PADDING + GROUP_INNER_PAD, first + index as f32 * LABEL_LINE_H),
+                LABEL_SIZE,
+                false,
+                settings_color(ctx.theme.text_sec),
+            );
+        }
+    }
+    advance_group_row(ctx, y + height, groups, visible);
 }
 
 fn draw_center_image(ctx: &ItemCtx, y: f32, height: f32, image: &Image, size: f32) {

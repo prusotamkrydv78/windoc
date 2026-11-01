@@ -135,9 +135,56 @@ pub enum SettingsItem {
     },
 }
 
+/// Description rows (`RowLabel`) wrap onto as many lines as they need.
+pub const LABEL_SIZE: f32 = 13.0;
+pub const LABEL_LINE_H: f32 = 18.0;
+/// Space above the first line and below the last.
+pub const LABEL_PAD: f32 = 13.0;
+
+thread_local! {
+    /// The width description text wraps to, set by the window whenever its width changes.
+    static LABEL_WRAP_W: std::cell::Cell<f32> = const { std::cell::Cell::new(520.0) };
+}
+
+/// Sets the width description rows wrap to, from the page's content width.
+pub fn set_label_wrap_width(content_width: f32) {
+    let width = content_width - CONTENT_PADDING * 2.0 - GROUP_INNER_PAD * 2.0;
+    LABEL_WRAP_W.with(|cell| cell.set(width.max(80.0)));
+}
+
+/// `text` broken into lines that fit the description width, breaking between words.
+pub fn wrap_label(text: &str) -> Vec<String> {
+    let width = LABEL_WRAP_W.with(std::cell::Cell::get);
+    let fonts = winisland_render::text::FontManager::global();
+    let measure =
+        |line: &str| fonts.measure_text_cached(line, LABEL_SIZE, winisland_render::FontStyle::normal());
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{line} {word}")
+        };
+        if measure(&candidate) <= width || line.is_empty() {
+            line = candidate;
+        } else {
+            lines.push(std::mem::replace(&mut line, word.to_string()));
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
 impl SettingsItem {
     pub fn height(&self) -> f32 {
         match self {
+            SettingsItem::RowLabel { label } => {
+                let lines = wrap_label(label).len().max(1) as f32;
+                (lines * LABEL_LINE_H + LABEL_PAD * 2.0 - 4.0).max(ROW_HEIGHT)
+            }
             SettingsItem::SectionHeader { .. } => 36.0,
             SettingsItem::GroupStart => 0.0,
             SettingsItem::GroupEnd => 16.0,

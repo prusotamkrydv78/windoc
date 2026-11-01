@@ -22,6 +22,8 @@ impl SettingsApp {
     }
 
     pub(crate) fn rebuild_items_cache(&mut self) {
+        // Descriptions wrap to the page's current width.
+        crate::utils::settings_ui::items::set_label_wrap_width(self.content_width());
         // A search shows its results on any page.
         self.cached_items = if self.search_active() {
             self.build_search_items()
