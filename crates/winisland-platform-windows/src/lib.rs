@@ -8,6 +8,7 @@ mod backdrop;
 mod clipboard;
 mod com;
 mod display;
+mod drag_out;
 pub mod dpapi;
 mod file;
 mod foreground;
@@ -28,6 +29,7 @@ pub use clipboard::{
     set_text as set_clipboard_text,
 };
 pub use display::{WindowsDisplay, foreground_app, monitor_areas_at};
+pub use drag_out::drag_files_out;
 pub use file::replace_file;
 pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};
 pub use input::WindowsInput;

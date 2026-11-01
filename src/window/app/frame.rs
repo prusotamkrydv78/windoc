@@ -37,6 +37,36 @@ const LYRIC_TRANSITION_STEP: f32 = 0.05;
 const LYRIC_TRANSITION_LEAD_MS: u64 = (1000.0 / (60.0 * LYRIC_TRANSITION_STEP as f64)) as u64;
 
 impl App {
+    /// Drags Shelf files out of the panel once a press on one moves a few pixels: a normal
+    /// Windows file drag, so they can be dropped on the desktop, into a folder, a chat or an
+    /// email. The files are copied (or linked), never moved off the shelf.
+    fn poll_drag_out(&mut self) {
+        const START_DISTANCE: i32 = 6;
+        let Some((_, (start_x, start_y))) = &self.drag_out else {
+            return;
+        };
+        if !self.input_pressed() {
+            self.drag_out = None;
+            return;
+        }
+        let (x, y) = crate::utils::mouse::get_global_cursor_pos();
+        if (x - start_x).abs().max((y - start_y).abs()) < START_DISTANCE {
+            return;
+        }
+        let Some((paths, _)) = self.drag_out.take() else {
+            return;
+        };
+        // Windows runs the drag here until the button comes up; the panel stays open.
+        match winisland_platform_windows::drag_files_out(&paths) {
+            Ok(dropped) => log::info!("Shelf drag out: dropped={dropped}"),
+            Err(error) => log::warn!("Shelf drag out failed: {error}"),
+        }
+        self.is_dragging = false;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn input_pressed(&self) -> bool {
         self.touch_id.is_some()
             || (self
@@ -113,6 +143,7 @@ impl App {
         self.poll_battery_activity(now);
         // The robot's playground draws every frame while it is out.
         self.frame_roam_window();
+        self.poll_drag_out();
         if self.file_drag_hover {
             // Keep the drop hint up for as long as the drag lasts.
             self.push_drop_activity(None);

@@ -381,6 +381,11 @@ impl App {
                     winisland_render::Point::new(rel_x as f32, rel_y as f32),
                 )
             {
+                // A Shelf file pressed here may be dragged out of the panel; the drag starts
+                // once the pointer moves (see `poll_drag_out`), so a click still selects it.
+                self.drag_out = crate::ui::dashboard::drag_paths(hit).map(|paths| {
+                    (paths, crate::utils::mouse::get_global_cursor_pos())
+                });
                 crate::ui::dashboard::apply(hit);
                 if let Some(window) = &self.window {
                     window.request_redraw();

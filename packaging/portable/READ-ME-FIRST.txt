@@ -33,7 +33,8 @@ clipboard history, weather and AI usage are off until you turn them on.
 
 Removing it
 -----------
-Quit Notchy (right-click the notch > Exit), turn off "Launch at startup" first if you
+Installed with Notchy-Setup: Settings > Apps > Notchy > Uninstall.
+Portable ZIP: quit Notchy (right-click the notch > Exit), turn off "Launch at startup" first if you
 turned it on, then delete this folder. To also remove your settings, delete
 %USERPROFILE%\.winisland.
 

@@ -1240,6 +1240,23 @@ pub fn scroll(grid: Rect, point: Point, lines: f32) -> bool {
 }
 
 /// Applies a click from [`hit`]. `true` when handled.
+/// The file under a row hit, if it can be dragged out of the shelf (it still exists).
+pub fn drag_paths(hit: DashboardHit) -> Option<Vec<PathBuf>> {
+    let DashboardHit::Tab(id) = hit else {
+        return None;
+    };
+    if id < ID_ROW || usize::from(id - ID_ROW) >= MAX_ROW_IDS {
+        return None;
+    }
+    with_state(|state| {
+        let model = build_model(state);
+        model
+            .item(state, usize::from(id - ID_ROW))
+            .filter(|item| item.exists)
+            .map(|item| vec![item.path.clone()])
+    })
+}
+
 pub fn apply(hit: DashboardHit) -> bool {
     let id = match hit {
         DashboardHit::Tab(id) if (600..700).contains(&id) => id,

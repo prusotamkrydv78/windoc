@@ -149,6 +149,9 @@ pub struct App {
     roam_target: Option<winisland_render::RendererTargetId>,
     roam_geometry: roam_window::RoamGeometry,
     roam_geometry_checked: Option<Instant>,
+    /// Shelf files pressed in the panel and where the press began, until the pointer moves
+    /// far enough to drag them out (or the button comes up).
+    drag_out: Option<(Vec<std::path::PathBuf>, (i32, i32))>,
     /// Hidden window receiving system broadcasts for the whole session.
     shell_listener: Option<winisland_platform_windows::shell_bar::ShellEventListener>,
     /// Active call: when it started and the calling app's name.
@@ -324,6 +327,7 @@ impl Default for App {
             roam_target: None,
             roam_geometry: roam_window::RoamGeometry::default(),
             roam_geometry_checked: None,
+            drag_out: None,
             shell_listener: None,
             call: None,
             call_muted: false,

@@ -932,6 +932,14 @@ pub fn set_hover(hit: Option<DashboardHit>) -> bool {
 
 /// Applies a click. The Focus card toggles the timer; other cards have no action until
 /// their modules exist.
+/// Files a press on `hit` could drag out of the panel (a Shelf row), if any.
+pub fn drag_paths(hit: DashboardHit) -> Option<Vec<std::path::PathBuf>> {
+    if PAGE.with(|page| page.borrow().active) != Destination::Shelf {
+        return None;
+    }
+    tabs::shelf::drag_paths(hit)
+}
+
 pub fn apply(hit: DashboardHit) {
     if tabs::apply(PAGE.with(|page| page.borrow().active), hit) {
         return;
