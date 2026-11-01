@@ -244,3 +244,62 @@ pub fn capture_in_use() -> (bool, bool) {
     }
     (in_use("microphone"), in_use("webcam"))
 }
+
+/// Bytes received and sent so far on all active, non-loopback interfaces, plus their total
+/// receive link speed in bits per second.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NetworkTotals {
+    pub received: u64,
+    pub sent: u64,
+    pub link_bits_per_second: u64,
+}
+
+/// Network counters split by direction, for live download and upload rates.
+pub fn network_totals() -> Option<NetworkTotals> {
+    let mut table = std::ptr::null_mut::<MIB_IF_TABLE2>();
+    // SAFETY: table is an initialized output pointer.
+    if unsafe { GetIfTable2(&mut table) }.0 != 0 || table.is_null() {
+        return None;
+    }
+    // SAFETY: A successful GetIfTable2 allocates a table with NumEntries rows.
+    let rows = unsafe {
+        std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize)
+    };
+    let mut totals = NetworkTotals::default();
+    for row in rows {
+        if row.OperStatus == IfOperStatusUp && row.Type != IF_TYPE_SOFTWARE_LOOPBACK {
+            totals.received = totals.received.saturating_add(row.InOctets);
+            totals.sent = totals.sent.saturating_add(row.OutOctets);
+            totals.link_bits_per_second = totals.link_bits_per_second.max(row.ReceiveLinkSpeed);
+        }
+    }
+    // SAFETY: table is the allocation returned by GetIfTable2 and is released once.
+    unsafe { FreeMibTable(table.cast::<c_void>()) };
+    Some(totals)
+}
+
+/// The connected Wi-Fi network: `(name, radio type such as "802.11ax", receive rate in Mbps)`,
+/// read from `netsh wlan show interfaces`. `None` when not on Wi-Fi.
+pub fn wifi_connection() -> Option<(String, String, Option<u32>)> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let output = std::process::Command::new("netsh")
+        .args(["wlan", "show", "interfaces"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let field = |name: &str| {
+        text.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim().eq_ignore_ascii_case(name)).then(|| value.trim().to_string())
+        })
+    };
+    if !field("State")?.eq_ignore_ascii_case("connected") {
+        return None;
+    }
+    let ssid = field("SSID")?;
+    let radio = field("Radio type").unwrap_or_default();
+    let rate = field("Receive rate (Mbps)").and_then(|rate| rate.split('.').next()?.parse().ok());
+    Some((ssid, radio, rate))
+}

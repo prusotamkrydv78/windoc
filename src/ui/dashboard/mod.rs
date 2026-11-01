@@ -11,6 +11,7 @@ pub mod editor;
 pub mod layout;
 pub mod palette;
 pub mod sample;
+pub mod system_page;
 
 use std::cell::{Cell, RefCell};
 
@@ -32,6 +33,10 @@ use winisland_core::focus::{
 /// What the pointer is over on the dashboard page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DashboardHit {
+    /// System tab: the volume slider at a percentage.
+    SystemVolume(u8),
+    /// System tab: the mute button.
+    SystemMute,
     Card(usize),
     Destination(Destination),
     /// Now playing controls: 0 previous, 1 play or pause, 2 next.
@@ -743,7 +748,11 @@ const PAGE_PAD: f32 = 16.0;
 fn in_card(destination: Destination) -> bool {
     !matches!(
         destination,
-        Destination::Home | Destination::Media | Destination::ScreenTime | Destination::Clipboard
+        Destination::Home
+            | Destination::Media
+            | Destination::ScreenTime
+            | Destination::Clipboard
+            | Destination::System
     )
 }
 
@@ -792,6 +801,11 @@ pub fn hit_test(
     }
     if PAGE.with(|page| page.borrow().active) == Destination::Home
         && let Some(hit) = hit_card_badge(&layout.cards, local)
+    {
+        return Some(hit);
+    }
+    if PAGE.with(|page| page.borrow().active) == Destination::System
+        && let Some(hit) = system_page::hit(layout.grid, local)
     {
         return Some(hit);
     }
@@ -853,6 +867,9 @@ pub fn apply(hit: DashboardHit) {
     }
     PAGE.with(|page| {
         let mut page = page.borrow_mut();
+        if system_page::apply(hit) {
+            return;
+        }
         if apply_card_badge(hit) {
             return;
         }
@@ -881,6 +898,8 @@ pub fn apply(hit: DashboardHit) {
                 }
                 crate::core::focus_store::save(&page.focus);
             }
+            // Applied by `system_page::apply` above.
+            DashboardHit::SystemVolume(_) | DashboardHit::SystemMute => {}
             DashboardHit::OpenSettings | DashboardHit::Close => {
                 HEADER_REQUEST.with(|cell| cell.set(Some(hit)));
             }
@@ -1009,6 +1028,8 @@ const STAGGER_RISE: f32 = 8.0;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Destination {
     Home,
+    /// Battery, network, performance and volume.
+    System,
     Media,
     Clipboard,
     Shelf,
@@ -1043,8 +1064,9 @@ impl Destination {
     ];
     /// The icon dock, in order: every module, like a launcher.
     /// Every page, as an icon row; each mode can hide the ones it does not need.
-    pub const DOCK: [Self; 13] = [
+    pub const DOCK: [Self; 14] = [
         Self::Home,
+        Self::System,
         Self::Media,
         Self::Clipboard,
         Self::Notes,
@@ -1061,7 +1083,8 @@ impl Destination {
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 12] = [
+    pub const MORE_ITEMS: [Self; 13] = [
+        Self::System,
         Self::Media,
         Self::Clipboard,
         Self::Shelf,
@@ -1080,6 +1103,7 @@ impl Destination {
     pub const fn subtitle_key(self) -> &'static str {
         match self {
             Self::Home | Self::More => "subtitle_home",
+            Self::System => "subtitle_system",
             Self::Media => "subtitle_media",
             Self::Clipboard => "subtitle_clipboard",
             Self::Shelf => "subtitle_shelf",
@@ -1099,6 +1123,7 @@ impl Destination {
         use crate::ui::components::icon::Icon;
         match self {
             Self::Home => Icon::Home,
+            Self::System => Icon::Grid,
             Self::Media => Icon::Music,
             Self::Clipboard => Icon::Clipboard,
             Self::Shelf => Icon::Shelf,
@@ -1118,6 +1143,7 @@ impl Destination {
     pub const fn label_key(self) -> &'static str {
         match self {
             Self::Home => "dashboard_home",
+            Self::System => "dashboard_system",
             Self::Media => "dashboard_media",
             Self::Clipboard => "dashboard_clipboard",
             Self::Shelf => "dashboard_shelf",
@@ -1250,6 +1276,9 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
         draw_clock_page(painter, layout.grid, colors);
     } else if active == Destination::AiUsage {
         draw_ai_usage_page(painter, layout.grid, colors);
+    } else if active == Destination::System {
+        let hover = PAGE.with(|page| page.borrow().hover);
+        system_page::draw(painter, layout.grid, hover, colors);
     } else if active == Destination::Weather {
         draw_weather_page(painter, layout.grid, colors);
     } else if active == Destination::Drop {

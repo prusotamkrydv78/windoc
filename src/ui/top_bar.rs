@@ -449,7 +449,7 @@ pub fn draw(painter: Painter<'_>, width: f32, height: f32, scale: f32, notch: (f
 /// 24x24 line glyphs for the status area (original artwork).
 pub(crate) const WIFI: &str =
     "M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a4.7 4.7 0 0 1 6.4 0M12 19.3h.01";
-const SPEAKER: &str =
+pub(crate) const SPEAKER: &str =
     "M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10";
 const BELL: &str = "M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15zM10 20.5a2.2 2.2 0 0 0 4 0";
 const CHEVRON: &str = "M7 14.5l5-5 5 5";

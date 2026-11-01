@@ -1,6 +1,6 @@
 use super::AppConfig;
 
-pub const CONFIG_VERSION: u32 = 4;
+pub const CONFIG_VERSION: u32 = 5;
 
 /// Smallest expanded panel that fits the standard dashboard layout comfortably.
 const MIN_DASHBOARD_WIDTH: f32 = 720.0;
@@ -40,6 +40,18 @@ pub fn migrate(config: &mut AppConfig, from_version: u32) -> bool {
         // cramped compact layout.
         config.expanded_width = config.expanded_width.max(MIN_DASHBOARD_WIDTH);
         config.expanded_height = config.expanded_height.max(MIN_DASHBOARD_HEIGHT);
+    }
+    if from_version < 5 {
+        // The System tab is new: show it in every existing workspace.
+        for workspace in &mut config.workspaces {
+            if !workspace
+                .modules
+                .iter()
+                .any(|module| module == "dashboard_system")
+            {
+                workspace.modules.insert(0, "dashboard_system".to_string());
+            }
+        }
     }
     true
 }

@@ -145,6 +145,20 @@ impl App {
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         crate::ui::dashboard::set_workspaces(&self.config.workspaces, self.config.active_workspace);
+        if let Some(request) = crate::ui::dashboard::system_page::take_request() {
+            // Audio calls block, so they run off the UI thread.
+            std::thread::spawn(move || {
+                let audio = crate::platform::audio();
+                let _ = match request {
+                    crate::ui::dashboard::system_page::SystemRequest::Volume(level) => {
+                        audio.set_volume(level)
+                    }
+                    crate::ui::dashboard::system_page::SystemRequest::ToggleMute => {
+                        audio.toggle_mute()
+                    }
+                };
+            });
+        }
         if let Some((workspaces, active)) = crate::ui::dashboard::take_workspace_change() {
             self.config.workspaces = workspaces;
             self.config.active_workspace = active;
@@ -1365,6 +1379,7 @@ impl App {
         // Blocking system queries run on the watcher thread; this only reads the snapshot.
         crate::core::system_watch::start();
         let system = crate::core::system_watch::snapshot();
+        crate::ui::dashboard::system_page::set_snapshot(system.clone());
         if self.config.auto_modes && !self.expanded {
             // Modes follow what you are doing; never while the panel is open.
             let clock = crate::platform::shell().local_datetime();

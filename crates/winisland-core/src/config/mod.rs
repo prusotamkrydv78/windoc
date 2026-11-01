@@ -313,6 +313,7 @@ fn default_workspaces() -> Vec<Workspace> {
         space(
             "Home",
             &[
+                "dashboard_system",
                 "dashboard_media",
                 "dashboard_weather",
                 "dashboard_agenda",
@@ -324,6 +325,7 @@ fn default_workspaces() -> Vec<Workspace> {
         space(
             "Work",
             &[
+                "dashboard_system",
                 "dashboard_focus",
                 "dashboard_agenda",
                 "dashboard_notes",
@@ -336,6 +338,7 @@ fn default_workspaces() -> Vec<Workspace> {
         space(
             "Code",
             &[
+                "dashboard_system",
                 "dashboard_ai_usage",
                 "dashboard_focus",
                 "dashboard_clipboard",
