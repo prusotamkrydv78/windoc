@@ -523,9 +523,6 @@ fn draw_edge_line(
 ) {
     // A slow, calm pass: each frame moves the light only a pixel or two.
     const PASS_SECONDS: f32 = 7.0;
-    // Many short flat-ended pieces join into one smooth line that tapers to its tail;
-    // round caps on a few long pieces showed as a row of blobs.
-    const PIECES: usize = 20;
     let opacity = 1.0 - params.layout.expansion_progress.clamp(0.0, 1.0);
     if opacity <= 0.01 {
         return;
@@ -557,32 +554,46 @@ fn draw_edge_line(
     let comet = 120.0 * scale;
     let travel = total + comet;
     let head = (crate::ui::top_bar::animation_seconds() / PASS_SECONDS * travel).rem_euclid(travel);
-    for piece in 0..PIECES {
-        let from = head - comet * (piece + 1) as f32 / PIECES as f32;
-        let to = head - comet * piece as f32 / PIECES as f32;
-        let segment = outline.segment(from.max(0.0), to.min(total));
-        if to <= 0.0 || from >= total || segment.is_empty() {
-            continue;
-        }
-        // Brightest at the head, easing out to nothing at the tail.
-        let t = 1.0 - piece as f32 / PIECES as f32;
-        let strength = opacity * t * t;
-        // Only the leading tip is rounded; everywhere else the pieces butt together.
-        let cap = if piece == 0 {
-            winisland_render::StrokeCap::Round
-        } else {
-            winisland_render::StrokeCap::Butt
-        };
-        // A narrow soft halo hugging the edge, then the bright core line.
-        for (width, alpha) in [(6.0, 45.0), (3.0, 110.0), (1.4, 240.0)] {
-            painter.stroke_path(
-                &segment,
-                width * scale,
-                color.with_alpha((alpha * strength) as u8),
-                cap,
-                winisland_render::StrokeJoin::Round,
-            );
-        }
+    // One continuous stroke per layer, faded by a gradient from the tail to the head: no
+    // joints, so no dots along the line.
+    let tail = head - comet;
+    let (start, end) = (tail.max(0.0), head.min(total));
+    if end <= start {
+        return;
+    }
+    let segment = outline.segment(start, end);
+    let (Some(from), Some(to)) = (outline.point_at(tail), outline.point_at(head)) else {
+        return;
+    };
+    if segment.is_empty() {
+        return;
+    }
+    // A narrow soft halo hugging the edge, then the bright core line.
+    for (width, alpha) in [(6.0, 45.0), (3.0, 110.0), (1.4, 240.0)] {
+        let peak = color.with_alpha((alpha * opacity) as u8);
+        let stops = [
+            winisland_render::GradientStop {
+                offset: 0.0,
+                color: peak.with_alpha(0),
+            },
+            winisland_render::GradientStop {
+                offset: 0.6,
+                color: peak.with_alpha((alpha * opacity * 0.4) as u8),
+            },
+            winisland_render::GradientStop {
+                offset: 1.0,
+                color: peak,
+            },
+        ];
+        painter.stroke_path_with_gradient(
+            &segment,
+            width * scale,
+            from,
+            to,
+            &stops,
+            winisland_render::StrokeCap::Round,
+            winisland_render::StrokeJoin::Round,
+        );
     }
 }
 

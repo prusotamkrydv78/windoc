@@ -229,6 +229,28 @@ impl<'a> Painter<'a> {
     }
 
     /// Strokes `path` with a Gaussian blur, for glows that follow a line.
+    /// Strokes `path` with a linear gradient running from `from` to `to`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_path_with_gradient(
+        &self,
+        path: &Path,
+        width: f32,
+        from: Point,
+        to: Point,
+        stops: &[GradientStop],
+        cap: StrokeCap,
+        join: StrokeJoin,
+    ) {
+        let Some(mut paint) = gradient_paint(from, to, stops, TileMode::Clamp) else {
+            return;
+        };
+        paint.set_style(skia_safe::paint::Style::Stroke);
+        paint.set_stroke_width(width);
+        paint.set_stroke_cap(to_skia_cap(cap));
+        paint.set_stroke_join(to_skia_join(join));
+        self.canvas.draw_path(path.as_skia(), &paint);
+    }
+
     pub fn stroke_path_blurred(&self, path: &Path, width: f32, color: Rgba, sigma: f32) {
         let mut paint = stroked(width, color);
         paint.set_stroke_cap(to_skia_cap(StrokeCap::Round));

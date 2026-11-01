@@ -242,6 +242,13 @@ impl Path {
             .map_or(0.0, |contour| contour.length())
     }
 
+    /// The point `distance` along the first contour, clamped to its ends.
+    pub fn point_at(&self, distance: f32) -> Option<crate::types::Point> {
+        let contour = skia_safe::ContourMeasureIter::new(&self.inner, false, None).next()?;
+        let (point, _) = contour.pos_tan(distance.clamp(0.0, contour.length()))?;
+        Some(crate::types::Point::new(point.x, point.y))
+    }
+
     /// The part of the first contour between `start` and `end` (distances along the path).
     pub fn segment(&self, start: f32, end: f32) -> Self {
         let Some(contour) = skia_safe::ContourMeasureIter::new(&self.inner, false, None).next()
