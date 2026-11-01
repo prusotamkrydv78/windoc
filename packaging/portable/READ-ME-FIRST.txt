@@ -1,0 +1,44 @@
+WinIsland — a dynamic island for Windows
+========================================
+
+Getting started
+---------------
+1. Unzip this folder somewhere you keep apps, for example
+   C:\Users\<you>\Apps\WinIsland  (not inside Downloads, not inside the ZIP).
+2. Double-click WinIsland.exe. A small notch appears at the top centre of your screen.
+3. Hover or click the notch to open the panel. Right-click it for Settings.
+
+"Windows protected your PC"
+---------------------------
+This build is not signed with a paid certificate yet, so Windows SmartScreen may warn the
+first time. Click "More info", then "Run anyway". It only asks once.
+
+Start with Windows
+------------------
+Settings > Behaviour > "Launch at startup".
+
+The taskbar
+-----------
+WinIsland can replace the Windows taskbar with its own bar. It is OFF at first.
+Turn it on in Settings > Taskbar if you want it.
+
+If anything goes wrong, start WinIsland with the --safe-mode option (for example from a
+shortcut: WinIsland.exe --safe-mode). It keeps the normal taskbar and turns optional
+features off, without changing your settings.
+
+Your data
+---------
+Settings and data live in  %USERPROFILE%\.winisland  on your PC only. Screen time,
+clipboard history, weather and AI usage are off until you turn them on.
+
+Removing it
+-----------
+Quit WinIsland (right-click the notch > Exit), turn off "Launch at startup" first if you
+turned it on, then delete this folder. To also remove your settings, delete
+%USERPROFILE%\.winisland.
+
+Licence
+-------
+WinIsland is free software under the GNU General Public License v3.0, derived from the
+GPL-3.0 WinIsland project. See the licenses folder. The source code is available from the
+person who gave you this copy.

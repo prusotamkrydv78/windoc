@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "WinIsland"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "base64 0.23.1",
  "cpal",
@@ -5414,7 +5414,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winisland-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -5437,11 +5437,11 @@ dependencies = [
 
 [[package]]
 name = "winisland-platform"
-version = "1.4.0"
+version = "1.5.0"
 
 [[package]]
 name = "winisland-platform-windows"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "dirs",
  "image",
@@ -5474,7 +5474,7 @@ dependencies = [
 
 [[package]]
 name = "winisland-plugin-host"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "libloading 0.9.0",
  "log",
@@ -5507,7 +5507,7 @@ dependencies = [
 
 [[package]]
 name = "winisland-render"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "image",
  "log",

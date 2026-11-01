@@ -50,8 +50,8 @@ pub struct AppConfig {
     #[setting(toggle)]
     pub notch_shape: bool,
     /// Replace the Windows taskbar with a top bar: reserves a strip at the top of the screen and
-    /// hides the classic taskbar while on. On by default; `--safe-mode` always keeps the normal taskbar.
-    #[educe(Default = true)]
+    /// hides the classic taskbar while on. Off for new installs, so a first run never takes the
+    /// taskbar away by surprise; `--safe-mode` always keeps the normal taskbar.
     #[setting(toggle)]
     pub top_bar: bool,
     /// Short notch activities: charging, copied, focus, meetings and file drops.
