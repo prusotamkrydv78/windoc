@@ -142,6 +142,7 @@ impl App {
         crate::ui::widget::compact::message::set(&self.config.status_message);
         crate::ui::theme::set(&self.config.ui_theme);
         crate::ui::island::set_edge_light(&self.config.edge_light);
+        crate::ui::island::set_notch_color(&self.config.notch_color);
         crate::ui::dashboard::set_links(&self.config.links);
         crate::ui::dashboard::set_hidden_modules(&self.config.hidden_modules);
         crate::ui::dashboard::set_workspaces(&self.config.workspaces, self.config.active_workspace);

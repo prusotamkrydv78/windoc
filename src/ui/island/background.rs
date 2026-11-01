@@ -36,7 +36,7 @@ pub(super) fn draw_background(params: BackgroundParams<'_, '_>) {
         host_backdrop,
         media,
     } = params;
-    let bg_color = Rgba::BLACK;
+    let bg_color = NOTCH_COLOR.with(std::cell::Cell::get);
     let fallback_color = Rgba::from_argb(205, 32, 32, 36);
 
     painter.save();
@@ -106,4 +106,22 @@ pub(super) fn draw_background(params: BackgroundParams<'_, '_>) {
         _ => draw_solid(painter, island_path, bg_color),
     }
     painter.restore();
+}
+
+thread_local! {
+    /// The solid notch's fill, from the Notch colour setting.
+    static NOTCH_COLOR: std::cell::Cell<Rgba> = const { std::cell::Cell::new(Rgba::BLACK) };
+}
+
+/// Applies the Notch colour setting: black, or a dark tint.
+pub(crate) fn set_notch_color(name: &str) {
+    let color = match name {
+        "graphite" => Rgba::from_rgb(24, 24, 27),
+        "midnight" => Rgba::from_rgb(10, 14, 32),
+        "plum" => Rgba::from_rgb(28, 14, 34),
+        "forest" => Rgba::from_rgb(10, 26, 18),
+        "espresso" => Rgba::from_rgb(30, 20, 14),
+        _ => Rgba::BLACK,
+    };
+    NOTCH_COLOR.with(|cell| cell.set(color));
 }

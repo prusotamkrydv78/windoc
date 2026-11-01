@@ -164,19 +164,6 @@ pub fn draw_island(
     draw_expanded_shadow(painter, &params, &island_path);
     draw_album_glow(painter, &params, rect);
     let edge_color = edge_light_color(&params);
-    if let Some(color) = edge_color {
-        // Soft glow behind the island; only the part outside its edge stays visible.
-        painter.fill_path_blurred(
-            &island_path,
-            color.with_alpha(
-                (110.0 * (1.0 - params.layout.expansion_progress).clamp(0.0, 1.0)) as u8,
-            ),
-            BlurSpec {
-                sigma: (7.0, 7.0),
-                tile: None,
-            },
-        );
-    }
     if params.attention_alpha > 0.0 {
         // Attention: a soft amber glow around the real notch shape, behind it, so only the
         // light spilling past the edge shows.
@@ -524,8 +511,9 @@ fn draw_pager(
     });
 }
 
-/// A thin line in the edge-light colour around the collapsed notch, over the glow. The top
-/// edge, where the notch meets the screen, stays unlit.
+/// A short light that runs along the collapsed notch's edge from the left shoulder, down,
+/// across the bottom and up to the right shoulder, then starts again: a bright core with a
+/// soft glow, brightest at its head and fading along its tail.
 fn draw_edge_line(
     painter: Painter<'_>,
     params: &DrawIslandParams<'_>,
@@ -533,27 +521,62 @@ fn draw_edge_line(
     island_path: &Path,
     color: Rgba,
 ) {
+    const PASS_SECONDS: f32 = 4.5;
+    const PIECES: usize = 6;
     let opacity = 1.0 - params.layout.expansion_progress.clamp(0.0, 1.0);
     if opacity <= 0.01 {
         return;
     }
-    let scale = params.layout.compact_scale.max(0.5);
-    let unlit_top = rect.top.max(0.0) + params.style.bar_height + 2.0 * scale;
-    painter.save();
-    painter.clip_rect(Rect::from_ltrb(
-        rect.left - 20.0 * scale,
-        unlit_top,
-        rect.right + 20.0 * scale,
-        rect.bottom + 20.0 * scale,
-    ));
-    painter.stroke_path(
-        island_path,
-        1.4 * scale,
-        color.with_alpha((220.0 * opacity) as u8),
-        winisland_render::StrokeCap::Round,
-        winisland_render::StrokeJoin::Round,
-    );
-    painter.restore();
+    let layout = &params.layout;
+    let scale = layout.compact_scale.max(0.5);
+    let outline = if params.style.attached {
+        let shoulder = notch_shoulder(layout.current_r, scale);
+        let bar = params.style.bar_height;
+        if bar > 0.0 {
+            let rect = Rect::from_ltrb(
+                rect.left,
+                rect.top,
+                rect.right,
+                rect.bottom.max(bar + 12.0 * scale),
+            );
+            Path::notch_outline(rect, bar, layout.current_r, shoulder)
+        } else {
+            Path::notch_outline(rect, rect.top.min(0.0), layout.current_r, shoulder)
+        }
+    } else {
+        island_path.clone()
+    };
+    let total = outline.length();
+    if total <= 1.0 {
+        return;
+    }
+    // The light enters on the left and fully leaves on the right before the next pass.
+    let comet = 90.0 * scale;
+    let travel = total + comet;
+    let head = (crate::ui::top_bar::animation_seconds() / PASS_SECONDS * travel).rem_euclid(travel);
+    for piece in 0..PIECES {
+        let from = head - comet * (piece + 1) as f32 / PIECES as f32;
+        let to = head - comet * piece as f32 / PIECES as f32;
+        let segment = outline.segment(from.max(0.0), to.min(total));
+        if to <= 0.0 || from >= total || segment.is_empty() {
+            continue;
+        }
+        let strength = opacity * (1.0 - piece as f32 / PIECES as f32);
+        painter.stroke_path(
+            &segment,
+            6.0 * scale,
+            color.with_alpha((60.0 * strength) as u8),
+            winisland_render::StrokeCap::Round,
+            winisland_render::StrokeJoin::Round,
+        );
+        painter.stroke_path(
+            &segment,
+            1.6 * scale,
+            color.with_alpha((235.0 * strength) as u8),
+            winisland_render::StrokeCap::Round,
+            winisland_render::StrokeJoin::Round,
+        );
+    }
 }
 
 fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
@@ -589,25 +612,37 @@ fn draw_island_border(painter: Painter<'_>, params: &DrawIslandParams<'_>) {
 }
 
 thread_local! {
-    /// Edge light mode: 0 off, 1 theme accent, 2 album art colour.
-    static EDGE_LIGHT: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    /// Edge light mode: 0 off, 1 theme accent, 2 album art colour, 3 a fixed colour.
+    static EDGE_LIGHT: std::cell::Cell<(u8, Rgba)> = const { std::cell::Cell::new((0, Rgba::WHITE)) };
 }
 
-/// Applies the configured edge light (`off`, `theme` or `music`).
+/// Applies the configured edge light: `off`, `theme`, `music` or a fixed colour.
 pub fn set_edge_light(mode: &str) {
-    EDGE_LIGHT.with(|cell| {
-        cell.set(match mode {
-            "theme" => 1,
-            "music" => 2,
-            _ => 0,
-        });
-    });
+    let setting = match mode {
+        "theme" => (1, Rgba::WHITE),
+        "music" => (2, Rgba::WHITE),
+        "white" => (3, Rgba::WHITE),
+        "amber" => (3, Rgba::from_rgb(255, 176, 32)),
+        "blue" => (3, Rgba::from_rgb(90, 170, 255)),
+        "green" => (3, Rgba::from_rgb(80, 210, 130)),
+        "pink" => (3, Rgba::from_rgb(255, 120, 180)),
+        _ => (0, Rgba::WHITE),
+    };
+    EDGE_LIGHT.with(|cell| cell.set(setting));
+}
+
+/// Applies the Notch colour setting.
+pub fn set_notch_color(name: &str) {
+    background::set_notch_color(name);
 }
 
 fn edge_light_color(params: &DrawIslandParams<'_>) -> Option<Rgba> {
-    let mode = EDGE_LIGHT.with(std::cell::Cell::get);
+    let (mode, fixed) = EDGE_LIGHT.with(std::cell::Cell::get);
     if mode == 0 || params.layout.hide_progress > 0.5 {
         return None;
+    }
+    if mode == 3 {
+        return Some(fixed);
     }
     if mode == 2 && params.media.music_active {
         if let Some(color) = get_media_palette(params.media.media).first() {

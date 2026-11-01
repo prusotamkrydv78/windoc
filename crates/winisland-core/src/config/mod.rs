@@ -71,8 +71,22 @@ pub struct AppConfig {
     #[setting(choice(30 => "30 FPS", 45 => "45 FPS", 60 => "60 FPS", 90 => "90 FPS"))]
     pub expanded_idle_fps: u32,
     /// "dynamic" washes the panel with a blurred copy of the album art.
-    #[educe(Default = "dynamic")]
+    #[educe(Default = "default")]
     pub island_style: String,
+    /// Fill of the solid notch; dark tints only, so it still reads as hardware.
+    #[educe(Default = "black")]
+    #[setting(
+        choice(
+            "black" => "notch_color_black",
+            "graphite" => "notch_color_graphite",
+            "midnight" => "notch_color_midnight",
+            "plum" => "notch_color_plum",
+            "forest" => "notch_color_forest",
+            "espresso" => "notch_color_espresso",
+        ),
+        label = "notch_color"
+    )]
+    pub notch_color: String,
     #[educe(Default = true)]
     #[setting(toggle, label = "smtc_control")]
     pub smtc_enabled: bool,
@@ -155,6 +169,11 @@ pub struct AppConfig {
         "off" => "edge_light_off",
         "theme" => "edge_light_theme",
         "music" => "edge_light_music",
+        "white" => "edge_light_white",
+        "amber" => "edge_light_amber",
+        "blue" => "edge_light_blue",
+        "green" => "edge_light_green",
+        "pink" => "edge_light_pink",
     ), label = "edge_light")]
     pub edge_light: String,
     /// Ctrl+Alt+H opens the island with the command palette (true) or hides it (false).

@@ -36,6 +36,8 @@ impl SettingsApp {
         }
         styles.push((tr("style_dynamic"), style == "dynamic"));
         page.row_source(tr("island_style"), styles, true, EffectsAction::IslandStyle);
+        // The fill only applies to the solid style; the others draw their own background.
+        page.setting(&self.config, AppConfigField::NotchColor, style == "default");
         if !host_backdrop {
             page.row_label(tr("platform_unavailable"));
         }
