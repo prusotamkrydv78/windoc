@@ -18,7 +18,7 @@ pub(super) const FRAME: Duration = Duration::from_millis(66);
 /// How long each daytime scene plays before the next one.
 const SCENE_SECONDS: f32 = 14.0;
 /// Props and captions fade in and out over this long at each scene change.
-const FADE_SECONDS: f32 = 0.4;
+const FADE_SECONDS: f32 = 0.7;
 const BREATH_SECONDS: f32 = 3.2;
 /// Height of the robot from its feet to the top of its head, in robot units.
 const ROBOT_HEIGHT: f32 = 22.0;
@@ -769,6 +769,32 @@ fn scene_fade(scene: Scene, elapsed: f32, length: f32) -> f32 {
     ease(elapsed / FADE_SECONDS) * ease((length - elapsed) / FADE_SECONDS)
 }
 
+/// How long the robot takes to walk on with a new scene, and off at its end.
+const ENTER_SECONDS: f32 = 1.1;
+const EXIT_SECONDS: f32 = 0.8;
+/// How far it walks, in robot units: enough to leave the notch.
+const STROLL: f32 = 40.0;
+
+/// A little hop per step while the robot is walking on or off, in robot units.
+fn step_bob(shift: f32, time: f32) -> f32 {
+    if shift.abs() < 0.5 {
+        return 0.0;
+    }
+    (time * 2.6 * TAU).sin().abs() * 1.2
+}
+
+/// Sideways offset in robot units at `elapsed` seconds into a scene: the robot carries the
+/// scene's props in from the left, then out to the right, so nothing pops into place.
+fn scene_shift(scene: Scene, elapsed: f32, length: f32) -> f32 {
+    if matches!(scene, Scene::Night) {
+        return 0.0;
+    }
+    let enter = 1.0 - ease(elapsed / ENTER_SECONDS);
+    let exit = 1.0 - ease((length - elapsed) / EXIT_SECONDS);
+    // Ease in harder on the way out so it sets off gently.
+    -enter * STROLL + exit * exit * STROLL
+}
+
 #[derive(Clone, Copy)]
 enum Eyes {
     Closed,
@@ -838,8 +864,8 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     };
     let fade = scene_fade(scene, elapsed, length);
     let evening = !(5..18).contains(&hour);
-    // The robot stands nearly the full height of the notch.
-    let unit = (rect.height() / 25.0).clamp(0.7 * scale, 1.8 * scale);
+    // The robot stands the full height of the notch, so it grows with a taller notch.
+    let unit = (rect.height() / 23.0).clamp(0.7 * scale, 3.0 * scale);
     if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
         set_slow(false);
         // Centre the robot and its caption together.
@@ -856,12 +882,16 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         } else {
             rect.center_x() - 4.0 * unit
         };
+        // It walks on with the reaction and off again, like a scene.
+        let shift = scene_shift(Scene::Wave, elapsed, reaction.seconds());
+        let save = painter.save();
+        painter.clip_rect(rect.inset(-2.0 * unit));
         let stage = Stage {
             painter,
             unit,
             alpha,
-            x,
-            floor: rect.center_y() + 11.0 * unit,
+            x: x + shift * unit,
+            floor: rect.center_y() + (11.0 - step_bob(shift, time)) * unit,
             mid: rect.center_y(),
             time,
             elapsed,
@@ -869,6 +899,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
                 * ease((reaction.seconds() - elapsed) / FADE_SECONDS),
         };
         stage.react(reaction, rect);
+        painter.restore_to(save);
         return;
     }
     // Centre each scene by its own width: robot plus props, or the greeting text.
@@ -892,14 +923,25 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::SipWater | Scene::Groove => 13.0,
     };
     let left_reach = 10.0;
+    // Wide scenes shrink just enough to fit the slot; the rest use the full height.
+    let unit = unit.min(rect.width() / (left_reach + reach + 2.0)).max(0.5 * scale);
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
+    let shift = if walk == 0.0 {
+        scene_shift(scene, elapsed, length)
+    } else {
+        0.0
+    };
+    // Walking on and off stays inside the notch's slot.
+    let save = painter.save();
+    painter.clip_rect(rect.inset(-2.0 * unit));
     let stage = Stage {
         painter,
         unit,
         alpha,
-        // After a card it walks back in from the side, carrying its scene.
-        x: rect.left + (offset + left_reach + walk) * unit,
-        floor: rect.center_y() + 11.0 * unit,
+        // After a card it walks back in from the side, carrying its scene; at each scene
+        // change it carries the old props out and the new ones in.
+        x: rect.left + (offset + left_reach + walk + shift) * unit,
+        floor: rect.center_y() + (11.0 - step_bob(shift, time)) * unit,
         mid: rect.center_y(),
         time,
         elapsed,
@@ -907,6 +949,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     };
     set_slow(
         walk == 0.0
+            && shift == 0.0
             && matches!(
                 scene,
                 Scene::Nap | Scene::Night | Scene::Read | Scene::LookAround
@@ -927,6 +970,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::SipWater => stage.sip_water(),
         Scene::Groove => stage.groove(),
     }
+    painter.restore_to(save);
 }
 
 /// What the robot does inside an activity card.
@@ -2702,6 +2746,23 @@ mod tests {
         assert_eq!(diwali_offset(2026, 11, 12), None);
         assert_eq!(diwali_offset(2026, 10, 28), None);
         assert_eq!(diwali_offset(2027, 10, 29), Some(0));
+    }
+
+    #[test]
+    fn robot_walks_on_and_off_at_scene_edges() {
+        // Starts off to the left, stands in place mid-scene, ends off to the right.
+        assert!(scene_shift(Scene::Chai, 0.0, SCENE_SECONDS) <= -STROLL + 0.01);
+        assert_eq!(scene_shift(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS), 0.0);
+        assert!(scene_shift(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS) >= STROLL - 0.01);
+        // Moves steadily in, never overshooting.
+        let mut last = scene_shift(Scene::Chai, 0.0, SCENE_SECONDS);
+        for step in 1..=11 {
+            let now = scene_shift(Scene::Chai, step as f32 * 0.1, SCENE_SECONDS);
+            assert!(now >= last && now <= 0.0);
+            last = now;
+        }
+        // Night never walks.
+        assert_eq!(scene_shift(Scene::Night, 0.0, SCENE_SECONDS), 0.0);
     }
 
     #[test]
