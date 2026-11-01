@@ -122,7 +122,7 @@ impl App {
                         if let Some(command) = crate::ui::dashboard::palette::handle_key(&key) {
                             self.run_palette_command(command);
                         }
-                    } else {
+                    } else if !crate::ui::dashboard::handle_tab_key(&key) {
                         crate::ui::dashboard::editor::handle_key(&key);
                     }
                     win.request_redraw();

@@ -12,6 +12,7 @@ pub mod layout;
 pub mod palette;
 pub mod sample;
 pub mod system_page;
+pub mod tabs;
 
 use std::cell::{Cell, RefCell};
 
@@ -33,6 +34,8 @@ use winisland_core::focus::{
 /// What the pointer is over on the dashboard page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DashboardHit {
+    /// A control inside a tab; the id is private to that tab (see `tabs`).
+    Tab(u16),
     /// System tab: the volume slider at a percentage.
     SystemVolume(u8),
     /// System tab: the mute button.
@@ -103,6 +106,7 @@ thread_local! {
 /// Advances the Focus timer. Called every frame, so phases finish and notify even while
 /// the dashboard is hidden. Returns the event once.
 pub fn poll(now: Instant) -> Option<FocusEvent> {
+    tabs::poll_all(now);
     let event = PAGE.with(|page| {
         let mut page = page.borrow_mut();
         let restored = page.restored_event.take();
@@ -746,14 +750,15 @@ const PAGE_PAD: f32 = 16.0;
 
 /// Pages drawn inside a single card: everything but Home and the pages with their own cards.
 fn in_card(destination: Destination) -> bool {
-    !matches!(
-        destination,
-        Destination::Home
-            | Destination::Media
-            | Destination::ScreenTime
-            | Destination::Clipboard
-            | Destination::System
-    )
+    !tabs::custom_layout(destination)
+        && !matches!(
+            destination,
+            Destination::Home
+                | Destination::Media
+                | Destination::ScreenTime
+                | Destination::Clipboard
+                | Destination::System
+        )
 }
 
 fn cards_for(active: Destination) -> &'static [SampleCard] {
@@ -802,6 +807,9 @@ pub fn hit_test(
     if PAGE.with(|page| page.borrow().active) == Destination::Home
         && let Some(hit) = hit_card_badge(&layout.cards, local)
     {
+        return Some(hit);
+    }
+    if let Some(hit) = tabs::hit(PAGE.with(|page| page.borrow().active), layout.grid, local) {
         return Some(hit);
     }
     if PAGE.with(|page| page.borrow().active) == Destination::System
@@ -862,6 +870,9 @@ pub fn set_hover(hit: Option<DashboardHit>) -> bool {
 /// Applies a click. The Focus card toggles the timer; other cards have no action until
 /// their modules exist.
 pub fn apply(hit: DashboardHit) {
+    if tabs::apply(PAGE.with(|page| page.borrow().active), hit) {
+        return;
+    }
     if !matches!(hit, DashboardHit::Search | DashboardHit::Header) {
         palette::hide();
     }
@@ -899,7 +910,7 @@ pub fn apply(hit: DashboardHit) {
                 crate::core::focus_store::save(&page.focus);
             }
             // Applied by `system_page::apply` above.
-            DashboardHit::SystemVolume(_) | DashboardHit::SystemMute => {}
+            DashboardHit::SystemVolume(_) | DashboardHit::SystemMute | DashboardHit::Tab(_) => {}
             DashboardHit::OpenSettings | DashboardHit::Close => {
                 HEADER_REQUEST.with(|cell| cell.set(Some(hit)));
             }
@@ -1030,6 +1041,12 @@ pub enum Destination {
     Home,
     /// Battery, network, performance and volume.
     System,
+    /// Image conversion (JPG, PNG, PDF, ICO).
+    Converter,
+    /// Unit and currency conversion.
+    Units,
+    /// A custom banner shown in the notch.
+    Message,
     Media,
     Clipboard,
     Shelf,
@@ -1064,7 +1081,7 @@ impl Destination {
     ];
     /// The icon dock, in order: every module, like a launcher.
     /// Every page, as an icon row; each mode can hide the ones it does not need.
-    pub const DOCK: [Self; 14] = [
+    pub const DOCK: [Self; 17] = [
         Self::Home,
         Self::System,
         Self::Media,
@@ -1078,12 +1095,15 @@ impl Destination {
         Self::Agenda,
         Self::AiUsage,
         Self::Links,
+        Self::Converter,
+        Self::Units,
+        Self::Message,
         Self::Drop,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 13] = [
+    pub const MORE_ITEMS: [Self; 16] = [
         Self::System,
         Self::Media,
         Self::Clipboard,
@@ -1096,6 +1116,9 @@ impl Destination {
         Self::Weather,
         Self::ScreenTime,
         Self::Agenda,
+        Self::Converter,
+        Self::Units,
+        Self::Message,
         Self::Drop,
     ];
 
@@ -1104,6 +1127,9 @@ impl Destination {
         match self {
             Self::Home | Self::More => "subtitle_home",
             Self::System => "subtitle_system",
+            Self::Converter => "subtitle_converter",
+            Self::Units => "subtitle_units",
+            Self::Message => "subtitle_message",
             Self::Media => "subtitle_media",
             Self::Clipboard => "subtitle_clipboard",
             Self::Shelf => "subtitle_shelf",
@@ -1124,6 +1150,9 @@ impl Destination {
         match self {
             Self::Home => Icon::Home,
             Self::System => Icon::Grid,
+            Self::Converter => Icon::Shelf,
+            Self::Units => Icon::Chart,
+            Self::Message => Icon::Notes,
             Self::Media => Icon::Music,
             Self::Clipboard => Icon::Clipboard,
             Self::Shelf => Icon::Shelf,
@@ -1144,6 +1173,9 @@ impl Destination {
         match self {
             Self::Home => "dashboard_home",
             Self::System => "dashboard_system",
+            Self::Converter => "dashboard_converter",
+            Self::Units => "dashboard_units",
+            Self::Message => "dashboard_message",
             Self::Media => "dashboard_media",
             Self::Clipboard => "dashboard_clipboard",
             Self::Shelf => "dashboard_shelf",
@@ -1266,7 +1298,16 @@ pub fn draw_dashboard(params: DashboardParams<'_>) {
     if in_card(active) {
         page_card(painter, layout.grid.inset(-PAGE_PAD), colors);
     }
-    if active == Destination::Clipboard {
+    let tab_context = tabs::TabContext {
+        painter,
+        grid: layout.grid,
+        hover: PAGE.with(|page| page.borrow().hover),
+        colors,
+        now: Instant::now(),
+    };
+    if tabs::draw(active, &tab_context) {
+        // Drawn by its tab module.
+    } else if active == Destination::Clipboard {
         draw_clipboard_page(painter, layout.grid, interaction.hovered_row, colors);
     } else if active == Destination::More {
         draw_more_page(painter, layout, interaction.hovered_row, colors);
@@ -2040,7 +2081,14 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
 
 /// Whether a palette or editor needs the island to take keyboard focus.
 pub fn wants_keyboard() -> bool {
-    palette::is_open() || editor::is_open()
+    palette::is_open()
+        || editor::is_open()
+        || tabs::wants_keyboard(PAGE.with(|page| page.borrow().active))
+}
+
+/// Offers a key to the visible tab first. `true` when the tab used it.
+pub fn handle_tab_key(key: &winisland_platform::Key) -> bool {
+    tabs::handle_key(PAGE.with(|page| page.borrow().active), key)
 }
 
 thread_local! {
