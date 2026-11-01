@@ -26,6 +26,8 @@ const PAGE_STIFFNESS: f32 = 0.14;
 const PAGE_DAMPING: f32 = 0.70;
 const PLAYBACK_FRAME_INTERVAL: Duration = Duration::from_millis(20);
 const IDLE_FRAME_INTERVAL: Duration = Duration::from_millis(50);
+/// About 30 frames a second for the edge light: smooth for a slow line, light on power.
+const EDGE_LIGHT_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const SETTLE_PIXELS: f32 = 0.1;
 const SETTLE_PIXEL_VELOCITY: f32 = 0.05;
 const HIDDEN_FRAME_INTERVAL: Duration = Duration::from_millis(100);
@@ -1272,6 +1274,10 @@ impl App {
             && compact_components_visible
             && self.config.island_style == "dynamic"
             && self.current_media_info().thumbnail.is_some();
+        // The light travelling round the collapsed notch needs evenly spaced frames; widget
+        // refreshes alone came every 66–140 ms and made it flicker.
+        let edge_light_active =
+            !self.expanded && !self.is_hidden() && crate::ui::island::edge_light_on();
         let interactive_active = (pacing.is_hovering_visible
             && (!self.expanded || self.page_visible(ExpandedPage::Music)))
             || pacing.compact_overlay_visible
@@ -1301,6 +1307,8 @@ impl App {
             self.aligned_frame_interval(PLAYBACK_FRAME_INTERVAL)
         } else if interactive_active || resource_usage_active {
             self.aligned_frame_interval(INTERACTIVE_FRAME_INTERVAL)
+        } else if edge_light_active {
+            self.aligned_frame_interval(EDGE_LIGHT_FRAME_INTERVAL)
         } else if self.is_hidden() {
             HIDDEN_FRAME_INTERVAL
         } else {
@@ -1312,6 +1320,7 @@ impl App {
             || playback_active
             || dynamic_effect_active
             || interactive_active
+            || edge_light_active
             || should_periodic_redraw
         {
             window.request_redraw();

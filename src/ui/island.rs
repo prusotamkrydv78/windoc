@@ -521,7 +521,8 @@ fn draw_edge_line(
     island_path: &Path,
     color: Rgba,
 ) {
-    const PASS_SECONDS: f32 = 4.5;
+    // A slow, calm pass: each frame moves the light only a pixel or two.
+    const PASS_SECONDS: f32 = 7.0;
     // Many short flat-ended pieces join into one smooth line that tapers to its tail;
     // round caps on a few long pieces showed as a row of blobs.
     const PIECES: usize = 20;
@@ -635,6 +636,11 @@ pub fn set_edge_light(mode: &str) {
         _ => (0, Rgba::WHITE),
     };
     EDGE_LIGHT.with(|cell| cell.set(setting));
+}
+
+/// Whether an edge light is configured, so the collapsed notch needs steady frames for it.
+pub fn edge_light_on() -> bool {
+    EDGE_LIGHT.with(std::cell::Cell::get).0 != 0
 }
 
 /// Applies the Notch colour setting.
