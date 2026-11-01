@@ -1283,8 +1283,11 @@ impl App {
             && self.current_media_info().thumbnail.is_some();
         // The light travelling round the collapsed notch needs evenly spaced frames; widget
         // refreshes alone came every 66–140 ms and made it flicker.
-        let edge_light_active =
-            !self.expanded && !self.is_hidden() && crate::ui::island::edge_light_on();
+        // The robot's playground needs the same steady frames while it is out.
+        let edge_light_active = (!self.expanded
+            && !self.is_hidden()
+            && crate::ui::island::edge_light_on())
+            || crate::ui::widget::compact::mascot::roam::active();
         let interactive_active = (pacing.is_hovering_visible
             && (!self.expanded || self.page_visible(ExpandedPage::Music)))
             || pacing.compact_overlay_visible
@@ -1420,6 +1423,7 @@ impl App {
         }
         self.sync_top_bar(now, &system);
         self.show_shell_events();
+        self.sync_roam_window();
         self.compact_overlay.set_quiet(system.do_not_disturb);
         self.compact_overlay
             .set_activities_enabled(self.config.live_activities);

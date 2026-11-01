@@ -611,6 +611,10 @@ impl AppHandler for App {
             self.on_bar_window_event(event);
             return;
         }
+        if self.is_roam_window(id) {
+            self.on_roam_window_event(event);
+            return;
+        }
         self.on_window_event(id, event);
     }
 

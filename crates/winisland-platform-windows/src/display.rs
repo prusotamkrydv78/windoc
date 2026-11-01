@@ -134,6 +134,24 @@ fn rect(value: RECT) -> Rect {
     }
 }
 
+/// The monitor bounds and work area (the monitor minus a visible taskbar) of the monitor
+/// containing `(x, y)`, in physical pixels.
+pub fn monitor_areas_at(x: i32, y: i32) -> Option<(Rect, Rect)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::Graphics::Gdi::{MONITOR_DEFAULTTONEAREST, MonitorFromPoint};
+    // SAFETY: MonitorFromPoint takes a plain point; GetMonitorInfoW writes into `info`.
+    unsafe {
+        let monitor = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+        let mut info = MONITORINFO {
+            cbSize: size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        GetMonitorInfoW(monitor, &mut info)
+            .as_bool()
+            .then(|| (rect(info.rcMonitor), rect(info.rcWork)))
+    }
+}
+
 /// The foreground window's executable name, such as `Code.exe`, and whether it covers its
 /// whole monitor. `None` for no window or one of our own.
 pub fn foreground_app() -> Option<(String, bool)> {

@@ -165,6 +165,15 @@ pub struct AppConfig {
         4 => "robot_accessory_cap",
     ), label = "robot_accessory")]
     pub robot_accessory: u8,
+    /// How often the robot leaves the notch to play along the taskbar: 0 never, 1 now and
+    /// then, 2 often.
+    #[educe(Default = 1)]
+    #[setting(choice(
+        0 => "robot_roam_off",
+        1 => "robot_roam_sometimes",
+        2 => "robot_roam_often",
+    ), label = "robot_roam")]
+    pub robot_roam: u8,
     /// The user.s birthday as `MM-DD`, for a cake on the day. Empty when not set.
     pub birthday: String,
     /// Tiny sounds with the robot's reactions. Off by default; never during Do Not Disturb.

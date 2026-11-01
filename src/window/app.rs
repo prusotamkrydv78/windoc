@@ -25,6 +25,7 @@ use winisland_plugin_package::marketplace::MarketplaceCatalog;
 use winisland_render::Renderer;
 
 mod bar_window;
+mod roam_window;
 mod events;
 mod frame;
 mod input;
@@ -143,6 +144,10 @@ pub struct App {
     bar_window: Option<WindowRef>,
     bar_target: Option<winisland_render::RendererTargetId>,
     bar_geometry: bar_window::BarGeometry,
+    /// The see-through strip the robot plays in when it leaves the notch.
+    roam_window: Option<WindowRef>,
+    roam_target: Option<winisland_render::RendererTargetId>,
+    roam_geometry: roam_window::RoamGeometry,
     /// Hidden window receiving system broadcasts for the whole session.
     shell_listener: Option<winisland_platform_windows::shell_bar::ShellEventListener>,
     /// Active call: when it started and the calling app's name.
@@ -314,6 +319,9 @@ impl Default for App {
             bar_window: None,
             bar_target: None,
             bar_geometry: bar_window::BarGeometry::default(),
+            roam_window: None,
+            roam_target: None,
+            roam_geometry: roam_window::RoamGeometry::default(),
             shell_listener: None,
             call: None,
             call_muted: false,

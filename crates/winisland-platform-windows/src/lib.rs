@@ -27,7 +27,7 @@ pub use clipboard::{
     MAX_IMAGE_BYTES as MAX_CLIPBOARD_IMAGE_BYTES, set_image as set_clipboard_image,
     set_text as set_clipboard_text,
 };
-pub use display::{WindowsDisplay, foreground_app};
+pub use display::{WindowsDisplay, foreground_app, monitor_areas_at};
 pub use file::replace_file;
 pub use foreground::{ForegroundChange, ForegroundTracker, input_idle_duration};
 pub use input::WindowsInput;

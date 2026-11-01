@@ -539,3 +539,7 @@ reaction_streak=¡Racha de {0} días!
 reaction_recap={0} h de foco
 reaction_milestone=¡{0} copias!
 reaction_first_shot=Primera captura de hoy
+robot_roam=Jugar en la barra de tareas
+robot_roam_off=Nunca
+robot_roam_sometimes=De vez en cuando
+robot_roam_often=A menudo

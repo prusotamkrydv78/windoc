@@ -234,6 +234,7 @@ impl SettingsApp {
         page.setting(&self.config, AppConfigField::RobotSounds, robot);
         page.setting(&self.config, AppConfigField::RobotColor, robot);
         page.setting(&self.config, AppConfigField::RobotAccessory, robot);
+        page.setting(&self.config, AppConfigField::RobotRoam, robot);
         page.row_label(tr("robot_accessory_hint"));
         page.row_text_field(
             tr("birthday"),

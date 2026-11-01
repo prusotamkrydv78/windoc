@@ -9,6 +9,7 @@
 
 mod extras;
 pub(crate) mod life;
+pub(crate) mod roam;
 
 use std::cell::RefCell;
 use std::f32::consts::{PI, TAU};
@@ -149,7 +150,9 @@ pub(crate) fn set_context(
     playing_track: Option<&str>,
     idle_seconds: f32,
 ) {
-    let away = idle_seconds >= AWAY_SECONDS;
+    // The playground test hook keeps the robot "with" the user so trips can be watched.
+    let away = idle_seconds >= AWAY_SECONDS
+        && !(demo() && std::env::var_os("WINISLAND_MASCOT_DEMO_ROAM").is_some());
     let returned =
         CONTEXT.with(|context| std::mem::replace(&mut context.borrow_mut().away, away)) && !away;
     if returned {
@@ -1079,6 +1082,11 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     let evening = !(5..18).contains(&hour);
     // The robot stands the full height of the notch, so it grows with a taller notch.
     let unit = (rect.height() / 23.0).clamp(0.7 * scale, 3.0 * scale);
+    // Out playing on the taskbar: the notch waits, and so do reactions.
+    if roam::away_from_notch() {
+        set_slow(true);
+        return;
+    }
     if let Some((reaction, elapsed)) = active_reaction(time, alpha) {
         set_slow(false);
         // Centre the robot and its caption together.
@@ -1149,12 +1157,23 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         } else {
             from
         };
-        let to = if after.is_some_and(|after| shares_props(scene, after)) {
+        // Off to play: it always walks out at the end of this scene.
+        let leaving = roam::wants_to_leave();
+        let to = if !leaving && after.is_some_and(|after| shares_props(scene, after)) {
             0.0
         } else {
             to
         };
-        scene_shift(scene, elapsed, length, (from, to))
+        if leaving {
+            roam::note_scene_time(elapsed);
+        }
+        match roam::since_return() {
+            // Back from playing: it walks in from the left edge, whatever the scene.
+            Some(since) if since < ENTER_SECONDS => {
+                -(1.0 - ease(since / ENTER_SECONDS)) * walk_distances(home, unit, left_reach, reach).0
+            }
+            _ => scene_shift(scene, elapsed, length, (from, to)),
+        }
     } else {
         0.0
     };
