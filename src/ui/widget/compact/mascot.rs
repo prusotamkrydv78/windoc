@@ -17,8 +17,6 @@ pub(super) const WIDTH: f32 = 132.0;
 pub(super) const FRAME: Duration = Duration::from_millis(66);
 /// How long each daytime scene plays before the next one.
 const SCENE_SECONDS: f32 = 14.0;
-/// Props and captions fade in and out over this long at each scene change.
-const FADE_SECONDS: f32 = 0.7;
 const BREATH_SECONDS: f32 = 3.2;
 /// Height of the robot from its feet to the top of its head, in robot units.
 const ROBOT_HEIGHT: f32 = 22.0;
@@ -768,19 +766,12 @@ fn greeting(name: &str) -> String {
     }
 }
 
-/// How visible the props are at `elapsed` seconds into a scene.
-fn scene_fade(scene: Scene, elapsed: f32, length: f32) -> f32 {
-    if matches!(scene, Scene::Night) {
-        return 1.0;
-    }
-    ease(elapsed / FADE_SECONDS) * ease((length - elapsed) / FADE_SECONDS)
-}
-
 /// How long the robot takes to walk on with a new scene, and off at its end.
-const ENTER_SECONDS: f32 = 1.1;
-const EXIT_SECONDS: f32 = 0.8;
-/// How far it walks, in robot units: enough to leave the notch.
-const STROLL: f32 = 40.0;
+const ENTER_SECONDS: f32 = 1.4;
+const EXIT_SECONDS: f32 = 1.2;
+/// How far it walks, in robot units: past the notch's edge, where the notch's own clip
+/// hides it, so it always leaves fully instead of vanishing part-way.
+const STROLL: f32 = 75.0;
 
 /// A little hop per step while the robot is walking on or off, in robot units.
 fn step_bob(shift: f32, time: f32) -> f32 {
@@ -869,7 +860,6 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
             (scene, elapsed, scene_seconds())
         }
     };
-    let fade = scene_fade(scene, elapsed, length);
     let evening = !(5..18).contains(&hour);
     // The robot stands the full height of the notch, so it grows with a taller notch.
     let unit = (rect.height() / 23.0).clamp(0.7 * scale, 3.0 * scale);
@@ -891,8 +881,6 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         };
         // It walks on with the reaction and off again, like a scene.
         let shift = scene_shift(Scene::Wave, elapsed, reaction.seconds());
-        let save = painter.save();
-        painter.clip_rect(rect.inset(-2.0 * unit));
         let stage = Stage {
             painter,
             unit,
@@ -902,11 +890,10 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
             mid: rect.center_y(),
             time,
             elapsed,
-            fade: ease(elapsed / FADE_SECONDS)
-                * ease((reaction.seconds() - elapsed) / FADE_SECONDS),
+            // Props are carried on and off, so they stay solid.
+            fade: 1.0,
         };
         stage.react(reaction, rect);
-        painter.restore_to(save);
         return;
     }
     // Centre each scene by its own width: robot plus props, or the greeting text.
@@ -938,9 +925,6 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     } else {
         0.0
     };
-    // Walking on and off stays inside the notch's slot.
-    let save = painter.save();
-    painter.clip_rect(rect.inset(-2.0 * unit));
     let stage = Stage {
         painter,
         unit,
@@ -952,7 +936,7 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         mid: rect.center_y(),
         time,
         elapsed,
-        fade,
+        fade: 1.0,
     };
     set_slow(
         walk == 0.0
@@ -977,7 +961,6 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::SipWater => stage.sip_water(),
         Scene::Groove => stage.groove(),
     }
-    painter.restore_to(save);
 }
 
 /// What the robot does inside an activity card.
@@ -2770,12 +2753,5 @@ mod tests {
         }
         // Night never walks.
         assert_eq!(scene_shift(Scene::Night, 0.0, SCENE_SECONDS), 0.0);
-    }
-
-    #[test]
-    fn props_fade_at_scene_edges() {
-        assert!(scene_fade(Scene::Chai, 0.0, SCENE_SECONDS) < 0.01);
-        assert!(scene_fade(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS) > 0.99);
-        assert!(scene_fade(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS) < 0.01);
     }
 }
