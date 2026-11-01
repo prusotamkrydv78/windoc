@@ -32,8 +32,10 @@ impl App {
                 slot.widget == Some(winisland_core::config::CompactWidgetKind::Mascot)
             });
         let hour = crate::platform::shell().local_datetime().hour;
-        // The test hook sends the robot out whatever the hour or Do Not Disturb.
-        let test_trips = std::env::var_os("WINISLAND_MASCOT_DEMO_ROAM").is_some();
+        // "Every minute" and the test hook send the robot out whatever the hour or Do Not
+        // Disturb.
+        let test_trips = self.config.robot_roam == 3
+            || std::env::var_os("WINISLAND_MASCOT_DEMO_ROAM").is_some();
         let allowed = robot_shown
             && !self.expanded
             && !self.is_hidden()

@@ -1962,6 +1962,7 @@ impl App {
             self.config.robot_color,
             self.config.robot_accessory,
         );
+        crate::ui::widget::compact::mascot::set_character(self.config.robot_character);
         let media = self.current_media_info();
         let playing_track = media.is_playing.then(|| media.title.clone());
         crate::ui::widget::compact::mascot::set_context(

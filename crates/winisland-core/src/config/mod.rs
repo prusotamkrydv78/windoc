@@ -165,6 +165,17 @@ pub struct AppConfig {
         4 => "robot_accessory_cap",
     ), label = "robot_accessory")]
     pub robot_accessory: u8,
+    /// Which character lives in the notch; every scene and reaction works for all of them.
+    #[setting(choice(
+        0 => "robot_character_robot",
+        1 => "robot_character_kitty",
+        2 => "robot_character_bunny",
+        3 => "robot_character_bear",
+        4 => "robot_character_panda",
+        5 => "robot_character_chick",
+        6 => "robot_character_frog",
+    ), label = "robot_character")]
+    pub robot_character: u8,
     /// How often the robot leaves the notch to play along the taskbar: 0 never, 1 now and
     /// then, 2 often.
     #[educe(Default = 1)]
@@ -172,6 +183,7 @@ pub struct AppConfig {
         0 => "robot_roam_off",
         1 => "robot_roam_sometimes",
         2 => "robot_roam_often",
+        3 => "robot_roam_minute",
     ), label = "robot_roam")]
     pub robot_roam: u8,
     /// The user.s birthday as `MM-DD`, for a cake on the day. Empty when not set.

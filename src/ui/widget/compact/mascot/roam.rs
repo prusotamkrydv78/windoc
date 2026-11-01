@@ -163,8 +163,14 @@ fn trip_gap(frequency: u8) -> Option<f32> {
     match frequency {
         1 => Some(25.0 * 60.0),
         2 => Some(8.0 * 60.0),
+        3 => Some(60.0),
         _ => None,
     }
+}
+
+thread_local! {
+    /// The gap between trips for the current setting, for scheduling the next one.
+    static GAP: std::cell::Cell<f32> = const { std::cell::Cell::new(25.0 * 60.0) };
 }
 
 /// Whether the robot is away from the notch, so the notch draws no robot.
@@ -235,6 +241,10 @@ pub(crate) fn tick(frequency: u8, allowed: bool) {
             }
             return;
         };
+        // A changed setting reschedules the next trip at the new pace.
+        if GAP.with(|cell| cell.replace(gap)) != gap && roam.phase == Phase::Home {
+            roam.next_trip = None;
+        }
         // The first trip comes a few minutes after starting.
         let next = *roam.next_trip.get_or_insert(now + gap.min(180.0));
         match roam.phase {
@@ -265,8 +275,8 @@ fn finish(roam: &mut Roam) {
     let now = seconds();
     roam.phase = Phase::Home;
     roam.returned_at = Some(now);
-    let gap = trip_gap(1).unwrap_or(25.0 * 60.0);
-    roam.next_trip = Some(now + gap);
+    // The next trip at the pace the setting asks for.
+    roam.next_trip = Some(now + GAP.with(std::cell::Cell::get));
 }
 
 /// The robot in flight, if it is flying: arriving from the notch before the play begins,
