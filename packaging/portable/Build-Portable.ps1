@@ -34,7 +34,8 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licenses') | Out-Nu
 
 Copy-Item $exe (Join-Path $stage 'Notchy.exe')
 foreach ($file in 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM_NOTICE.md') {
-    Copy-Item (Join-Path $root $file) (Join-Path $stage 'licenses' $file)
+    # Two-part Join-Path only: Windows PowerShell 5.1 takes no more.
+    Copy-Item (Join-Path $root $file) (Join-Path (Join-Path $stage 'licenses') $file)
 }
 Copy-Item (Join-Path $root 'resources\licenses\*') (Join-Path $stage 'licenses') -Recurse
 Copy-Item (Join-Path $PSScriptRoot 'READ-ME-FIRST.txt') (Join-Path $stage 'READ-ME-FIRST.txt')
