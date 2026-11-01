@@ -415,6 +415,21 @@ impl FontManager {
         bold: bool,
         color: Rgba,
     ) {
+        // One font covers ASCII; anything else (emoji, CJK, symbols) needs per-character
+        // fallback, or it draws as empty boxes.
+        if !is_ascii_text(text) {
+            self.draw_text_cached(DrawTextCachedParams {
+                painter,
+                text,
+                x: at.x,
+                y: at.y,
+                size,
+                bold,
+                color,
+                blur: None,
+            });
+            return;
+        }
         let font = self.get_font(size, bold);
         let paint = text_paint(color, None);
         painter.canvas().draw_str(text, (at.x, at.y), &font, &paint);

@@ -2399,6 +2399,16 @@ fn draw_drop_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
         }
         let text = Rect::from_ltrb(qr.right + space::S4, grid.top, grid.right, grid.bottom);
         let line = typography::BODY.size * 1.6;
+        // The note is two sentences; one line each so neither gets cut off.
+        let note = tr("drop_same_wifi");
+        let (wifi, received) = note
+            .split_once(". ")
+            .map(|(first, rest)| (format!("{first}."), rest.to_string()))
+            .or_else(|| {
+                note.split_once('。')
+                    .map(|(first, rest)| (format!("{first}。"), rest.to_string()))
+            })
+            .unwrap_or((note.clone(), String::new()));
         let lines = [
             (
                 tr("drop_scan"),
@@ -2413,11 +2423,8 @@ fn draw_drop_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) {
                 typography::CAPTION,
                 colors.text_secondary,
             ),
-            (
-                tr("drop_same_wifi"),
-                typography::CAPTION,
-                colors.text_secondary,
-            ),
+            (wifi, typography::CAPTION, colors.text_secondary),
+            (received, typography::CAPTION, colors.text_secondary),
         ];
         for (index, (content, style, color)) in lines.iter().enumerate() {
             let top = text.top + index as f32 * line;

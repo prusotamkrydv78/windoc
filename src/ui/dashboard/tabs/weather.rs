@@ -137,7 +137,7 @@ fn cards(grid: Rect) -> Cards {
 
 /// The "Open Settings" pill of the empty state.
 fn settings_button(grid: Rect) -> Rect {
-    Rect::from_xywh(grid.center_x() - 64.0, grid.center_y() + 22.0, 128.0, 30.0)
+    Rect::from_xywh(grid.center_x() - 64.0, grid.center_y() + 30.0, 128.0, 30.0)
 }
 
 /// Geometry of the hourly card.
@@ -271,8 +271,8 @@ fn draw_off(
     icons::draw(
         painter,
         Glyph::SunCloud,
-        Point::new(grid.center_x(), grid.center_y() - 42.0),
-        40.0,
+        Point::new(grid.center_x(), grid.center_y() - 56.0),
+        36.0,
         colors,
         colors.surface_raised,
     );
@@ -280,7 +280,7 @@ fn draw_off(
         painter,
         "Weather is off",
         typography::SECTION_TITLE,
-        Rect::from_xywh(grid.left, grid.center_y() - 14.0, grid.width(), 20.0),
+        Rect::from_xywh(grid.left, grid.center_y() - 26.0, grid.width(), 22.0),
         Align::Center,
         colors.text_primary,
     );
@@ -288,7 +288,7 @@ fn draw_off(
         painter,
         "Turn on Weather and choose a city in Settings",
         typography::LABEL,
-        Rect::from_xywh(grid.left, grid.center_y() + 4.0, grid.width(), 16.0),
+        Rect::from_xywh(grid.left, grid.center_y() + 2.0, grid.width(), 18.0),
         Align::Center,
         colors.text_secondary,
     );
