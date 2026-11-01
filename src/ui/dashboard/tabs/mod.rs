@@ -19,6 +19,7 @@ pub mod calendar;
 pub mod clipboard;
 pub mod clock;
 pub mod converter;
+pub mod drop;
 pub mod links;
 pub mod message;
 pub mod notes;
@@ -54,6 +55,7 @@ macro_rules! route {
             Destination::Message => message::$call($($arg),*),
             Destination::ScreenTime => screen_time::$call($($arg),*),
             Destination::AiUsage => ai_coding::$call($($arg),*),
+            Destination::Drop => drop::$call($($arg),*),
             _ => $default,
         }
     };
@@ -103,4 +105,5 @@ pub fn poll_all(now: Instant) {
     message::poll(now);
     screen_time::poll(now);
     ai_coding::poll(now);
+    drop::poll(now);
 }
