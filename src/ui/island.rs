@@ -562,13 +562,16 @@ fn draw_edge_line(
             continue;
         }
         let strength = opacity * (1.0 - piece as f32 / PIECES as f32);
-        painter.stroke_path(
-            &segment,
-            6.0 * scale,
-            color.with_alpha((60.0 * strength) as u8),
-            winisland_render::StrokeCap::Round,
-            winisland_render::StrokeJoin::Round,
-        );
+        // A wide soft halo, a gentler middle band, then the bright core.
+        for (width, alpha) in [(11.0, 70.0), (5.0, 130.0)] {
+            painter.stroke_path(
+                &segment,
+                width * scale,
+                color.with_alpha((alpha * strength) as u8),
+                winisland_render::StrokeCap::Round,
+                winisland_render::StrokeJoin::Round,
+            );
+        }
         painter.stroke_path(
             &segment,
             1.6 * scale,
