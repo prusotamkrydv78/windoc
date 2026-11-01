@@ -14,6 +14,8 @@ pub(super) enum BehaviorAction {
     Language,
     CheckUpdatesNow,
     ResetDefaults,
+    /// Settings back to defaults and local data cleared, as on first run.
+    StartFresh,
     WeatherLocation,
     ClearData(crate::core::data_inventory::DataKind),
     AddWorldClock,
@@ -329,6 +331,23 @@ impl SettingsApp {
             BehaviorAction::CheckUpdatesNow,
         );
         page.group_end();
+        page.section(tr("section_start_fresh"));
+        page.group_start();
+        let armed = START_FRESH_ARMED
+            .with(std::cell::Cell::get)
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(5));
+        page.row_button(
+            tr("start_fresh"),
+            tr(if armed {
+                "start_fresh_confirm"
+            } else {
+                "start_fresh_button"
+            }),
+            true,
+            BehaviorAction::StartFresh,
+        );
+        page.row_label(tr("start_fresh_hint"));
+        page.group_end();
         page.spacer(10.0);
         page.center_link(
             tr("reset_defaults"),
@@ -371,6 +390,27 @@ impl SettingsApp {
             (BehaviorAction::Exit, ClickResult::RowButton(_)) => {
                 self.plugin_request = Some(crate::window::settings::PluginSettingsRequest::Exit);
                 false
+            }
+            (BehaviorAction::StartFresh, ClickResult::RowButton(_)) => {
+                let armed = START_FRESH_ARMED
+                    .with(std::cell::Cell::get)
+                    .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(5));
+                if armed {
+                    START_FRESH_ARMED.with(|cell| cell.set(None));
+                    self.config = AppConfig::default();
+                    init_i18n(&self.config.language);
+                    crate::ui::widget::expanded::calendar::clear_calendar_text_cache();
+                    FontManager::global()
+                        .set_custom_font_path(self.config.custom_font_path.as_deref());
+                    self.plugin_request =
+                        Some(crate::window::settings::PluginSettingsRequest::StartFresh);
+                    true
+                } else {
+                    // The first click only arms it; a second within 5 s resets.
+                    START_FRESH_ARMED.with(|cell| cell.set(Some(std::time::Instant::now())));
+                    self.mark_items_dirty();
+                    false
+                }
             }
             (BehaviorAction::ResetDefaults, ClickResult::CenterLink(_)) => {
                 self.config = AppConfig::default();
@@ -788,4 +828,10 @@ fn commit_add_feed(app: &mut SettingsApp, url: &str) {
         app.config.calendar_feeds.push(url.to_string());
         app.mark_items_dirty();
     }
+}
+
+thread_local! {
+    /// When Reset everything was first clicked; a second click within 5 s confirms.
+    static START_FRESH_ARMED: std::cell::Cell<Option<std::time::Instant>> =
+        const { std::cell::Cell::new(None) };
 }

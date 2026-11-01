@@ -781,7 +781,12 @@ fn draw_row(
     crate::ui::components::list_row::draw_list_row(painter, row, title, subtitle, colors, state);
     if let (Some(rect), Some(icon)) = (row.leading, ROW_ICON.with(Cell::get)) {
         painter.fill_round_rect(rect, Radius::uniform(6.0), colors.surface_interactive);
-        crate::ui::components::icon::draw_icon(painter, icon, rect.inset(5.0), colors.text_secondary);
+        crate::ui::components::icon::draw_icon(
+            painter,
+            icon,
+            rect.inset(5.0),
+            colors.text_secondary,
+        );
     }
 }
 
@@ -2118,7 +2123,11 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
                 tile_width,
                 tile_height,
             );
-            painter.fill_round_rect(tile, Radius::uniform(radius::ROW), colors.surface_interactive);
+            painter.fill_round_rect(
+                tile,
+                Radius::uniform(radius::ROW),
+                colors.surface_interactive,
+            );
             draw_text(
                 painter,
                 title,
@@ -2136,7 +2145,12 @@ fn draw_ai_usage_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors)
                 colors.text_secondary,
             );
         }
-        let list = Rect::from_ltrb(grid.left, grid.top + tile_height + space::S3, grid.right, grid.bottom);
+        let list = Rect::from_ltrb(
+            grid.left,
+            grid.top + tile_height + space::S3,
+            grid.right,
+            grid.bottom,
+        );
         for (index, (title, detail)) in view.rows.iter().skip(TILES).enumerate() {
             let row = list_row(list, index, true);
             if row.bounds.bottom > list.bottom {

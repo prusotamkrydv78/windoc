@@ -142,6 +142,30 @@ impl App {
                     settings.mark_items_dirty();
                 }
             }
+            Some(crate::window::settings::PluginSettingsRequest::StartFresh) => {
+                for kind in crate::core::data_inventory::DataKind::ALL {
+                    match kind {
+                        crate::core::data_inventory::DataKind::ScreenTime => {
+                            self.screen_time.clear()
+                        }
+                        crate::core::data_inventory::DataKind::Clipboard => self.clipboard.clear(),
+                        crate::core::data_inventory::DataKind::Weather => self.weather.clear(),
+                        crate::core::data_inventory::DataKind::Focus => {
+                            crate::ui::dashboard::reset_focus()
+                        }
+                    }
+                }
+                log::info!("Started fresh: settings reset and local data cleared");
+                crate::ui::widget::compact::mascot::react(
+                    crate::ui::widget::compact::mascot::Reaction::WelcomeBack,
+                );
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.mark_items_dirty();
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             Some(crate::window::settings::PluginSettingsRequest::ClearData(kind)) => {
                 use crate::core::data_inventory::DataKind;
                 match kind {

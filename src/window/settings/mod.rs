@@ -172,6 +172,8 @@ pub(crate) struct NumberInput {
 }
 
 pub(crate) enum PluginSettingsRequest {
+    /// Every setting is back to default: clear all local data and greet as on first run.
+    StartFresh,
     HideIsland,
     Exit,
     Install(std::path::PathBuf),
