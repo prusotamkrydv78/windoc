@@ -9,7 +9,7 @@ use super::{
 impl SettingsApp {
     pub(crate) fn build_current_items(&self) -> Vec<SettingsItem> {
         match self.active_page {
-            GENERAL_PAGE_INDEX => self.build_general_items(),
+            GENERAL_PAGE_INDEX => self.build_general_view_items(),
             NOTCH_PAGE_INDEX => self.build_notch_page().into_items(),
             TOP_BAR_PAGE_INDEX => self.build_top_bar_page().into_items(),
             ACTIVITIES_PAGE_INDEX => self.build_activities_page().into_items(),
@@ -22,7 +22,12 @@ impl SettingsApp {
     }
 
     pub(crate) fn rebuild_items_cache(&mut self) {
-        self.cached_items = self.build_current_items();
+        // A search shows its results on any page.
+        self.cached_items = if self.search_active() {
+            self.build_search_items()
+        } else {
+            self.build_current_items()
+        };
         let switch_states: Vec<bool> = self
             .cached_items
             .iter()
@@ -31,7 +36,11 @@ impl SettingsApp {
                 _ => None,
             })
             .collect();
-        let switch_context = (self.active_page, 0);
+        // Each General view and the search results animate their own switches.
+        let switch_context = (
+            self.active_page,
+            if self.search_active() { usize::MAX } else { self.general_view },
+        );
         if self.switch_anim_context != switch_context
             || self.switch_anim.len() != switch_states.len()
         {

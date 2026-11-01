@@ -13,7 +13,7 @@ use winisland_render::DrawingContext;
 use winisland_render::text::FontManager;
 
 use super::{
-    SIDEBAR_KEY_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
+    SIDEBAR_KEY_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_W, SettingsApp,
     WINDOW_CONTROL_CENTERS, WINDOW_CONTROL_RADIUS,
 };
 
@@ -263,44 +263,9 @@ impl SettingsApp {
             StrokeCap::Butt,
         );
 
-        let pages = [
-            tr("tab_general"),
-            tr("tab_notch"),
-            tr("tab_top_bar"),
-            tr("tab_activities"),
-            tr("tab_music"),
-            tr("tab_widgets"),
-            tr("tab_plugins"),
-        ];
-        // One line icon per page, in the row's text colour.
-        use crate::ui::components::icon::Icon;
-        const PAGE_ICONS: [Icon; 7] = [
-            Icon::Settings,
-            Icon::Home,
-            Icon::More,
-            Icon::Bolt,
-            Icon::Music,
-            Icon::Grid,
-            Icon::Link,
-        ];
-        for (index, label) in pages.iter().enumerate() {
-            let row_y = SIDEBAR_START_Y + index as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
-            let text_color = draw_sidebar_row_background(self, painter, theme, index, row_y);
-            let icon_rect = Rect::from_xywh(SIDEBAR_PAD + 7.0, row_y + 6.0, 22.0, 22.0);
-            crate::ui::components::icon::draw_icon(
-                painter,
-                PAGE_ICONS[index],
-                icon_rect.inset(2.0),
-                text_color,
-            );
-            SettingsPainter::new(painter).text(
-                label,
-                (SIDEBAR_PAD + 36.0, row_y + 22.0),
-                13.0,
-                self.active_page == index,
-                text_color,
-            );
-        }
+        // Search on top, then the pages: the General views and the rest.
+        self.draw_search_box(painter, theme);
+        self.draw_builtin_rows(painter, theme);
 
         let plugin_start = self.sidebar_plugin_start_y();
         let plugin_bottom = self.sidebar_about_y() - SIDEBAR_ROW_GAP;

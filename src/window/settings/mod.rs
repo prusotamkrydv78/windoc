@@ -23,6 +23,7 @@ use winisland_render::{Renderer, RendererTargetId};
 
 pub mod input;
 pub mod items;
+mod navigation;
 pub mod pages;
 mod popup;
 pub mod renderer;
@@ -31,12 +32,13 @@ pub mod sidebar;
 
 pub(crate) use popup::PopupState;
 
-pub(crate) const WIN_W: f32 = 760.0;
-pub(crate) const WIN_H: f32 = 680.0;
-pub(crate) const SIDEBAR_W: f32 = 184.0;
+pub(crate) const WIN_W: f32 = 940.0;
+pub(crate) const WIN_H: f32 = 720.0;
+pub(crate) const SIDEBAR_W: f32 = 228.0;
 pub(crate) const SIDEBAR_ROW_H: f32 = 34.0;
 pub(crate) const SIDEBAR_ROW_GAP: f32 = 2.0;
-pub(crate) const SIDEBAR_START_Y: f32 = 64.0;
+/// Rows start below the window controls and the search box.
+pub(crate) const SIDEBAR_START_Y: f32 = 96.0;
 pub(crate) const BUILTIN_SIDEBAR_PAGE_COUNT: usize = 8;
 pub(crate) const GENERAL_PAGE_INDEX: usize = 0;
 pub(crate) const NOTCH_PAGE_INDEX: usize = 1;
@@ -211,6 +213,14 @@ pub struct SettingsApp {
     pub(crate) renderer_target: Option<RendererTargetId>,
     pub(crate) config: AppConfig,
     pub(crate) active_page: usize,
+    /// Which slice of General is shown (Appearance, Behaviour, Robot…); see `navigation`.
+    pub(crate) general_view: usize,
+    /// The sidebar search: its text, whether it has focus, where each result leads, and a
+    /// row glowing after jumping to it.
+    pub(crate) search_query: String,
+    pub(crate) search_focused: bool,
+    pub(crate) search_hits: Vec<navigation::SearchHit>,
+    pub(crate) flash: Option<(usize, std::time::Instant)>,
     pub(crate) page_history: Vec<usize>,
     pub(crate) page_history_index: usize,
     pub(crate) switch_anim: SwitchAnimator,
@@ -317,12 +327,12 @@ impl SettingsApp {
     }
 
     pub(crate) fn sidebar_plugin_start_y(&self) -> f32 {
-        SIDEBAR_START_Y + PLUGIN_SETTINGS_START_INDEX as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP)
+        SIDEBAR_START_Y + Self::builtin_row_count() as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP)
     }
 
     pub(crate) fn sidebar_about_y(&self) -> f32 {
-        let natural =
-            SIDEBAR_START_Y + self.about_page_index() as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
+        let natural = self.sidebar_plugin_start_y()
+            + self.plugin_settings_pages.len() as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
         natural.min(self.logical_window_size().1 - SIDEBAR_ROW_H - 16.0)
     }
 
@@ -346,7 +356,8 @@ impl SettingsApp {
 
     pub(crate) fn page_title(&self) -> String {
         match self.active_page {
-            GENERAL_PAGE_INDEX => winisland_core::i18n::tr("tab_general"),
+            _ if self.search_active() => winisland_core::i18n::tr("search_title"),
+            GENERAL_PAGE_INDEX => self.general_view_title().0,
             NOTCH_PAGE_INDEX => winisland_core::i18n::tr("tab_notch"),
             TOP_BAR_PAGE_INDEX => winisland_core::i18n::tr("tab_top_bar"),
             ACTIVITIES_PAGE_INDEX => winisland_core::i18n::tr("tab_activities"),
@@ -382,6 +393,11 @@ impl SettingsApp {
             renderer_target: None,
             config,
             active_page: GENERAL_PAGE_INDEX,
+            general_view: 0,
+            search_query: String::new(),
+            search_focused: false,
+            search_hits: Vec::new(),
+            flash: None,
             page_history: vec![0],
             page_history_index: 0,
             switch_anim,
@@ -847,6 +863,9 @@ impl SettingsApp {
             }
             return;
         }
+        if self.number_input.is_none() && self.handle_search_key(key) {
+            return;
+        }
         if self.handle_number_input_key(key) {
             return;
         }
@@ -1061,7 +1080,14 @@ impl SettingsApp {
         let hover_index = (mouse_x < SIDEBAR_W)
             .then(|| self.sidebar_page_at(mouse_x, mouse_y))
             .flatten();
-        let sidebar_hover = hover_index.map_or(-1, |index| index as i32);
+        let builtin = (mouse_x < SIDEBAR_W)
+            .then(|| self.sidebar_row_at(mouse_x, mouse_y))
+            .flatten();
+        let sidebar_hover = match (builtin, hover_index) {
+            (Some(row), _) => navigation::BUILTIN_HOVER_BASE + row as i32,
+            (None, Some(index)) => index as i32,
+            (None, None) => -1,
+        };
         if sidebar_hover == self.sidebar_hover {
             return false;
         }

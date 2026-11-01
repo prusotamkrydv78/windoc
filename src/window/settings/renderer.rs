@@ -221,8 +221,15 @@ impl SettingsApp {
                     self.logical_mouse_pos.1 + self.scroll_y,
                 )),
             });
-            if self.active_page == super::MUSIC_PAGE_INDEX && self.show_music_notice() {
+            if self.active_page == super::MUSIC_PAGE_INDEX
+                && self.show_music_notice()
+                && !self.search_active()
+            {
                 self.draw_music_notice(painter, content_w);
+            }
+            // A setting just found by search glows for a moment.
+            if self.draw_search_flash(painter, content_w, &theme) {
+                self.request_redraw();
             }
             painter.restore();
 
@@ -234,7 +241,7 @@ impl SettingsApp {
                 );
             }
 
-            if self.active_page == PLUGINS_PAGE_INDEX {
+            if self.active_page == PLUGINS_PAGE_INDEX && !self.search_active() {
                 self.draw_plugins_page(drawing_context, painter, &theme, win_w, win_h);
             }
 
@@ -461,13 +468,43 @@ impl SettingsApp {
             (win_w - title_x - 20.0).max(0.0),
         );
         let paint = settings_color(theme.separator);
-        SettingsPainter::new(painter).text(
-            &title,
-            (title_x, 39.0),
-            17.0,
-            true,
-            settings_color(theme.text_pri),
-        );
+        // General's views carry a one-line description of what they cover.
+        let subtitle = if self.active_page == super::GENERAL_PAGE_INDEX {
+            self.general_view_title().1
+        } else {
+            String::new()
+        };
+        if subtitle.is_empty() {
+            SettingsPainter::new(painter).text(
+                &title,
+                (title_x, 39.0),
+                17.0,
+                true,
+                settings_color(theme.text_pri),
+            );
+        } else {
+            SettingsPainter::new(painter).text(
+                &title,
+                (title_x, 31.0),
+                17.0,
+                true,
+                settings_color(theme.text_pri),
+            );
+            let subtitle = ellipsize_text(
+                FontManager::global(),
+                &subtitle,
+                12.0,
+                winisland_render::FontStyle::normal(),
+                (win_w - title_x - 20.0).max(0.0),
+            );
+            SettingsPainter::new(painter).text(
+                &subtitle,
+                (title_x, 50.0),
+                12.0,
+                false,
+                settings_color(theme.text_sec),
+            );
+        }
 
         painter.stroke_line(
             Point::new(SIDEBAR_W, SETTINGS_HEADER_H - 0.5),

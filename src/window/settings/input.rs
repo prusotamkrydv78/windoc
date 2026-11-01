@@ -8,7 +8,7 @@ use super::pages::PageInput;
 use super::{
     InputMode, NumberInput, NumberInputHandler, PAGE_NAV_GAP, PAGE_NAV_HEIGHT, PAGE_NAV_WIDTH,
     PAGE_NAV_X, PAGE_NAV_Y, PLUGINS_PAGE_INDEX, POPUP_OPACITY_KEY, PageNavigation,
-    SETTINGS_HEADER_H, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_START_Y, SIDEBAR_W, SettingsApp,
+    SETTINGS_HEADER_H, SIDEBAR_ROW_GAP, SIDEBAR_ROW_H, SIDEBAR_W, SettingsApp,
 };
 
 /// Longest value a stepper accepts as typed text.
@@ -57,11 +57,19 @@ impl SettingsApp {
         }
 
         if mouse_x < SIDEBAR_W {
-            if let Some(page) = self.sidebar_page_at(mouse_x, mouse_y) {
+            if Self::search_box_at(mouse_x, mouse_y) {
+                self.focus_search();
+            } else if let Some(row) = self.sidebar_row_at(mouse_x, mouse_y) {
+                self.visit_row(row);
+            } else if let Some(page) = self.sidebar_page_at(mouse_x, mouse_y) {
+                self.search_focused = false;
+                self.search_query.clear();
                 self.visit_page(page);
             }
             return;
         }
+        // Clicking the page takes focus from the search box (its results stay).
+        self.search_focused = false;
 
         if self.handle_widget_mode_click(mouse_x, mouse_y) {
             return;
@@ -80,8 +88,12 @@ impl SettingsApp {
             start_y: SETTINGS_HEADER_H,
         };
 
+        if self.search_active() {
+            self.handle_search_click(input);
+            return;
+        }
         match self.active_page {
-            super::GENERAL_PAGE_INDEX => self.handle_general_click(input),
+            super::GENERAL_PAGE_INDEX => self.handle_general_view_click(input),
             super::NOTCH_PAGE_INDEX => self.handle_notch_page_click(input, 0),
             super::TOP_BAR_PAGE_INDEX => self.handle_notch_page_click(input, 1),
             super::ACTIVITIES_PAGE_INDEX => self.handle_notch_page_click(input, 2),
@@ -153,7 +165,9 @@ impl SettingsApp {
         }
 
         if mouse_x < SIDEBAR_W {
-            return self.sidebar_page_at(mouse_x, mouse_y).is_some();
+            return Self::search_box_at(mouse_x, mouse_y)
+                || self.sidebar_row_at(mouse_x, mouse_y).is_some()
+                || self.sidebar_page_at(mouse_x, mouse_y).is_some();
         }
 
         let content_width = self.content_width();
@@ -181,14 +195,9 @@ impl SettingsApp {
     }
 
     pub(super) fn sidebar_page_at(&self, x: f32, y: f32) -> Option<usize> {
+        // Built-in rows are `sidebar_row_at`; this finds plugin pages and About.
         if !(SIDEBAR_PAD..=SIDEBAR_W - SIDEBAR_PAD).contains(&x) {
             return None;
-        }
-        if let Some(page) = (0..super::PLUGIN_SETTINGS_START_INDEX).find(|page| {
-            let row_y = SIDEBAR_START_Y + *page as f32 * (SIDEBAR_ROW_H + SIDEBAR_ROW_GAP);
-            (row_y..=row_y + SIDEBAR_ROW_H).contains(&y)
-        }) {
-            return Some(page);
         }
         let about_y = self.sidebar_about_y();
         if (about_y..=about_y + SIDEBAR_ROW_H).contains(&y) {

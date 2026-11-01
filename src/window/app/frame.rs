@@ -1424,6 +1424,15 @@ impl App {
         self.sync_top_bar(now, &system);
         self.show_shell_events();
         self.sync_roam_window();
+        // `--settings` opens the Settings window once the app is up.
+        static OPEN_SETTINGS: std::sync::Once = std::sync::Once::new();
+        if std::env::args().any(|arg| arg == "--settings") {
+            let mut open = false;
+            OPEN_SETTINGS.call_once(|| open = true);
+            if open {
+                self.open_settings();
+            }
+        }
         self.compact_overlay.set_quiet(system.do_not_disturb);
         self.compact_overlay
             .set_activities_enabled(self.config.live_activities);
