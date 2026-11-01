@@ -267,7 +267,11 @@ pub fn network_totals() -> Option<NetworkTotals> {
     };
     let mut totals = NetworkTotals::default();
     for row in rows {
-        if row.OperStatus == IfOperStatusUp && row.Type != IF_TYPE_SOFTWARE_LOOPBACK {
+        // Only physical adapters: filter and virtual interfaces repeat the same traffic and
+        // report link speeds such as 100 Gbps for a virtual switch.
+        let flags = row.InterfaceAndOperStatusFlags._bitfield;
+        let hardware = flags & 0b01 != 0 && flags & 0b10 == 0;
+        if hardware && row.OperStatus == IfOperStatusUp && row.Type != IF_TYPE_SOFTWARE_LOOPBACK {
             totals.received = totals.received.saturating_add(row.InOctets);
             totals.sent = totals.sent.saturating_add(row.OutOctets);
             totals.link_bits_per_second = totals.link_bits_per_second.max(row.ReceiveLinkSpeed);

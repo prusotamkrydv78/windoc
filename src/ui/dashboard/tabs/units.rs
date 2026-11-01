@@ -570,9 +570,11 @@ fn unit_pill_width(opt: &Opt) -> f32 {
     let name = if opt.name.is_empty() {
         0.0
     } else {
-        text_width(opt.name, UNIT_NAME) + 6.0
+        // Room for the gaps `draw_unit_pill` leaves around the name, plus a little slack so
+        // rounding never ellipsizes it.
+        text_width(opt.name, UNIT_NAME) + 10.0
     };
-    name + text_width(opt.symbol, UNIT_SYMBOL) + 4.0 + 14.0 + 20.0
+    name + text_width(opt.symbol, UNIT_SYMBOL) + 4.0 + 14.0 + 24.0
 }
 
 /// Up to three other options to show, preferring those giving readable magnitudes.

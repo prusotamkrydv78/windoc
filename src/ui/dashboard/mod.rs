@@ -618,7 +618,10 @@ fn card_text(card: &SampleCard, focus: Option<&FocusView>) -> (String, String) {
         });
     }
     if card.kind == CardKind::Notes {
-        return NOTE_ROWS.with(|cell| (cell.borrow().len().to_string(), tr("card_notes_count")));
+        return NOTE_ROWS.with(|cell| match cell.borrow().len() {
+            0 => (String::new(), tr("notes_empty_hint")),
+            count => (count.to_string(), tr("card_notes_count")),
+        });
     }
     if card.kind == CardKind::Clipboard {
         return CLIPBOARD_VIEW.with(|view| {
@@ -1149,10 +1152,10 @@ impl Destination {
         use crate::ui::components::icon::Icon;
         match self {
             Self::Home => Icon::Home,
-            Self::System => Icon::Grid,
-            Self::Converter => Icon::Shelf,
-            Self::Units => Icon::Chart,
-            Self::Message => Icon::Notes,
+            Self::System => Icon::Gauge,
+            Self::Converter => Icon::Convert,
+            Self::Units => Icon::Ruler,
+            Self::Message => Icon::Message,
             Self::Media => Icon::Music,
             Self::Clipboard => Icon::Clipboard,
             Self::Shelf => Icon::Shelf,
@@ -1160,11 +1163,11 @@ impl Destination {
             Self::More => Icon::More,
             Self::Notes => Icon::Notes,
             Self::Clock => Icon::Clock,
-            Self::AiUsage => Icon::Chart,
+            Self::AiUsage => Icon::Sparkle,
             Self::Links => Icon::Link,
             Self::Weather => Icon::Weather,
             Self::ScreenTime => Icon::Chart,
-            Self::Agenda => Icon::Agenda,
+            Self::Agenda => Icon::Calendar,
             Self::Drop => Icon::Phone,
         }
     }
@@ -1501,16 +1504,17 @@ fn draw_header(
     let date_left = divider_x + space::S3;
     if active != Destination::Home {
         // A quiet line of context after the title, kept clear of the centred music pill.
+        let playing = NOW_PLAYING.with(|cell| cell.borrow().is_some());
+        let subtitle_right = if playing {
+            header.center_x() - 124.0
+        } else {
+            search_button(header).left - space::S3
+        };
         draw_text(
             painter,
             &tr(active.subtitle_key()),
             typography::BODY,
-            Rect::from_ltrb(
-                date_left,
-                header.top,
-                header.center_x() - 124.0,
-                header.bottom,
-            ),
+            Rect::from_ltrb(date_left, header.top, subtitle_right, header.bottom),
             Align::Start,
             colors.text_secondary,
         );
@@ -2466,18 +2470,14 @@ fn draw_progress_ring(painter: Painter<'_>, content: Rect, fraction: f32, colors
 
 /// CPU, RAM and disk usage as three labelled rings across `content`.
 fn draw_system_rings(painter: Painter<'_>, content: Rect, colors: &SemanticColors) {
-    use winisland_core::config::ResourceMetricKind;
     use winisland_render::{Angle, StrokeCap};
+    // The system watcher samples all three; the compact widget only samples what it shows.
+    let snapshot = crate::core::system_watch::snapshot();
     let metrics = [
-        (ResourceMetricKind::Cpu, "CPU"),
-        (ResourceMetricKind::Ram, "RAM"),
-        (ResourceMetricKind::Disk, "DISK"),
+        ("CPU", snapshot.cpu),
+        ("RAM", snapshot.memory),
+        ("DISK", snapshot.disk),
     ];
-    let values = crate::ui::widget::resource_usage::with_expanded_config(|config| {
-        crate::ui::widget::resource_usage::with_resource_usage(config, |usage| {
-            metrics.map(|(kind, _)| usage.metric(kind).value)
-        })
-    });
     let palette = crate::ui::theme::current().chart_palette();
     let slot = content.width() / metrics.len() as f32;
     let label_h = typography::CAPTION.size + space::S1;
@@ -2486,7 +2486,7 @@ fn draw_system_rings(painter: Painter<'_>, content: Rect, colors: &SemanticColor
         return;
     }
     let stroke = (size * 0.12).max(3.0);
-    for (index, ((_, label), value)) in metrics.iter().zip(values).enumerate() {
+    for (index, &(label, value)) in metrics.iter().enumerate() {
         let center_x = content.left + slot * (index as f32 + 0.5);
         let ring = Rect::from_xywh(
             center_x - size / 2.0 + stroke / 2.0,

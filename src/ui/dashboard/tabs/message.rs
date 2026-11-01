@@ -333,12 +333,13 @@ fn finish_swatches(card: Rect) -> [(Point, f32); 4] {
 fn duration_segments(card: Rect) -> (Rect, [Rect; 4]) {
     let inner = inner(card);
     let control = Rect::from_xywh(inner.left, card.top + 32.0, inner.width(), 28.0);
-    let w = (control.width() - 4.0) / 4.0;
+    // "Custom" (and "1m 30s ›" once chosen) needs more room than "10s".
+    let w = (control.width() - 4.0) / 4.6;
     let segments = std::array::from_fn(|index| {
         Rect::from_xywh(
             control.left + 2.0 + index as f32 * w,
             control.top + 2.0,
-            w,
+            if index == 3 { w * 1.6 } else { w },
             control.height() - 4.0,
         )
     });
@@ -1210,7 +1211,7 @@ fn draw_duration_card(ctx: &TabContext<'_>, rect: Rect, state: &State) {
     let hover = hovered(ctx, ID_REPEAT);
     draw_text(
         painter,
-        "Repeat until taken down",
+        "Keep until cleared",
         typography::BODY,
         label,
         Align::Start,
