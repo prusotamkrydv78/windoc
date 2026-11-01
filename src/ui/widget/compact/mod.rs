@@ -330,5 +330,10 @@ pub(crate) fn next_refresh_delay(layout: &[CompactWidgetSlot]) -> Option<std::ti
         .iter()
         .any(|entry| entry.widget == Some(CompactWidgetKind::Mascot))
         .then(mascot::frame_interval);
-    [time, resource, focus, mascot].into_iter().flatten().min()
+    // A flashed banner from the Message tab animates and expires on its own schedule.
+    let flash = message::frame_interval();
+    [time, resource, focus, mascot, flash]
+        .into_iter()
+        .flatten()
+        .min()
 }
