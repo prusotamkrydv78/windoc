@@ -24,6 +24,7 @@ pub mod window;
 pub use audio::WindowsAudio;
 pub use clipboard::{
     ClipboardChange, ClipboardContent, ClipboardFormat, ClipboardMonitor,
+    MAX_IMAGE_BYTES as MAX_CLIPBOARD_IMAGE_BYTES, set_image as set_clipboard_image,
     set_text as set_clipboard_text,
 };
 pub use display::WindowsDisplay;

@@ -296,10 +296,31 @@ impl App {
             self.springs.h.value as f64,
             self.springs.r.value as f64,
         );
+        self.idle_timer = Instant::now();
+        // Lists inside a tab (clipboard, shelf) scroll; one notch is one line.
+        let lines = match delta {
+            MouseWheelDelta::Lines { y, .. } => y,
+            MouseWheelDelta::Pixels { y, .. } => y as f32 / WHEEL_PIXEL_THRESHOLD,
+        };
+        if over_island
+            && self.page_focused(ExpandedPage::Home)
+            && lines != 0.0
+            && crate::ui::dashboard::scroll(
+                layout.offset_x as f32 + self.page_translation(ExpandedPage::Home),
+                layout.island_y as f32,
+                self.springs.w.value,
+                (self.config.expanded_height * self.config.expanded_scale)
+                    .min(self.springs.h.value),
+                self.config.expanded_scale,
+                Point::new(rel_x as f32, rel_y as f32),
+                lines,
+            )
+        {
+            crate::platform::wake();
+            return true;
+        }
         // The panel navigates with its dock; the wheel no longer flips to the old full-size
         // pages. It is still taken over the panel so the window behind does not scroll.
-        let _ = delta;
-        self.idle_timer = Instant::now();
         over_island || self.pager_contains(rel_x, rel_y, &layout)
     }
 }

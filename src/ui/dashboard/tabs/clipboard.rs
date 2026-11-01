@@ -1,23 +1,26 @@
 //! Clipboard tab: filterable, searchable history on the left, a preview with actions on the
 //! right.
 //!
-//! Rows come from the dashboard's `CLIPBOARD_VIEW` (published by `sync_clipboard`). The
-//! view carries text only, so capture times, pins and kinds are read once from the saved
-//! history and then tracked here as new items arrive. Copying goes through the existing
-//! copy-again request; pin and delete have no app hook yet, so they apply to this view for
-//! the current session only.
+//! Items come from `core::clipboard_history::published()`, which carries ids, capture times
+//! and pins. Pin, delete and copy are queued back to the history service by id, which applies
+//! and saves them on its next poll. Rows are rebuilt only when the published revision moves.
+//! Images are decoded off the UI thread by `images` and drawn from its cache.
 
+mod images;
 pub mod kit;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 
+use winisland_core::clipboard::{ClipboardBody, ClipboardItem};
 use winisland_platform::Key;
 use winisland_render::tokens::{SemanticColors, TextStyle, typography};
-use winisland_render::{Painter, Point, Radius, Rect, Rgba};
+use winisland_render::{ImageFit, ImageOptions, Painter, Point, Radius, Rect, Rgba, Sampling};
 
 use super::TabContext;
+use crate::core::clipboard_history::{self as history, ClipboardRequest};
 use crate::ui::dashboard::DashboardHit;
 use kit::glyphs;
 
@@ -27,20 +30,23 @@ const ID_SEARCH_CLOSE: u16 = 405;
 const ID_PIN: u16 = 406;
 const ID_DELETE: u16 = 407;
 const ID_COPY: u16 = 408;
+const ID_SAVE: u16 = 409;
 const ID_ROW: u16 = 410;
 const MAX_ROW_IDS: usize = 80;
 /// Claims the rest of the page so the legacy row hit test never fires under this tab.
 const ID_INERT: u16 = 499;
 
 const TAB_ROW: f32 = 28.0;
-const ROW_HEIGHT: f32 = 42.0;
-const HEADER_HEIGHT: f32 = 22.0;
+const ROW_HEIGHT: f32 = 46.0;
+const HEADER_HEIGHT: f32 = 24.0;
 const BUTTON: f32 = 28.0;
 const COPY_WIDTH: f32 = 86.0;
 const FOOTER: f32 = 32.0;
 /// Below this grid width the preview pane is dropped and a click copies directly.
 const SPLIT_MIN_WIDTH: f32 = 460.0;
 const COPIED_FOR: Duration = Duration::from_millis(1600);
+/// Preview text is cut here; the wrapped body never shows more than a screenful.
+const MAX_PREVIEW_CHARS: usize = 4000;
 
 const FILTERS: [&str; 4] = ["All", "Text", "Images", "Links"];
 
@@ -72,29 +78,23 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Meta {
-    captured: Option<SystemTime>,
-    pinned: bool,
-    kind: Option<Kind>,
-}
-
 #[derive(Default)]
 struct State {
     filter: usize,
     /// `Some` while the search field is open.
     query: Option<String>,
-    /// Key of the selected item, so selection survives new captures.
-    selected: Option<String>,
+    /// Id of the selected item, so selection survives new captures.
+    selected: Option<u64>,
     scroll: f32,
-    meta: HashMap<String, Meta>,
+    /// Rows built from the last published history.
+    entries: Rc<Vec<Entry>>,
+    synced: bool,
+    enabled: bool,
     revision: Option<u64>,
-    first_key: Option<String>,
-    /// Items removed from this view (session only; history has no delete hook).
-    hidden: HashSet<String>,
-    /// Pin changes made here (session only; history has no pin hook).
-    pins: HashMap<String, bool>,
-    copied: Option<(String, Instant)>,
+    /// Pin and delete requests not yet reflected by a publish, so the view reacts at once.
+    pending_pins: HashMap<u64, bool>,
+    pending_deletes: Vec<u64>,
+    copied: Option<(u64, Instant)>,
     /// Last drawn grid, so clicks and keys can keep the selection in view.
     grid: Option<Rect>,
 }
@@ -105,20 +105,22 @@ thread_local! {
 
 #[derive(Clone)]
 struct Entry {
-    /// Index in history (newest first), for the copy-again request.
-    index: usize,
-    key: String,
+    id: u64,
     title: String,
     source: String,
+    /// Full text (cut to [`MAX_PREVIEW_CHARS`]) for text, links and file lists.
     preview: String,
     kind: Kind,
-    captured: Option<SystemTime>,
+    /// Pixel size and blob for images.
+    size: Option<(u32, u32)>,
+    blob_id: Option<String>,
+    captured: SystemTime,
     pinned: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Line {
-    Header(&'static str),
+    Header(String),
     /// Position in `Model::shown`.
     Item(usize),
 }
@@ -136,95 +138,87 @@ struct Model {
     filter: usize,
     query: Option<String>,
     scroll: f32,
-    copied: Option<String>,
+    copied: Option<u64>,
 }
 
-fn key_of(title: &str, preview: &str) -> String {
-    format!("{title}\u{1f}{preview}")
-}
-
-fn kind_of(body: &winisland_core::clipboard::ClipboardBody) -> Kind {
-    use winisland_core::clipboard::ClipboardBody;
-    match body {
-        ClipboardBody::Text(_) => Kind::Text,
-        ClipboardBody::Link(_) => Kind::Link,
-        ClipboardBody::Image { .. } => Kind::Image,
-        ClipboardBody::Files(_) => Kind::Files,
+fn entry_of(item: &ClipboardItem) -> Entry {
+    let blob_id = match &item.body {
+        ClipboardBody::Image { blob_id, .. } => Some(blob_id.clone()),
+        _ => None,
+    };
+    let (kind, title, preview, size) = match &item.body {
+        ClipboardBody::Text(text) => (
+            Kind::Text,
+            text.lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .unwrap_or_default()
+                .chars()
+                .take(160)
+                .collect(),
+            text.chars().take(MAX_PREVIEW_CHARS).collect(),
+            None,
+        ),
+        ClipboardBody::Link(url) => (
+            Kind::Link,
+            url.chars().take(160).collect(),
+            url.chars().take(MAX_PREVIEW_CHARS).collect(),
+            None,
+        ),
+        ClipboardBody::Image { width, height, .. } => (
+            Kind::Image,
+            "Image".to_string(),
+            String::new(),
+            Some((*width, *height)),
+        ),
+        ClipboardBody::Files(files) => (
+            Kind::Files,
+            match files.as_slice() {
+                [file] => file
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| file.display().to_string()),
+                _ => kit::plural(files.len(), "file", "files"),
+            },
+            files
+                .iter()
+                .map(|file| file.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+                .chars()
+                .take(MAX_PREVIEW_CHARS)
+                .collect(),
+            None,
+        ),
+    };
+    Entry {
+        id: item.id,
+        title,
+        source: item.source_app.clone().unwrap_or_default(),
+        preview,
+        kind,
+        size,
+        blob_id,
+        captured: item.captured_at,
+        pinned: item.pinned,
     }
 }
 
-/// Kind of a row captured after the saved history was read, from its text alone.
-fn guess_kind(title: &str, preview: &str) -> Kind {
-    let trimmed = preview.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if !trimmed.contains(char::is_whitespace)
-        && (lower.starts_with("http://") || lower.starts_with("https://"))
-    {
-        return Kind::Link;
+/// Rebuilds rows when the history service published a new revision.
+fn sync(state: &mut State) {
+    let Some(published) = history::published() else {
+        return;
+    };
+    state.synced = true;
+    state.enabled = published.enabled;
+    if state.revision == Some(published.revision) {
+        return;
     }
-    if let Some((width, height)) = trimmed.split_once(" × ")
-        && width.parse::<u32>().is_ok()
-        && height.parse::<u32>().is_ok()
-        && title
-            == winisland_core::i18n::tr_args("clipboard_image", &[&format!("{width}×{height}")])
-    {
-        return Kind::Image;
-    }
-    let lines: Vec<&str> = trimmed.lines().collect();
-    let looks_like_path = |line: &str| {
-        let bytes = line.as_bytes();
-        (bytes.len() > 2 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/'))
-            || line.starts_with("\\\\")
-    };
-    if !lines.is_empty() && lines.iter().all(|line| looks_like_path(line)) {
-        let named = lines.len() == 1
-            && std::path::Path::new(lines[0])
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy() == title);
-        let counted =
-            title == winisland_core::i18n::tr_args("clipboard_files", &[&lines.len().to_string()]);
-        if named || counted {
-            return Kind::Files;
-        }
-    }
-    Kind::Text
-}
-
-/// Capture times, pins and kinds from the saved (encrypted) history, keyed like the view.
-fn load_saved_meta() -> HashMap<String, Meta> {
-    use winisland_core::clipboard::ClipboardSnapshot;
-    const MAX_FILE_BYTES: u64 = 96 * 1024 * 1024;
-    // Must match `core::clipboard_history`; it binds the file to the app, not a secret.
-    const ENTROPY: &[u8] = b"winisland-next/clipboard/v1";
-    let bytes = match crate::core::json_store::read_bytes(
-        crate::core::clipboard_history::FILE_NAME,
-        MAX_FILE_BYTES,
-    ) {
-        Ok(Some(bytes)) => bytes,
-        _ => return HashMap::new(),
-    };
-    let Ok(plain) = winisland_platform_windows::dpapi::unprotect(&bytes, Some(ENTROPY)) else {
-        return HashMap::new();
-    };
-    let Ok(snapshot) = serde_json::from_slice::<ClipboardSnapshot>(&plain) else {
-        return HashMap::new();
-    };
-    snapshot
-        .items
-        .iter()
-        .map(|item| {
-            let (title, _) = crate::ui::dashboard::clipboard_row(item);
-            let preview = crate::ui::dashboard::clipboard_preview(item);
-            (
-                key_of(&title, &preview),
-                Meta {
-                    captured: Some(item.captured_at),
-                    pinned: item.pinned,
-                    kind: Some(kind_of(&item.body)),
-                },
-            )
-        })
-        .collect()
+    state.revision = Some(published.revision);
+    state.entries = Rc::new(published.items.iter().map(entry_of).collect());
+    // The publish now carries every request made before it.
+    state.pending_pins.clear();
+    state.pending_deletes.clear();
 }
 
 fn filter_matches(filter: usize, kind: Kind) -> bool {
@@ -236,46 +230,37 @@ fn filter_matches(filter: usize, kind: Kind) -> bool {
     }
 }
 
+/// Group of an entry: pinned first, then one group per local day.
+fn group_of(entry: &Entry, today: i64) -> (u8, i64) {
+    if entry.pinned {
+        (0, 0)
+    } else {
+        (1, today - kit::local_day(entry.captured))
+    }
+}
+
+fn group_name(group: (u8, i64), entry: &Entry) -> String {
+    match group {
+        (0, _) => "Pinned".to_string(),
+        (_, days) if days <= 0 => "Today".to_string(),
+        (_, 1) => "Yesterday".to_string(),
+        _ => kit::month_day(entry.captured),
+    }
+}
+
 fn build_model(state: &State) -> Model {
-    let (synced, enabled, all) = crate::ui::dashboard::CLIPBOARD_VIEW.with(|view| {
-        let view = view.borrow();
-        let entries: Vec<Entry> = view
-            .rows
-            .iter()
-            .zip(view.previews.iter())
-            .enumerate()
-            .filter_map(|(index, ((title, source), preview))| {
-                let key = key_of(title, preview);
-                if state.hidden.contains(&key) {
-                    return None;
-                }
-                let meta = state.meta.get(&key);
-                let kind = meta
-                    .and_then(|meta| meta.kind)
-                    .unwrap_or_else(|| guess_kind(title, preview));
-                let pinned = state
-                    .pins
-                    .get(&key)
-                    .copied()
-                    .unwrap_or_else(|| meta.is_some_and(|meta| meta.pinned));
-                Some(Entry {
-                    index,
-                    title: if kind == Kind::Image {
-                        "Image".to_string()
-                    } else {
-                        title.clone()
-                    },
-                    key,
-                    source: source.clone(),
-                    preview: preview.clone(),
-                    kind,
-                    captured: meta.and_then(|meta| meta.captured),
-                    pinned,
-                })
-            })
-            .collect();
-        (view.synced, view.enabled, entries)
-    });
+    let all: Vec<Entry> = state
+        .entries
+        .iter()
+        .filter(|entry| !state.pending_deletes.contains(&entry.id))
+        .map(|entry| {
+            let mut entry = entry.clone();
+            if let Some(&pinned) = state.pending_pins.get(&entry.id) {
+                entry.pinned = pinned;
+            }
+            entry
+        })
+        .collect();
     let mut counts = [all.len(), 0, 0, 0];
     for entry in &all {
         for (filter, count) in counts.iter_mut().enumerate().skip(1) {
@@ -290,10 +275,12 @@ fn build_model(state: &State) -> Model {
         .map(|query| query.trim().to_lowercase())
         .filter(|query| !query.is_empty());
     let total = all.len();
-    let matching: Vec<Entry> = all
+    let today = kit::today();
+    let mut shown: Vec<(usize, Entry)> = all
         .into_iter()
-        .filter(|entry| filter_matches(state.filter, entry.kind))
-        .filter(|entry| {
+        .enumerate()
+        .filter(|(_, entry)| filter_matches(state.filter, entry.kind))
+        .filter(|(_, entry)| {
             needle.as_ref().is_none_or(|needle| {
                 entry.title.to_lowercase().contains(needle)
                     || entry.preview.to_lowercase().contains(needle)
@@ -301,31 +288,17 @@ fn build_model(state: &State) -> Model {
             })
         })
         .collect();
-    // Pinned, then today, then earlier; history order inside each group.
-    let today = kit::today();
-    let group = |entry: &Entry| {
-        if entry.pinned {
-            0
-        } else if entry
-            .captured
-            .is_some_and(|time| kit::local_day(time) == today)
-        {
-            1
-        } else {
-            2
-        }
-    };
-    let mut shown = matching;
-    shown.sort_by_key(|entry| (group(entry), entry.index));
+    // History order (newest first) inside each group.
+    shown.sort_by_key(|(index, entry)| (group_of(entry, today), *index));
+    let shown: Vec<Entry> = shown.into_iter().map(|(_, entry)| entry).collect();
     let mut lines = Vec::new();
     let mut top = 0.0;
     let mut current = None;
     for (position, entry) in shown.iter().enumerate() {
-        let entry_group = group(entry);
-        if current != Some(entry_group) {
-            current = Some(entry_group);
-            let name = ["Pinned", "Today", "Earlier"][entry_group];
-            lines.push((Line::Header(name), top, HEADER_HEIGHT));
+        let group = group_of(entry, today);
+        if current != Some(group) {
+            current = Some(group);
+            lines.push((Line::Header(group_name(group, entry)), top, HEADER_HEIGHT));
             top += HEADER_HEIGHT;
         }
         lines.push((Line::Item(position), top, ROW_HEIGHT));
@@ -333,17 +306,15 @@ fn build_model(state: &State) -> Model {
     }
     let selected = state
         .selected
-        .as_ref()
-        .and_then(|key| shown.iter().position(|entry| &entry.key == key))
+        .and_then(|id| shown.iter().position(|entry| entry.id == id))
         .or_else(|| (!shown.is_empty()).then_some(0));
     let copied = state
         .copied
-        .as_ref()
         .filter(|(_, at)| at.elapsed() < COPIED_FOR)
-        .map(|(key, _)| key.clone());
+        .map(|(id, _)| id);
     Model {
-        synced,
-        enabled,
+        synced: state.synced,
+        enabled: state.enabled,
         total,
         counts,
         shown,
@@ -410,6 +381,7 @@ struct PaneLayout {
     body: Rect,
     footer: Rect,
     copy: Rect,
+    save: Rect,
 }
 
 fn pane_layout(pane: Rect) -> PaneLayout {
@@ -423,7 +395,14 @@ fn pane_layout(pane: Rect) -> PaneLayout {
         COPY_WIDTH,
         FOOTER - 2.0,
     );
+    let save = Rect::from_xywh(
+        copy.left - BUTTON - 6.0,
+        footer.center_y() - BUTTON / 2.0,
+        BUTTON,
+        BUTTON,
+    );
     PaneLayout {
+        save,
         header,
         pin,
         delete,
@@ -453,11 +432,10 @@ fn reveal(state: &mut State) {
         state.scroll = 0.0;
         return;
     };
-    let Some((_, top, height)) = model
+    let Some(&(_, top, height)) = model
         .lines
         .iter()
         .find(|(line, _, _)| matches!(line, Line::Item(position) if *position == selected))
-        .copied()
     else {
         return;
     };
@@ -482,7 +460,7 @@ fn line_at(model: &Model, view: Rect, point: Point) -> Option<Line> {
         .lines
         .iter()
         .find(|(_, top, height)| y >= *top && y < top + height)
-        .map(|(line, _, _)| *line)
+        .map(|(line, _, _)| line.clone())
 }
 
 pub fn draw(ctx: &TabContext<'_>) -> bool {
@@ -491,6 +469,7 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
     let model = STATE.with(|state| {
         let mut state = state.borrow_mut();
         state.grid = Some(grid);
+        sync(&mut state);
         let model = build_model(&state);
         let view = layout(grid).view;
         state.scroll = state.scroll.clamp(0.0, max_scroll(&model, view));
@@ -630,18 +609,24 @@ fn draw_list_header(
     );
 }
 
+/// "503 × 164", for images.
+fn dimensions(entry: &Entry) -> String {
+    entry
+        .size
+        .map(|(width, height)| format!("{width} × {height}"))
+        .unwrap_or_default()
+}
+
+/// Row subtitle: what it is (size, host, source app) and how long ago it was copied.
 fn meta_line(entry: &Entry) -> String {
     let what = match entry.kind {
-        Kind::Text => kit::plural(kit::word_count(&entry.preview), "word", "words"),
-        Kind::Image => entry.preview.clone(),
+        Kind::Image => dimensions(entry),
         Kind::Link => host(&entry.preview).to_string(),
+        Kind::Text if !entry.source.is_empty() => entry.source.clone(),
+        Kind::Text => kit::plural(kit::word_count(&entry.preview), "word", "words"),
         Kind::Files => kit::plural(entry.preview.lines().count().max(1), "file", "files"),
     };
-    match entry.captured {
-        Some(time) => format!("{what} · {}", kit::ago(time)),
-        None if !entry.source.is_empty() => format!("{what} · {}", entry.source),
-        None => what,
-    }
+    format!("{what} · {}", kit::ago(entry.captured))
 }
 
 fn host(url: &str) -> &str {
@@ -652,7 +637,41 @@ fn host(url: &str) -> &str {
     rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
-fn kind_tile(painter: Painter<'_>, tile: Rect, kind: Kind, colors: &SemanticColors) {
+/// Draws `image` into `frame` (cover or contain) with rounded corners.
+fn rounded_image(
+    painter: Painter<'_>,
+    image: &winisland_render::Image,
+    frame: Rect,
+    radius: f32,
+    fit: ImageFit,
+    colors: &SemanticColors,
+) {
+    let save = painter.save();
+    painter.clip_round_rect(frame, Radius::uniform(radius));
+    painter.draw_image(
+        image,
+        frame,
+        &ImageOptions {
+            fit,
+            sampling: Sampling::LinearNone,
+            ..ImageOptions::default()
+        },
+    );
+    painter.restore_to(save);
+    painter.stroke_round_rect(frame, Radius::uniform(radius), 1.0, colors.border_subtle);
+}
+
+fn kind_tile(painter: Painter<'_>, tile: Rect, entry: &Entry, colors: &SemanticColors) {
+    if let Some(thumb) = entry
+        .blob_id
+        .as_deref()
+        .and_then(images::get)
+        .and_then(|images| images.thumb)
+    {
+        rounded_image(painter, &thumb, tile, 8.0, ImageFit::Cover, colors);
+        return;
+    }
+    let kind = entry.kind;
     let (fill, ink) = match kind {
         Kind::Image => (Rgba::from_rgb(64, 124, 196), Rgba::WHITE),
         Kind::Link => (colors.accent_soft, colors.accent_primary),
@@ -692,7 +711,7 @@ fn draw_list(
         if y + height < view.top || y > view.bottom {
             continue;
         }
-        match *line {
+        match line {
             Line::Header(name) => kit::label(
                 painter,
                 name,
@@ -700,7 +719,7 @@ fn draw_list(
                 Rect::from_xywh(view.left + 8.0, y + 2.0, view.width() - 16.0, height - 2.0),
                 colors.text_secondary,
             ),
-            Line::Item(position) => {
+            &Line::Item(position) => {
                 let entry = &model.shown[position];
                 let rect = Rect::from_xywh(view.left, y + 1.0, view.width(), height - 2.0);
                 let selected = model.selected == Some(position);
@@ -715,7 +734,7 @@ fn draw_list(
                     painter.fill_round_rect(rect, Radius::uniform(10.0), colors.surface_raised);
                 }
                 let tile = Rect::from_xywh(rect.left + 8.0, rect.center_y() - 14.0, 28.0, 28.0);
-                kind_tile(painter, tile, entry.kind, colors);
+                kind_tile(painter, tile, entry, colors);
                 let right = if entry.pinned {
                     rect.right - 28.0
                 } else {
@@ -767,10 +786,7 @@ fn draw_pane(
     colors: &SemanticColors,
 ) {
     let parts = pane_layout(pane);
-    let mut heading = entry.kind.name().to_string();
-    if let Some(time) = entry.captured {
-        heading.push_str(&format!(" · {}", kit::ago(time)));
-    }
+    let mut heading = format!("{} · {}", entry.kind.name(), kit::ago(entry.captured));
     if !entry.source.is_empty() {
         heading.push_str(&format!(" · {}", entry.source));
     }
@@ -826,27 +842,40 @@ fn draw_pane(
     painter.clip_rect(parts.body);
     match entry.kind {
         Kind::Image => {
+            let (width, height) = entry.size.unwrap_or((4, 3));
+            let aspect = width.max(1) as f32 / height.max(1) as f32;
+            // Scale to fit the body, never past the image's own pixel size.
+            let fit_width = parts
+                .body
+                .width()
+                .min(parts.body.height() * aspect)
+                .min(width as f32)
+                .max(24.0);
             let frame = Rect::from_xywh(
                 parts.body.left,
                 parts.body.top,
-                parts.body.width().min(220.0),
-                parts.body.height().min(110.0),
+                fit_width,
+                (fit_width / aspect).clamp(24.0, parts.body.height()),
             );
-            painter.fill_round_rect(frame, Radius::uniform(12.0), colors.surface_raised);
-            kit::glyph(
-                painter,
-                glyphs::IMAGE,
-                Rect::from_xywh(frame.center_x() - 16.0, frame.center_y() - 24.0, 32.0, 32.0),
-                colors.text_secondary,
-            );
-            crate::ui::components::text::draw_text(
-                painter,
-                &format!("{} pixels", entry.preview),
-                typography::LABEL,
-                Rect::from_xywh(frame.left, frame.center_y() + 12.0, frame.width(), 18.0),
-                crate::ui::components::text::Align::Center,
-                colors.text_secondary,
-            );
+            match entry
+                .blob_id
+                .as_deref()
+                .and_then(images::get)
+                .and_then(|images| images.preview)
+            {
+                Some(preview) => {
+                    rounded_image(painter, &preview, frame, 12.0, ImageFit::Fill, colors);
+                }
+                None => {
+                    painter.fill_round_rect(frame, Radius::uniform(12.0), colors.surface_raised);
+                    kit::glyph(
+                        painter,
+                        glyphs::IMAGE,
+                        kit::centered(frame, 24.0_f32.min(frame.height() - 4.0)),
+                        colors.text_secondary,
+                    );
+                }
+            }
         }
         Kind::Link => {
             kit::draw_wrapped(
@@ -882,7 +911,19 @@ fn draw_pane(
             )
         }
         Kind::Link => format!("Link · {}", host(&entry.preview)),
-        Kind::Image => "Images can't be copied back yet".to_string(),
+        Kind::Image => match entry
+            .blob_id
+            .as_deref()
+            .and_then(images::get)
+            .filter(|images| images.file_bytes > 0)
+        {
+            Some(images) => format!(
+                "{} · {}",
+                dimensions(entry),
+                kit::byte_size(images.file_bytes)
+            ),
+            None => dimensions(entry),
+        },
         Kind::Files => kit::plural(entry.preview.lines().count().max(1), "file", "files"),
     };
     kit::label(
@@ -892,19 +933,28 @@ fn draw_pane(
         Rect::from_ltrb(
             parts.footer.left,
             parts.footer.top,
-            parts.copy.left - 10.0,
+            parts.save.left - 8.0,
             parts.footer.bottom,
         ),
         colors.text_secondary,
     );
-    let can_copy = entry.kind != Kind::Image;
-    let copied = model.copied.as_deref() == Some(entry.key.as_str());
+    kit::icon_button(
+        painter,
+        parts.save,
+        glyphs::DOWNLOAD,
+        hovered(ID_SAVE),
+        false,
+        colors.text_secondary,
+        colors,
+    );
+    let can_copy = entry.kind != Kind::Image || entry.blob_id.is_some();
+    let copied = model.copied == Some(entry.id);
     let (fill, ink) = if !can_copy {
         (colors.surface_interactive, colors.text_disabled)
     } else if hovered(ID_COPY) {
-        (colors.text_primary.with_alpha(225), colors.surface_base)
+        (colors.accent_primary.with_alpha(225), colors.surface_base)
     } else {
-        (colors.text_primary, colors.surface_base)
+        (colors.accent_primary, colors.surface_base)
     };
     painter.fill_round_rect(parts.copy, Radius::uniform(parts.copy.height() / 2.0), fill);
     let text = if copied { "Copied" } else { "Copy" };
@@ -982,17 +1032,17 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
         if parts.copy.contains(point) {
             return tab(ID_COPY);
         }
+        if parts.save.contains(point) {
+            return tab(ID_SAVE);
+        }
     }
     tab(ID_INERT)
 }
 
-/// Asks the app to put history item `index` back on the clipboard.
+/// Asks the history service to put `entry` back on the clipboard.
 fn request_copy(state: &mut State, entry: &Entry) {
-    if entry.kind == Kind::Image {
-        return;
-    }
-    crate::ui::dashboard::CLIPBOARD_COPY.with(|cell| cell.set(Some(entry.index)));
-    state.copied = Some((entry.key.clone(), Instant::now()));
+    history::request(ClipboardRequest::Copy(entry.id));
+    state.copied = Some((entry.id, Instant::now()));
 }
 
 fn select_offset(state: &mut State, delta: isize) {
@@ -1002,7 +1052,7 @@ fn select_offset(state: &mut State, delta: isize) {
     }
     let current = model.selected.unwrap_or(0) as isize;
     let next = (current + delta).clamp(0, model.shown.len() as isize - 1) as usize;
-    state.selected = Some(model.shown[next].key.clone());
+    state.selected = Some(model.shown[next].id);
     reveal(state);
 }
 
@@ -1036,7 +1086,8 @@ pub fn apply(hit: DashboardHit) -> bool {
             }
             ID_PIN => {
                 if let Some(entry) = selected {
-                    state.pins.insert(entry.key.clone(), !entry.pinned);
+                    history::request(ClipboardRequest::Pin(entry.id, !entry.pinned));
+                    state.pending_pins.insert(entry.id, !entry.pinned);
                     reveal(&mut state);
                 }
             }
@@ -1048,8 +1099,9 @@ pub fn apply(hit: DashboardHit) -> bool {
                         .shown
                         .get(position + 1)
                         .or_else(|| position.checked_sub(1).and_then(|p| model.shown.get(p)))
-                        .map(|entry| entry.key.clone());
-                    state.hidden.insert(entry.key);
+                        .map(|entry| entry.id);
+                    history::request(ClipboardRequest::Delete(entry.id));
+                    state.pending_deletes.push(entry.id);
                     state.selected = next;
                     reveal(&mut state);
                 }
@@ -1059,10 +1111,15 @@ pub fn apply(hit: DashboardHit) -> bool {
                     request_copy(&mut state, &entry);
                 }
             }
+            ID_SAVE => {
+                if let Some(entry) = selected {
+                    save_to_file(&entry);
+                }
+            }
             _ if id >= ID_ROW && usize::from(id - ID_ROW) < MAX_ROW_IDS => {
                 if let Some(entry) = model.shown.get(usize::from(id - ID_ROW)) {
                     let narrow = state.grid.is_some_and(|grid| layout(grid).pane.is_none());
-                    state.selected = Some(entry.key.clone());
+                    state.selected = Some(entry.id);
                     if narrow {
                         request_copy(&mut state, entry);
                     }
@@ -1116,56 +1173,70 @@ pub fn handle_key(key: &Key) -> bool {
     })
 }
 
-/// Tracks capture times and kinds as history changes.
-pub fn poll(_now: Instant) {
+/// Scrolls the history list by wheel `lines` (positive = wheel up, toward the newest rows).
+/// Call from the panel's wheel handler while this tab is visible, with the same `grid` the
+/// tab draws into and the pointer in page coordinates. `true` when the list took the wheel.
+pub fn scroll(grid: Rect, point: Point, lines: f32) -> bool {
+    let view = layout(grid).view;
+    if !view.contains(point) {
+        return false;
+    }
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        crate::ui::dashboard::CLIPBOARD_VIEW.with(|view| {
-            let view = view.borrow();
-            if !view.synced || state.revision == Some(view.revision) {
-                return;
-            }
-            let first_time = state.revision.is_none();
-            state.revision = Some(view.revision);
-            let saved = if first_time && view.enabled {
-                load_saved_meta()
-            } else {
-                HashMap::new()
-            };
-            let now = SystemTime::now();
-            for (index, ((title, _), preview)) in
-                view.rows.iter().zip(view.previews.iter()).enumerate()
-            {
-                let key = key_of(title, preview);
-                if first_time {
-                    let meta = saved.get(&key).copied().unwrap_or(Meta {
-                        captured: None,
-                        pinned: false,
-                        kind: None,
-                    });
-                    state.meta.insert(key, meta);
-                } else if !state.meta.contains_key(&key) {
-                    state.meta.insert(
-                        key,
-                        Meta {
-                            captured: Some(now),
-                            pinned: false,
-                            kind: None,
-                        },
-                    );
-                } else if index == 0 && state.first_key.as_deref() != Some(key.as_str()) {
-                    // Copied again: it moved back to the top.
-                    if let Some(meta) = state.meta.get_mut(&key) {
-                        meta.captured = Some(now);
-                    }
-                    state.hidden.remove(&key);
-                }
-            }
-            state.first_key = view
-                .rows
-                .first()
-                .zip(view.previews.first())
-                .map(|((title, _), preview)| key_of(title, preview));
-        });
+        let model = build_model(&state);
+        state.scroll =
+            (state.scroll - lines * ROW_HEIGHT).clamp(0.0, max_scroll(&model, view));
     });
+    true
+}
+
+/// Asks where to save `entry` (a PNG for images, a text file otherwise) and writes it. The
+/// dialog and file work run on their own thread so the panel keeps drawing.
+fn save_to_file(entry: &Entry) {
+    let blob_id = entry.blob_id.clone();
+    let text = entry.preview.clone();
+    let stem: String = entry
+        .title
+        .chars()
+        .filter(|character| character.is_alphanumeric() || *character == ' ')
+        .take(40)
+        .collect::<String>()
+        .trim()
+        .to_string();
+    let _ = std::thread::Builder::new()
+        .name("clipboard-save".into())
+        .spawn(move || {
+            let (name, extension, label) = match &blob_id {
+                Some(_) => ("Clipboard image".to_string(), "png", "PNG image"),
+                None if stem.is_empty() => ("Clipboard".to_string(), "txt", "Text"),
+                None => (stem, "txt", "Text"),
+            };
+            let Some(path) = rfd::FileDialog::new()
+                .set_title("Save clipboard item")
+                .set_file_name(format!("{name}.{extension}"))
+                .add_filter(label, &[extension])
+                .save_file()
+            else {
+                return;
+            };
+            let bytes = match &blob_id {
+                Some(blob_id) => match history::read_image_blob(blob_id) {
+                    Some(png) => png,
+                    None => {
+                        log::warn!("Cannot save clipboard image: its file is missing");
+                        return;
+                    }
+                },
+                None => text.into_bytes(),
+            };
+            if let Err(error) = std::fs::write(&path, bytes) {
+                log::warn!("Cannot save clipboard item: {error}");
+            }
+        });
+}
+
+/// Picks up newly published history and finished image decodes.
+pub fn poll(_now: Instant) {
+    STATE.with(|state| sync(&mut state.borrow_mut()));
+    images::pump();
 }

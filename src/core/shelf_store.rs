@@ -1,6 +1,7 @@
 //! The default File Shelf, holding references to dropped files in `shelf.json`.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::SystemTime;
 
 use winisland_core::shelf::{ShelfMode, ShelfSnapshot, ShelfStore};
@@ -86,8 +87,42 @@ impl ShelfService {
             .unwrap_or_default()
     }
 
-    pub fn revision(&self) -> u64 {
+    /// The change counter, after applying requests queued by the Shelf tab
+    /// ([`request_add`], [`request_new_shelf`], [`request_activate`]).
+    pub fn revision(&mut self) -> u64 {
+        self.apply_requests();
         self.revision
+    }
+
+    fn apply_requests(&mut self) {
+        let requests = match REQUESTS.lock() {
+            Ok(mut queue) if !queue.is_empty() => std::mem::take(&mut *queue),
+            _ => return,
+        };
+        for request in requests {
+            match request {
+                Request::Add(path) => self.add(path),
+                Request::NewShelf => {
+                    let taken: Vec<String> = self
+                        .store
+                        .shelves()
+                        .iter()
+                        .map(|shelf| shelf.name.to_lowercase())
+                        .collect();
+                    let name = (2..)
+                        .map(|number| format!("Shelf {number}"))
+                        .find(|name| !taken.contains(&name.to_lowercase()))
+                        .unwrap_or_else(|| "Shelf".to_string());
+                    self.create(&name);
+                }
+                Request::Activate(id) => {
+                    if id != self.active_shelf && self.store.shelf(id).is_some() {
+                        self.active_shelf = id;
+                        self.revision = self.revision.wrapping_add(1);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -159,4 +194,36 @@ impl ShelfService {
             .map(|row| row.2)
             .collect()
     }
+}
+
+/// Changes the Shelf tab asks for; the app applies them on its next frame.
+enum Request {
+    Add(PathBuf),
+    NewShelf,
+    Activate(u64),
+}
+
+static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
+
+fn push_request(request: Request) {
+    if let Ok(mut queue) = REQUESTS.lock() {
+        queue.push(request);
+    }
+}
+
+/// Queues files to park on the active shelf (by reference; originals never move).
+pub fn request_add(paths: impl IntoIterator<Item = PathBuf>) {
+    for path in paths {
+        push_request(Request::Add(path));
+    }
+}
+
+/// Queues a new, empty shelf ("Shelf 2", "Shelf 3"…) that becomes active.
+pub fn request_new_shelf() {
+    push_request(Request::NewShelf);
+}
+
+/// Queues switching the active shelf to `id`.
+pub fn request_activate(id: u64) {
+    push_request(Request::Activate(id));
 }
