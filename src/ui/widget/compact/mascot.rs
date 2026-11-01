@@ -1168,9 +1168,9 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
             roam::note_scene_time(elapsed);
         }
         match roam::since_return() {
-            // Back from playing: it walks in from the left edge, whatever the scene.
+            // Back from playing along the top edge: it walks in from the right.
             Some(since) if since < ENTER_SECONDS => {
-                -(1.0 - ease(since / ENTER_SECONDS)) * walk_distances(home, unit, left_reach, reach).0
+                (1.0 - ease(since / ENTER_SECONDS)) * walk_distances(home, unit, left_reach, reach).1
             }
             _ => scene_shift(scene, elapsed, length, (from, to)),
         }

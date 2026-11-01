@@ -72,8 +72,9 @@ impl App {
         }
     }
 
-    /// The strip along the work area's bottom (the taskbar's top, or the screen's bottom
-    /// when the taskbar is hidden) on the notch's monitor.
+    /// The work area of the notch's monitor: the robot walks its top edge, climbs its right
+    /// edge and plays on its bottom (the taskbar's top, or the screen's bottom when the
+    /// taskbar is hidden).
     fn roam_geometry(&self) -> Option<RoamGeometry> {
         let window_ref = self.window?;
         let scale = window().scale_factor(window_ref.id()) as f32;
@@ -83,12 +84,11 @@ impl App {
             mx + mw as i32 / 2,
             my + mh as i32 / 2,
         )?;
-        let height = (roam::PLAYGROUND_HEIGHT * scale).round() as u32;
         Some(RoamGeometry {
             x: work.left,
-            y: work.bottom - height as i32,
+            y: work.top,
             width: (work.right - work.left).max(1) as u32,
-            height,
+            height: (work.bottom - work.top).max(1) as u32,
             scale,
         })
     }
