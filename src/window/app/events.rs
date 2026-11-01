@@ -367,7 +367,9 @@ impl App {
                             self.springs.hide.value * island_layout.content_hide_ratio,
                             self.compact_overlay.is_visible(),
                         );
-                        let pager_backdrop = if pager_alpha > 0.01 {
+                        // As a notch the pager is never drawn, so it gets no backdrop either.
+                        let attached = self.config.notch_shape && !island_layout.dock_bottom;
+                        let pager_backdrop = if pager_alpha > 0.01 && !attached {
                             let pager = crate::ui::expanded::pager::visible_layout(
                                 winisland_render::Rect::from_xywh(
                                     island_layout.current_island_x as f32,

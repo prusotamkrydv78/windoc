@@ -1,6 +1,6 @@
 use super::AppConfig;
 
-pub const CONFIG_VERSION: u32 = 6;
+pub const CONFIG_VERSION: u32 = 7;
 
 /// Smallest expanded panel that fits the standard dashboard layout comfortably.
 const MIN_DASHBOARD_WIDTH: f32 = 720.0;
@@ -64,6 +64,18 @@ pub fn migrate(config: &mut AppConfig, from_version: u32) -> bool {
                 if !workspace.modules.iter().any(|module| module == key) {
                     workspace.modules.push(key.to_string());
                 }
+            }
+        }
+    }
+    if from_version < 7 {
+        // No default workspace listed the Clock tab, so it could not be opened.
+        for workspace in &mut config.workspaces {
+            if !workspace
+                .modules
+                .iter()
+                .any(|module| module == "dashboard_clock")
+            {
+                workspace.modules.push("dashboard_clock".to_string());
             }
         }
     }

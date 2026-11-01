@@ -176,6 +176,19 @@ fn get_typeface_for_char(c: char, style: FontStyle) -> (Typeface, bool) {
         }
         evict_one_if_full(&mut cache, FALLBACK_CACHE_LIMIT);
 
+        // Text fonts often carry plain or placeholder glyphs for symbols such as ☕; the
+        // emoji font draws them the way people expect.
+        if is_emoji_char(c)
+            && let Some(tf) = FONT_MGR.with(|mgr| {
+                mgr.match_family_style("Segoe UI Emoji", sk_style)
+                    .filter(|tf| typeface_supports_char(tf, c))
+            })
+        {
+            let embolden = needs_synthetic_bold(&tf, style);
+            cache.insert((c, s_key), tf.clone());
+            return (tf, embolden);
+        }
+
         if let Some(tf) = get_custom_typeface() {
             let mut glyphs = [0u16; 1];
             tf.unichars_to_glyphs(&[c as i32], &mut glyphs);
@@ -208,6 +221,48 @@ fn get_typeface_for_char(c: char, style: FontStyle) -> (Typeface, bool) {
         cache.insert((c, s_key), tf.clone());
         (tf, embolden)
     })
+}
+
+/// Characters shown as emoji by default (Unicode `Emoji_Presentation`). Text-style symbols
+/// such as ✕, ♪ and ▶ keep the text font.
+fn is_emoji_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{231A}'..='\u{231B}'
+            | '\u{23E9}'..='\u{23EC}'
+            | '\u{23F0}'
+            | '\u{23F3}'
+            | '\u{25FD}'..='\u{25FE}'
+            | '\u{2614}'..='\u{2615}'
+            | '\u{2648}'..='\u{2653}'
+            | '\u{267F}'
+            | '\u{2693}'
+            | '\u{26A1}'
+            | '\u{26AA}'..='\u{26AB}'
+            | '\u{26BD}'..='\u{26BE}'
+            | '\u{26C4}'..='\u{26C5}'
+            | '\u{26CE}'
+            | '\u{26D4}'
+            | '\u{26EA}'
+            | '\u{26F2}'..='\u{26F3}'
+            | '\u{26F5}'
+            | '\u{26FA}'
+            | '\u{26FD}'
+            | '\u{2705}'
+            | '\u{270A}'..='\u{270B}'
+            | '\u{2728}'
+            | '\u{274C}'
+            | '\u{274E}'
+            | '\u{2753}'..='\u{2755}'
+            | '\u{2757}'
+            | '\u{2795}'..='\u{2797}'
+            | '\u{27B0}'
+            | '\u{27BF}'
+            | '\u{2B1B}'..='\u{2B1C}'
+            | '\u{2B50}'
+            | '\u{2B55}'
+            | '\u{1F000}'..='\u{1FAFF}'
+    )
 }
 
 fn inherits_previous_typeface(c: char) -> bool {
@@ -360,6 +415,21 @@ impl FontManager {
         bold: bool,
         color: Rgba,
     ) {
+        // One font covers ASCII; anything else (emoji, CJK, symbols) needs per-character
+        // fallback, or it draws as empty boxes.
+        if !is_ascii_text(text) {
+            self.draw_text_cached(DrawTextCachedParams {
+                painter,
+                text,
+                x: at.x,
+                y: at.y,
+                size,
+                bold,
+                color,
+                blur: None,
+            });
+            return;
+        }
         let font = self.get_font(size, bold);
         let paint = text_paint(color, None);
         painter.canvas().draw_str(text, (at.x, at.y), &font, &paint);

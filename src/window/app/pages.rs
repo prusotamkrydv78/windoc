@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::ui::expanded::pager::{self, ExpandedPage, PageAvailability, PagerHit, available_pages};
 use crate::utils::mouse::is_point_in_continuous_rounded_rect;
@@ -7,7 +7,6 @@ use winisland_render::{Point, Rect};
 
 use super::{App, IslandLayout};
 
-const WHEEL_COOLDOWN: Duration = Duration::from_millis(260);
 const WHEEL_PIXEL_THRESHOLD: f32 = 40.0;
 
 impl App {
@@ -70,16 +69,6 @@ impl App {
             }
             _ => false,
         }
-    }
-
-    fn step_page(&mut self, step: i32) -> bool {
-        let count = self.expanded_pages().len();
-        if count < 2 {
-            return false;
-        }
-        let current = self.page_index(self.current_page).unwrap_or(0) as i32;
-        let next = (current + step).clamp(0, count as i32 - 1) as usize;
-        self.go_to_page_index(next)
     }
 
     pub(super) fn set_music_page_available(&mut self, available: bool) {
@@ -307,37 +296,10 @@ impl App {
             self.springs.h.value as f64,
             self.springs.r.value as f64,
         );
-        if !over_island && !self.pager_contains(rel_x, rel_y, &layout) {
-            return false;
-        }
-        let dominant = |x: f32, y: f32| if x.abs() > y.abs() { x } else { -y };
-        let step = match delta {
-            MouseWheelDelta::Lines { x, y } => {
-                self.wheel_accumulator = 0.0;
-                dominant(x, y).signum()
-            }
-            MouseWheelDelta::Pixels { x, y } => {
-                self.wheel_accumulator += dominant(x as f32, y as f32);
-                if self.wheel_accumulator.abs() < WHEEL_PIXEL_THRESHOLD {
-                    return false;
-                }
-                let step = self.wheel_accumulator.signum();
-                self.wheel_accumulator = 0.0;
-                step
-            }
-        };
-        if step == 0.0 {
-            return false;
-        }
-        let now = Instant::now();
-        if self
-            .last_wheel_page_at
-            .is_some_and(|last| now.saturating_duration_since(last) < WHEEL_COOLDOWN)
-        {
-            return false;
-        }
-        self.last_wheel_page_at = Some(now);
-        self.idle_timer = now;
-        self.step_page(step as i32)
+        // The panel navigates with its dock; the wheel no longer flips to the old full-size
+        // pages. It is still taken over the panel so the window behind does not scroll.
+        let _ = delta;
+        self.idle_timer = Instant::now();
+        over_island || self.pager_contains(rel_x, rel_y, &layout)
     }
 }

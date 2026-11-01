@@ -16,7 +16,7 @@ use super::DashboardHit;
 
 /// Large figures: tabular so changing numbers do not shift.
 const HERO: TextStyle = TextStyle {
-    size: 32.0,
+    size: 28.0,
     weight: 650,
     tabular: true,
 };
@@ -194,12 +194,29 @@ fn card_header(painter: Painter<'_>, card: Rect, title: &str, note: &str, colors
 fn hero(painter: Painter<'_>, card: Rect, text: &str, colors: &SemanticColors) -> Rect {
     let rect = Rect::from_xywh(
         card.left + CARD_PAD,
-        card.top + CARD_PAD + 20.0,
+        card.top + CARD_PAD + 16.0,
         card.width() - CARD_PAD * 2.0,
-        40.0,
+        34.0,
     );
     draw_text(painter, text, HERO, rect, Align::Start, colors.text_primary);
     rect
+}
+
+/// One line of secondary text along the bottom of a card.
+fn footer(painter: Painter<'_>, card: Rect, text: &str, colors: &SemanticColors) {
+    draw_text(
+        painter,
+        text,
+        typography::LABEL,
+        Rect::from_xywh(
+            card.left + CARD_PAD,
+            card.bottom - CARD_PAD - 16.0,
+            card.width() - CARD_PAD * 2.0,
+            16.0,
+        ),
+        Align::Start,
+        colors.text_secondary,
+    );
 }
 
 fn draw_battery(
@@ -209,21 +226,9 @@ fn draw_battery(
     colors: &SemanticColors,
 ) {
     let Some((level, charging)) = snapshot.battery else {
-        card_header(painter, card, "Power", "", colors);
+        card_header(painter, card, "Power", "AC", colors);
         hero(painter, card, "Plugged in", colors);
-        draw_text(
-            painter,
-            "This PC runs on mains power",
-            typography::BODY,
-            Rect::from_xywh(
-                card.left + CARD_PAD,
-                card.bottom - CARD_PAD - 20.0,
-                card.width() - CARD_PAD * 2.0,
-                20.0,
-            ),
-            Align::Start,
-            colors.text_secondary,
-        );
+        footer(painter, card, "No battery in this PC", colors);
         return;
     };
     card_header(
@@ -288,23 +293,11 @@ fn draw_network(
         ),
         (None, false) => ("Offline".to_string(), "No network connection".to_string()),
     };
-    card_header(painter, card, "Network", "", colors);
+    // The link detail sits beside the title so the rates have the bottom row to themselves.
+    card_header(painter, card, "Network", &detail, colors);
     hero(painter, card, &name, colors);
-    draw_text(
-        painter,
-        &detail,
-        typography::LABEL,
-        Rect::from_xywh(
-            card.left + CARD_PAD,
-            card.top + CARD_PAD + 60.0,
-            card.width() - CARD_PAD * 2.0,
-            16.0,
-        ),
-        Align::Start,
-        colors.text_secondary,
-    );
     // Download and upload side by side, each with its live sparkline.
-    let row_top = card.bottom - CARD_PAD - 26.0;
+    let row_top = card.bottom - CARD_PAD - 20.0;
     let half = (card.width() - CARD_PAD * 2.0 - space::S3) / 2.0;
     for (index, (arrow, rate, history)) in [
         ("↓", snapshot.download, &snapshot.download_history),
@@ -322,14 +315,14 @@ fn draw_network(
             painter,
             &text,
             typography::BODY,
-            Rect::from_xywh(left, row_top, half * 0.55, 24.0),
+            Rect::from_xywh(left, row_top, half * 0.55, 20.0),
             Align::Start,
             colors.text_primary,
         );
         let peak = history.iter().copied().fold(1024.0_f32, f32::max);
         sparkline(
             painter,
-            Rect::from_xywh(left + half * 0.58, row_top + 2.0, half * 0.42, 20.0),
+            Rect::from_xywh(left + half * 0.58, row_top + 1.0, half * 0.42, 18.0),
             history,
             peak,
             colors.text_primary,
@@ -347,7 +340,7 @@ fn draw_performance(
     let columns = [
         ("CPU", snapshot.cpu, &snapshot.cpu_history, None),
         (
-            "Memory",
+            "RAM",
             snapshot.memory,
             &snapshot.memory_history,
             snapshot.memory_bytes,
@@ -376,34 +369,49 @@ fn draw_performance(
         }
         let figure =
             value.map_or_else(|| "—".to_string(), |value| format!("{:.0}%", value * 100.0));
+        let figure_row = Rect::from_xywh(left, card.top + CARD_PAD + 18.0, width - space::S4, 30.0);
         draw_text(
             painter,
             &figure,
             FIGURE,
-            Rect::from_xywh(left, card.top + CARD_PAD + 22.0, width - space::S4, 30.0),
+            figure_row,
             Align::Start,
             colors.text_primary,
         );
-        let caption = match bytes {
-            Some((used, total)) => {
-                format!("{label} · {}/{}", format_bytes(used), format_bytes(total))
-            }
-            None => label.to_string(),
-        };
+        // The trend sits beside the figure; "100%" is the widest it gets.
+        let figure_w = 52.0;
+        if figure_row.width() - figure_w > 20.0 {
+            sparkline(
+                painter,
+                Rect::from_xywh(
+                    figure_row.left + figure_w,
+                    figure_row.center_y() - 9.0,
+                    figure_row.width() - figure_w,
+                    18.0,
+                ),
+                history,
+                1.0,
+                colors.text_primary,
+            );
+        }
+        // The amounts only when they fit beside the label.
+        let caption = bytes
+            .map(|(used, total)| format!("{label} {}", format_pair(used, total)))
+            .filter(|caption| {
+                winisland_render::text::FontManager::global().measure_text_cached(
+                    caption,
+                    typography::CAPTION.size,
+                    winisland_render::FontStyle::normal(),
+                ) <= width - space::S4
+            })
+            .unwrap_or_else(|| label.to_string());
         draw_text(
             painter,
             &caption,
             typography::CAPTION,
-            Rect::from_xywh(left, card.top + CARD_PAD + 54.0, width - space::S4, 16.0),
+            Rect::from_xywh(left, card.bottom - CARD_PAD - 16.0, width - space::S4, 16.0),
             Align::Start,
             colors.text_secondary,
-        );
-        sparkline(
-            painter,
-            Rect::from_xywh(left, card.bottom - CARD_PAD - 22.0, width - space::S4, 20.0),
-            history,
-            1.0,
-            colors.text_primary,
         );
     }
 }
@@ -504,12 +512,13 @@ fn format_rate(bytes_per_second: f64) -> String {
     }
 }
 
-/// "16 GB", "512 GB", "1.8 TB".
-fn format_bytes(bytes: u64) -> String {
-    let gb = bytes as f64 / 1_073_741_824.0;
-    if gb >= 1024.0 {
-        format!("{:.1} TB", gb / 1024.0)
+/// "21/32 GB", "0.4/1.8 TB": used and total sharing one unit so it stays short.
+fn format_pair(used: u64, total: u64) -> String {
+    const GB: f64 = 1_073_741_824.0;
+    let (used, total) = (used as f64 / GB, total as f64 / GB);
+    if total >= 1024.0 {
+        format!("{:.1}/{:.1} TB", used / 1024.0, total / 1024.0)
     } else {
-        format!("{gb:.0} GB")
+        format!("{used:.0}/{total:.0} GB")
     }
 }

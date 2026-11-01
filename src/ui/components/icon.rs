@@ -31,6 +31,11 @@ pub enum Icon {
     Plus,
     Battery,
     Bolt,
+    Gauge,
+    Convert,
+    Ruler,
+    Message,
+    Sparkle,
     /// The island's robot, drawn by the mascot widget rather than from a path.
     Pet,
     /// The robot holding up a picture, for saved screenshots.
@@ -75,6 +80,14 @@ impl Icon {
             Self::Plus => "M12 5 V19 M5 12 H19",
             Self::Battery => "M3 8 H18 V16 H3 Z M18 10.5 H20.5 V13.5 H18",
             Self::Bolt => "M13 3 L6 13 H11.5 L10.5 21 L18 10.5 H12.5 Z",
+            Self::Gauge => "M4 17 A8 8 0 1 1 20 17 M12 16 L15.5 10.5 M12 16 H12.01",
+            Self::Convert => "M4 8 H18 M14 4 L18 8 L14 12 M20 16 H6 M10 12 L6 16 L10 20",
+            Self::Ruler => "M3 15 L15 3 L21 9 L9 21 Z M7 11 L9 13 M10 8 L12 10 M13 5 L15 7",
+            Self::Message => "M4 5 H20 V16 H10 L6 20 V16 H4 Z M8 9 H16 M8 12.5 H13",
+            Self::Sparkle => {
+                "M12 3 L13.8 10.2 L21 12 L13.8 13.8 L12 21 L10.2 13.8 L3 12 L10.2 10.2 Z \
+                 M19 3 V6 M17.5 4.5 H20.5"
+            }
         }
     }
 
