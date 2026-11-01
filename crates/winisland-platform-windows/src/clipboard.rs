@@ -214,7 +214,14 @@ unsafe extern "system" fn window_proc(
         // Only this monitor thread waits; repeated updates read the same content and the
         // history drops the duplicates.
         std::thread::sleep(SETTLE_DELAY);
-        if let Some(change) = read_clipboard(window) {
+        // A panic must not cross this callback into Windows (that kills the process), so
+        // an unreadable clipboard, such as an odd image, is logged and skipped.
+        let read = std::panic::catch_unwind(|| read_clipboard(window));
+        let read = read.unwrap_or_else(|_| {
+            log::warn!("Skipped a clipboard change that could not be read");
+            None
+        });
+        if let Some(change) = read {
             SINK.with(|sink| {
                 if let Some(sender) = sink.borrow().as_ref() {
                     // A full queue drops this change; the next one supersedes it.
@@ -247,6 +254,15 @@ fn read_clipboard(window: HWND) -> Option<ClipboardChange> {
         log::warn!("Clipboard changed but could not be opened");
         return None;
     }
+    // Closes the clipboard however this returns, so other apps are never locked out.
+    struct Opened;
+    impl Drop for Opened {
+        fn drop(&mut self) {
+            // SAFETY: The clipboard was opened by this thread just above.
+            let _ = unsafe { CloseClipboard() };
+        }
+    }
+    let _opened = Opened;
     let formats = marker_formats();
     let excluded = formats
         .iter()
@@ -266,8 +282,6 @@ fn read_clipboard(window: HWND) -> Option<ClipboardChange> {
     } else {
         ClipboardContent::Unsupported
     };
-    // SAFETY: The clipboard was opened above by this thread.
-    let _ = unsafe { CloseClipboard() };
     Some(ClipboardChange {
         formats,
         content,

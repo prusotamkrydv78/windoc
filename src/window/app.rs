@@ -148,6 +148,7 @@ pub struct App {
     roam_window: Option<WindowRef>,
     roam_target: Option<winisland_render::RendererTargetId>,
     roam_geometry: roam_window::RoamGeometry,
+    roam_geometry_checked: Option<Instant>,
     /// Hidden window receiving system broadcasts for the whole session.
     shell_listener: Option<winisland_platform_windows::shell_bar::ShellEventListener>,
     /// Active call: when it started and the calling app's name.
@@ -322,6 +323,7 @@ impl Default for App {
             roam_window: None,
             roam_target: None,
             roam_geometry: roam_window::RoamGeometry::default(),
+            roam_geometry_checked: None,
             shell_listener: None,
             call: None,
             call_muted: false,

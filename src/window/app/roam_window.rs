@@ -48,18 +48,35 @@ impl App {
         if !allowed {
             roam::come_home();
         }
+        self.frame_roam_window();
+    }
+
+    /// Every frame: creates, moves or removes the playground window, lets only the robot take
+    /// clicks, and asks for the next frame while it is out. Trips are planned every couple of
+    /// seconds in `sync_roam_window`; redrawing only then made the flight move in jumps.
+    pub(super) fn frame_roam_window(&mut self) {
         if !roam::active() {
-            self.destroy_roam_window();
+            if self.roam_window.is_some() {
+                self.destroy_roam_window();
+            }
             return;
         }
-        let Some(geometry) = self.roam_geometry() else {
-            return;
-        };
-        if self.roam_window.is_none() {
-            self.create_roam_window(geometry);
-        } else if self.roam_geometry != geometry {
-            self.place_roam_window(geometry);
+        // The work area changes rarely; look it up when the window is made or every second.
+        let stale = self
+            .roam_geometry_checked
+            .is_none_or(|at| at.elapsed() > std::time::Duration::from_secs(1));
+        if self.roam_window.is_none() || stale {
+            let Some(geometry) = self.roam_geometry() else {
+                return;
+            };
+            self.roam_geometry_checked = Some(std::time::Instant::now());
+            if self.roam_window.is_none() {
+                self.create_roam_window(geometry);
+            } else if self.roam_geometry != geometry {
+                self.place_roam_window(geometry);
+            }
         }
+        let geometry = self.roam_geometry;
         if let Some(roam_window) = self.roam_window {
             // Only the robot takes clicks; the rest of the strip clicks through.
             let (px, py) = crate::utils::mouse::get_global_cursor_pos();

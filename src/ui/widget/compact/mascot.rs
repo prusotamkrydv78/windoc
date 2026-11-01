@@ -9,6 +9,7 @@
 
 mod characters;
 mod extras;
+mod moves;
 
 pub(crate) use characters::set_character;
 pub(crate) mod life;
@@ -77,6 +78,16 @@ enum Scene {
     /// Headphones on, nodding along.
     Groove,
     Night,
+    /// Juggling three balls.
+    Juggle,
+    /// A yoga balance on its mat.
+    Yoga,
+    /// Blowing bubbles.
+    Bubbles,
+    /// Strumming a little guitar.
+    Guitar,
+    /// Rolling on a skateboard.
+    Skate,
     /// The microphone or camera is in use: a headset on, listening quietly at the laptop.
     Meeting,
     /// A fullscreen video or game is in front: leaning back with popcorn.
@@ -106,7 +117,7 @@ fn shares_props(scene: Scene, next: Scene) -> bool {
 }
 
 /// The daytime order: a hello, then chai, then the rest of the day.
-const DAY: [Scene; 9] = [
+const DAY: [Scene; 14] = [
     Scene::Wave,
     Scene::Chai,
     Scene::Paint,
@@ -116,6 +127,11 @@ const DAY: [Scene; 9] = [
     Scene::Plant,
     Scene::Stretch,
     Scene::Nap,
+    Scene::Juggle,
+    Scene::Yoga,
+    Scene::Bubbles,
+    Scene::Guitar,
+    Scene::Skate,
 ];
 
 /// Without input for this long the user counts as away and the robot naps.
@@ -918,8 +934,14 @@ fn current_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
     if focus_running {
         return (Scene::Laptop, time);
     }
-    let index = (time / scene_seconds()) as usize;
-    (DAY[index % DAY.len()], time % scene_seconds())
+    // A hello first, then the day in a random order that never repeats a scene twice running.
+    let index = (time / scene_seconds()) as u32;
+    let scene = if index == 0 {
+        Scene::Wave
+    } else {
+        DAY[moves::shuffled(index, DAY.len() as u32, 0xDA7) as usize]
+    };
+    (scene, time % scene_seconds())
 }
 
 /// The scene for `time`, after what the user is doing and the robot's mood have had their
@@ -1147,6 +1169,10 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::SipWater | Scene::Groove => 13.0,
         Scene::Meeting => 26.0,
         Scene::Popcorn => 14.0,
+        Scene::Juggle | Scene::Yoga => 12.0,
+        Scene::Bubbles => 26.0,
+        Scene::Guitar => 13.0,
+        Scene::Skate => 20.0,
     };
     let left_reach = 10.0;
     // Wide scenes shrink just enough to fit the slot; the rest use the full height.
@@ -1214,8 +1240,13 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         Scene::Night => stage.sleep(true),
         Scene::Meeting => stage.meeting(),
         Scene::Popcorn => stage.popcorn(),
+        Scene::Juggle => stage.juggle(),
+        Scene::Yoga => stage.yoga(),
+        Scene::Bubbles => stage.bubbles(),
+        Scene::Guitar => stage.guitar(),
+        Scene::Skate => stage.skate(),
         Scene::Paint => stage.paint(),
-        Scene::Dance => stage.dance(),
+        Scene::Dance => stage.dance_mix(),
         Scene::SipWater => stage.sip_water(),
         Scene::Groove => stage.groove(),
     }
@@ -2044,39 +2075,6 @@ impl Stage<'_> {
             );
         }
         self.painter.restore_to(save);
-        self.notes();
-    }
-
-    fn dance(&self) {
-        // Three moves, six seconds each: arm swaps with a bounce, a side-step with claps,
-        // and arms up swaying side to side.
-        let beat = (self.time * 2.0 * TAU).sin();
-        let step = (self.time * TAU).sin();
-        let mut pose = Pose::new(Eyes::Happy);
-        let mut dx = 0.0;
-        match ((self.time / 6.0) as usize) % 3 {
-            0 => {
-                pose.right_arm = -0.9 + beat * 0.8;
-                pose.left_arm = -0.9 - beat * 0.8;
-                pose.rise = beat.abs() * 1.4;
-                pose.lean = step * 8.0;
-            }
-            1 => {
-                dx = step * 3.0;
-                let clap = beat.abs();
-                pose.right_arm = 0.2 + clap * 0.9;
-                pose.left_arm = pose.right_arm;
-                pose.lean = -step * 6.0;
-                pose.rise = clap * 0.8;
-            }
-            _ => {
-                pose.right_arm = -1.6 + beat * 0.25;
-                pose.left_arm = -1.6 - beat * 0.25;
-                pose.lean = step * 12.0;
-                pose.rise = (beat * 0.5 + 0.5) * 1.6;
-            }
-        }
-        self.shifted(dx).robot(pose);
         self.notes();
     }
 
@@ -3051,12 +3049,20 @@ mod tests {
     }
 
     #[test]
-    fn the_day_starts_with_a_wave_and_cycles_every_scene() {
+    fn the_day_starts_with_a_wave_then_shuffles_every_scene() {
         assert_eq!(current_scene(0.0, 14, false).0, Scene::Wave);
-        let seen: Vec<Scene> = (0..DAY.len())
+        let seen: Vec<Scene> = (1..400)
             .map(|index| current_scene(index as f32 * SCENE_SECONDS + 1.0, 14, false).0)
             .collect();
-        assert_eq!(seen, DAY);
+        for scene in DAY {
+            assert!(seen.contains(&scene), "{scene:?} never plays");
+        }
+        assert!(
+            seen.windows(2).all(|pair| pair[0] != pair[1]),
+            "a scene repeats back to back"
+        );
+        // Not simply the old fixed order.
+        assert_ne!(&seen[..DAY.len() - 1], &DAY[1..]);
     }
 
     #[test]

@@ -111,6 +111,8 @@ impl App {
                 });
         }
         self.poll_battery_activity(now);
+        // The robot's playground draws every frame while it is out.
+        self.frame_roam_window();
         if self.file_drag_hover {
             // Keep the drop hint up for as long as the drag lasts.
             self.push_drop_activity(None);
