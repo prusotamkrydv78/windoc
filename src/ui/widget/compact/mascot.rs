@@ -159,6 +159,7 @@ pub(crate) fn set_context(
     let active_seconds = CONTEXT.with(|context| context.borrow().active_since)
         .map(|since| seconds() - since);
     life::tick(focus_running, away, active_seconds);
+    life::demo_reactions();
     CONTEXT.with(|context| {
         let mut context = context.borrow_mut();
         if context.name != name {

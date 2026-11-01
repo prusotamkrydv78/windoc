@@ -232,7 +232,55 @@ fn set_caption_arg(text: String) {
 }
 
 pub(super) fn activity() -> Activity {
+    // Test hook: WINISLAND_MASCOT_DEMO_ACTIVITY=meeting|popcorn|editor in demo mode.
+    if demo()
+        && let Some(forced) = std::env::var("WINISLAND_MASCOT_DEMO_ACTIVITY")
+            .ok()
+            .and_then(|name| match name.as_str() {
+                "meeting" => Some(Activity::Meeting),
+                "popcorn" => Some(Activity::Fullscreen),
+                "editor" => Some(Activity::Editor),
+                "idle" => Some(Activity::Idle),
+                _ => None,
+            })
+    {
+        return forced;
+    }
     LIFE.with(|life| life.borrow().activity)
+}
+
+/// Test hook: with WINISLAND_MASCOT_DEMO_REACTIONS=1 in demo mode, the newer reactions play
+/// one after another so each can be watched.
+pub(super) fn demo_reactions() {
+    const NEW: [Reaction; 9] = [
+        Reaction::Cheer,
+        Reaction::Bedtime,
+        Reaction::Trick,
+        Reaction::Notice,
+        Reaction::Catch,
+        Reaction::Streak,
+        Reaction::Recap,
+        Reaction::Milestone,
+        Reaction::FirstShot,
+    ];
+    thread_local! {
+        static NEXT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+    if !demo() || std::env::var_os("WINISLAND_MASCOT_DEMO_REACTIONS").is_none() {
+        return;
+    }
+    if super::REACTION.with(std::cell::Cell::get).is_some() {
+        return;
+    }
+    let index = NEXT.with(|next| {
+        let index = next.get();
+        next.set(index + 1);
+        index
+    });
+    if index < NEW.len() {
+        set_caption_arg(["3", "", "", "", "", "3", "6", "500", ""][index].to_string());
+        super::REACTION.with(|cell| cell.set(Some((NEW[index], None))));
+    }
 }
 
 pub(super) fn mood() -> Mood {
