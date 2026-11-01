@@ -2,7 +2,8 @@
 //!
 //! Reflex: wait for the robot's eye to turn green, then click (or press Space) as fast as
 //! possible. Catch: sparks pop up across the arena for 20 seconds; click as many as you can
-//! before each one fades. Best scores are kept in `play.json` in the data folder.
+//! before each one fades. Type: type a line of words as fast as you can, for words per
+//! minute. The robot cheers in the notch on a new best. Best scores are kept in `play.json` in the data folder.
 
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
@@ -20,6 +21,7 @@ const ID_MODE_REFLEX: u16 = 1500;
 const ID_MODE_CATCH: u16 = 1501;
 const ID_ARENA: u16 = 1502;
 const ID_RESET: u16 = 1503;
+const ID_MODE_TYPE: u16 = 1504;
 const ID_SPARK: u16 = 1510;
 const MAX_SPARKS: usize = 6;
 
@@ -48,6 +50,26 @@ const NUMBER: TextStyle = TextStyle {
 enum Mode {
     Reflex,
     Catch,
+    Type,
+}
+
+const WORDS: [&str; 60] = [
+    "notch", "robot", "spark", "light", "quick", "brown", "river", "cloud", "green", "pixel",
+    "music", "laptop", "friend", "window", "screen", "glow", "smile", "dance", "orbit", "rocket",
+    "mango", "chai", "lunar", "tiger", "ocean", "piano", "magic", "candy", "storm", "bright",
+    "coffee", "summer", "winter", "garden", "planet", "silver", "golden", "shadow", "little",
+    "happy", "jump", "type", "fast", "code", "build", "drive", "paper", "story", "focus", "night",
+    "early", "simple", "clever", "travel", "yellow", "purple", "button", "secret", "puzzle",
+    "zebra",
+];
+const TYPE_WORDS: usize = 14;
+
+#[derive(Clone, Copy, PartialEq)]
+enum Typing {
+    Idle,
+    /// Waiting for the first key (`None`), or typing since the given moment.
+    Playing(Option<Instant>),
+    Over(u32),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -77,6 +99,8 @@ enum Catch {
 struct Saved {
     best_reflex_ms: Option<u32>,
     best_catch: u32,
+    #[serde(default)]
+    best_wpm: u32,
 }
 
 struct State {
@@ -90,6 +114,10 @@ struct State {
     missed: u32,
     next_spark: Option<Instant>,
     new_best: bool,
+    typing: Typing,
+    target: String,
+    typed: String,
+    mistakes: u32,
     saved: Saved,
     rng: u64,
 }
@@ -116,6 +144,10 @@ impl State {
             missed: 0,
             next_spark: None,
             new_best: false,
+            typing: Typing::Idle,
+            target: String::new(),
+            typed: String::new(),
+            mistakes: 0,
             saved,
             rng: seed | 1,
         }
@@ -139,6 +171,7 @@ impl State {
         match self.mode {
             Mode::Reflex => matches!(self.reflex, Reflex::Waiting(_) | Reflex::Go(_)),
             Mode::Catch => matches!(self.catch, Catch::Playing(_)),
+            Mode::Type => matches!(self.typing, Typing::Playing(_)),
         }
     }
 }
@@ -157,6 +190,7 @@ struct Layout {
     side: Rect,
     reflex_tab: Rect,
     catch_tab: Rect,
+    type_tab: Rect,
     reset: Rect,
 }
 
@@ -165,9 +199,10 @@ fn layout(grid: Rect) -> Layout {
     let side = Rect::from_ltrb(grid.right - side_w, grid.top, grid.right, grid.bottom);
     let arena = Rect::from_ltrb(grid.left, grid.top, side.left - GAP, grid.bottom);
     let inner = side.inset(PAD);
-    let tab_w = (inner.width() - 4.0) / 2.0;
+    let tab_w = (inner.width() - 8.0) / 3.0;
     let reflex_tab = Rect::from_xywh(inner.left, inner.top, tab_w, 28.0);
     let catch_tab = Rect::from_xywh(reflex_tab.right + 4.0, inner.top, tab_w, 28.0);
+    let type_tab = Rect::from_xywh(catch_tab.right + 4.0, inner.top, tab_w, 28.0);
     let reset_w = text_width("Reset best", BUTTON) + 24.0;
     let reset = Rect::from_xywh(inner.right - reset_w, inner.bottom - 24.0, reset_w, 24.0);
     Layout {
@@ -175,6 +210,7 @@ fn layout(grid: Rect) -> Layout {
         side,
         reflex_tab,
         catch_tab,
+        type_tab,
         reset,
     }
 }
@@ -247,6 +283,7 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
         match state.mode {
             Mode::Reflex => draw_reflex(ctx, &layout, state),
             Mode::Catch => draw_catch(ctx, &layout, state),
+            Mode::Type => draw_type(ctx, &layout, state),
         }
         ctx.painter.restore_to(saved);
         draw_side(ctx, &layout, state);
@@ -451,6 +488,13 @@ fn draw_side(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         state.mode == Mode::Catch,
         hovered(ctx, ID_MODE_CATCH),
     );
+    segment(
+        ctx,
+        layout.type_tab,
+        "Type",
+        state.mode == Mode::Type,
+        hovered(ctx, ID_MODE_TYPE),
+    );
     let inner = layout.side.inset(PAD);
     let mut y = layout.reflex_tab.bottom + 16.0;
     let row = |label: &str, value: &str, y: f32| {
@@ -486,10 +530,18 @@ fn draw_side(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
                 }
             }
         }
+        Mode::Type => {
+            row("Best ever", &format!("{} wpm", state.saved.best_wpm), y);
+            y += 24.0;
+            if state.typing != Typing::Idle {
+                row("Mistakes", &state.mistakes.to_string(), y);
+            }
+        }
     }
     let has_best = match state.mode {
         Mode::Reflex => state.saved.best_reflex_ms.is_some(),
         Mode::Catch => state.saved.best_catch > 0,
+        Mode::Type => state.saved.best_wpm > 0,
     };
     if has_best && !state.running() {
         let hover = hovered(ctx, ID_RESET);
@@ -554,6 +606,7 @@ fn tick(state: &mut State, now: Instant, arena: Rect) {
         if state.new_best {
             state.saved.best_catch = state.caught;
             state.save();
+            cheer();
         }
         return;
     }
@@ -609,6 +662,9 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
         if layout.catch_tab.contains(point) {
             return Some(ID_MODE_CATCH);
         }
+        if layout.type_tab.contains(point) {
+            return Some(ID_MODE_TYPE);
+        }
         if layout.reset.contains(point) && !state.running() {
             return Some(ID_RESET);
         }
@@ -637,14 +693,15 @@ pub fn apply(hit: DashboardHit) -> bool {
     }
     let now = Instant::now();
     with_state(|state| match id {
-        ID_MODE_REFLEX | ID_MODE_CATCH => {
-            state.mode = if id == ID_MODE_REFLEX {
-                Mode::Reflex
-            } else {
-                Mode::Catch
+        ID_MODE_REFLEX | ID_MODE_CATCH | ID_MODE_TYPE => {
+            state.mode = match id {
+                ID_MODE_REFLEX => Mode::Reflex,
+                ID_MODE_CATCH => Mode::Catch,
+                _ => Mode::Type,
             };
             state.reflex = Reflex::Idle;
             state.catch = Catch::Idle;
+            state.typing = Typing::Idle;
             state.sparks.clear();
             state.new_best = false;
         }
@@ -655,6 +712,7 @@ pub fn apply(hit: DashboardHit) -> bool {
                     state.history.clear();
                 }
                 Mode::Catch => state.saved.best_catch = 0,
+                Mode::Type => state.saved.best_wpm = 0,
             }
             state.new_best = false;
             state.save();
@@ -693,6 +751,7 @@ fn press(state: &mut State, now: Instant) {
                 if state.new_best {
                     state.saved.best_reflex_ms = Some(ms);
                     state.save();
+                    cheer();
                 }
             }
         },
@@ -708,6 +767,160 @@ fn press(state: &mut State, now: Instant) {
             // A click on empty arena during a round counts as a miss.
             Catch::Playing(_) => state.missed += 1,
         },
+        Mode::Type => {
+            if !matches!(state.typing, Typing::Playing(_)) {
+                let words: Vec<&str> = (0..TYPE_WORDS)
+                    .map(|_| WORDS[(state.random() * WORDS.len() as f32) as usize % WORDS.len()])
+                    .collect();
+                state.target = words.join(" ");
+                state.typed.clear();
+                state.mistakes = 0;
+                state.new_best = false;
+                state.typing = Typing::Playing(None);
+            }
+        }
+    }
+}
+
+/// The robot cheers in the notch for a new best score.
+fn cheer() {
+    use crate::ui::widget::compact::mascot;
+    mascot::react(mascot::Reaction::Cheer);
+}
+
+/// A key during the typing round. Wrong letters stay (shown red) until erased.
+fn type_key(state: &mut State, key: &Key, now: Instant) -> bool {
+    let Typing::Playing(started) = state.typing else {
+        return false;
+    };
+    match key {
+        Key::Escape => state.typing = Typing::Idle,
+        Key::Backspace => {
+            state.typed.pop();
+        }
+        Key::Character(text) => {
+            for ch in text.chars() {
+                let Some(expected) = state.target.chars().nth(state.typed.chars().count()) else {
+                    break;
+                };
+                if expected != ch {
+                    state.mistakes += 1;
+                }
+                state.typed.push(ch);
+            }
+            let started = started.unwrap_or(now);
+            state.typing = Typing::Playing(Some(started));
+            if state.typed == state.target {
+                let minutes = now.saturating_duration_since(started).as_secs_f32() / 60.0;
+                // Standard words per minute: five characters make a word.
+                let wpm = (state.target.chars().count() as f32 / 5.0 / minutes.max(0.01)) as u32;
+                state.typing = Typing::Over(wpm);
+                state.new_best = wpm > state.saved.best_wpm;
+                if state.new_best {
+                    state.saved.best_wpm = wpm;
+                    state.save();
+                    cheer();
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+const TYPE_TEXT: TextStyle = TextStyle {
+    size: 17.0,
+    weight: 500,
+    tabular: false,
+};
+
+fn draw_type(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
+    let colors = ctx.colors;
+    let arena = layout.arena;
+    let inner = arena.inset(PAD + 4.0);
+    let Typing::Playing(started) = state.typing else {
+        let center = arena.center_y();
+        let (title, hint) = match state.typing {
+            Typing::Over(wpm) => (
+                format!("{wpm} wpm"),
+                format!(
+                    "{} mistakes{}  ·  click to go again",
+                    state.mistakes,
+                    if state.new_best { "  ·  new best!" } else { "" }
+                ),
+            ),
+            _ => (
+                "Type".to_string(),
+                "Type the words as fast as you can. Click to start.".to_string(),
+            ),
+        };
+        text_center(
+            ctx.painter,
+            &title,
+            BIG,
+            Rect::from_xywh(arena.left, center - 30.0, arena.width(), 38.0),
+            colors.text_primary,
+        );
+        text_center(
+            ctx.painter,
+            &hint,
+            LABEL,
+            Rect::from_xywh(inner.left, center + 12.0, inner.width(), 20.0),
+            colors.text_secondary,
+        );
+        return;
+    };
+    let header = Rect::from_xywh(inner.left, inner.top, inner.width(), 22.0);
+    let hint = if started.is_some() {
+        "Esc to stop"
+    } else {
+        "Start typing…"
+    };
+    text(ctx.painter, "Type", TITLE, header, colors.text_primary);
+    text_right(ctx.painter, hint, LABEL, header, colors.text_secondary);
+    // The line, wrapped by word: right letters green, wrong ones red, the next letter
+    // underlined, the rest dim.
+    let typed: Vec<char> = state.typed.chars().collect();
+    let line_h = 26.0;
+    let (mut x, mut y) = (inner.left, header.bottom + 18.0);
+    let mut index = 0;
+    for word in state.target.split(' ') {
+        let word_w = text_width(word, TYPE_TEXT);
+        if x + word_w > inner.right && x > inner.left {
+            x = inner.left;
+            y += line_h;
+        }
+        for ch in word.chars().chain(std::iter::once(' ')) {
+            if index >= state.target.chars().count() {
+                break;
+            }
+            let glyph = ch.to_string();
+            let w = text_width(&glyph, TYPE_TEXT);
+            if index == typed.len() {
+                ctx.painter.fill_rect(
+                    Rect::from_xywh(x, y + line_h - 4.0, w.max(6.0), 2.0),
+                    colors.accent_primary,
+                );
+            }
+            let wrong = typed.get(index).is_some_and(|&got| got != ch);
+            if ch == ' ' {
+                if wrong {
+                    ctx.painter.fill_rect(
+                        Rect::from_xywh(x, y + 6.0, w, line_h - 12.0),
+                        colors.state_error.with_alpha(90),
+                    );
+                }
+            } else {
+                let color = match typed.get(index) {
+                    Some(_) if wrong => colors.state_error,
+                    Some(_) => colors.state_success,
+                    None => colors.text_disabled,
+                };
+                text(ctx.painter, &glyph, TYPE_TEXT, Rect::from_xywh(x, y, w + 2.0, line_h), color);
+            }
+            x += w;
+            index += 1;
+        }
     }
 }
 
@@ -717,6 +930,9 @@ pub fn wants_keyboard() -> bool {
 }
 
 pub fn handle_key(key: &Key) -> bool {
+    if with_state(|state| state.mode == Mode::Type) {
+        return with_state(|state| type_key(state, key, Instant::now()));
+    }
     let start = matches!(key, Key::Enter) || matches!(key, Key::Character(text) if text == " ");
     if !start {
         return false;
