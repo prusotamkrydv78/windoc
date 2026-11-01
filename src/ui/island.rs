@@ -522,7 +522,9 @@ fn draw_edge_line(
     color: Rgba,
 ) {
     const PASS_SECONDS: f32 = 4.5;
-    const PIECES: usize = 6;
+    // Many short flat-ended pieces join into one smooth line that tapers to its tail;
+    // round caps on a few long pieces showed as a row of blobs.
+    const PIECES: usize = 20;
     let opacity = 1.0 - params.layout.expansion_progress.clamp(0.0, 1.0);
     if opacity <= 0.01 {
         return;
@@ -551,7 +553,7 @@ fn draw_edge_line(
         return;
     }
     // The light enters on the left and fully leaves on the right before the next pass.
-    let comet = 90.0 * scale;
+    let comet = 120.0 * scale;
     let travel = total + comet;
     let head = (crate::ui::top_bar::animation_seconds() / PASS_SECONDS * travel).rem_euclid(travel);
     for piece in 0..PIECES {
@@ -561,24 +563,25 @@ fn draw_edge_line(
         if to <= 0.0 || from >= total || segment.is_empty() {
             continue;
         }
-        let strength = opacity * (1.0 - piece as f32 / PIECES as f32);
-        // A wide soft halo, a gentler middle band, then the bright core.
-        for (width, alpha) in [(11.0, 70.0), (5.0, 130.0)] {
+        // Brightest at the head, easing out to nothing at the tail.
+        let t = 1.0 - piece as f32 / PIECES as f32;
+        let strength = opacity * t * t;
+        // Only the leading tip is rounded; everywhere else the pieces butt together.
+        let cap = if piece == 0 {
+            winisland_render::StrokeCap::Round
+        } else {
+            winisland_render::StrokeCap::Butt
+        };
+        // A narrow soft halo hugging the edge, then the bright core line.
+        for (width, alpha) in [(6.0, 45.0), (3.0, 110.0), (1.4, 240.0)] {
             painter.stroke_path(
                 &segment,
                 width * scale,
                 color.with_alpha((alpha * strength) as u8),
-                winisland_render::StrokeCap::Round,
+                cap,
                 winisland_render::StrokeJoin::Round,
             );
         }
-        painter.stroke_path(
-            &segment,
-            1.6 * scale,
-            color.with_alpha((235.0 * strength) as u8),
-            winisland_render::StrokeCap::Round,
-            winisland_render::StrokeJoin::Round,
-        );
     }
 }
 
