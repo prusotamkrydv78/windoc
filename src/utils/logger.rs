@@ -180,7 +180,7 @@ pub fn check_crash_flag() {
                 let report_path =
                     log_dir().join(format!("plugin-crash-recovery-{}.txt", file_timestamp()));
                 let report = format!(
-                    "---- WinIsland Plugin Crash Recovery ----\nTime: {}\nPlugins active at termination: {names}\nThe callback marker survived process termination. These plugins were disabled on startup.\n",
+                    "---- Notchy Plugin Crash Recovery ----\nTime: {}\nPlugins active at termination: {names}\nThe callback marker survived process termination. These plugins were disabled on startup.\n",
                     timestamp()
                 );
                 if let Err(error) = write_report_to(&report_path, &report) {
@@ -192,7 +192,7 @@ pub fn check_crash_flag() {
                 } else {
                     format!("上次崩溃时插件 {names} 正在执行，已自动禁用。")
                 };
-                crate::platform::shell().information_dialog("WinIsland plugin disabled", &message);
+                crate::platform::shell().information_dialog("Notchy plugin disabled", &message);
             }
             Ok(_) => {}
             Err(error) => log::error!("Could not disable the crashed plugin: {error}"),
@@ -254,20 +254,20 @@ See ~/.winisland/logs/winisland.log for recent activity.
 
     if write_report_to(&path, &report).is_ok() {
         show_error_message(
-            "WinIsland Crash",
+            "Notchy Crash",
             "Crash report saved. Logs will be written on next startup.",
         );
         return;
     }
 
     // Fallback: write to Desktop
-    let msg_text = format!("WinIsland crashed at {location}\n\nReason: {msg}");
+    let msg_text = format!("Notchy crashed at {location}\n\nReason: {msg}");
     if let Some(desktop) = get_desktop_path() {
         let mut desktop_path = desktop;
-        desktop_path.push(format!("WinIsland-crash-{file_ts}.txt"));
+        desktop_path.push(format!("Notchy-crash-{file_ts}.txt"));
         if write_report_to(&desktop_path, &report).is_ok() {
             show_error_message(
-                "WinIsland Crash",
+                "Notchy Crash",
                 &format!("Crash report saved to:\n{}", desktop_path.display()),
             );
             return;
@@ -275,7 +275,7 @@ See ~/.winisland/logs/winisland.log for recent activity.
     }
 
     // Final fallback: show message box with crash info
-    show_error_message("WinIsland Crash", &msg_text);
+    show_error_message("Notchy Crash", &msg_text);
 }
 
 pub(crate) fn show_error_message(title: &str, text: &str) {

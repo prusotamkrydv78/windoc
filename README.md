@@ -1,6 +1,6 @@
-# winisland-next
+# Notchy
 
-`winisland-next` is a fresh development repository for a Windows dynamic-island application written in Rust.
+Notchy is a living notch for Windows, written in Rust: a notch with a little robot friend at the top of the screen, a full panel of tools behind it, and an optional taskbar of its own. (Internally the code and crates still use the `winisland` names.)
 
 The initial codebase is derived from the GPL-3.0-licensed WinIsland source distributed in the BuddyDesk repository. This repository starts with new Git history so the application can be redesigned incrementally while retaining the licence and attribution required by the upstream project.
 

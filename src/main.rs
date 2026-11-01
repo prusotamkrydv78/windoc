@@ -24,7 +24,7 @@ pub static RTSS_HOOKS_COMPATIBILITY: u32 = 0;
 
 fn main() {
     let _ = logger::init();
-    log::info!("WinIsland v{} starting", env!("CARGO_PKG_VERSION"));
+    log::info!("Notchy v{} starting", env!("CARGO_PKG_VERSION"));
 
     let config = core::persistence::load_config();
     if let Err(error) = platform::shell().set_autostart(config.auto_start) {
@@ -132,7 +132,7 @@ fn terminate_stale_instances() -> bool {
             "-NoProfile",
             "-Command",
             &format!(
-                "Get-Process WinIsland -ErrorAction SilentlyContinue | Where-Object {{$_.Id -ne {own_pid}}} | Stop-Process -Force"
+                "Get-Process Notchy -ErrorAction SilentlyContinue | Where-Object {{$_.Id -ne {own_pid}}} | Stop-Process -Force"
             ),
         ])
         .output()

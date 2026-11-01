@@ -17,7 +17,7 @@ pub use widgets::*;
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_AUTHOR: &str = "Eatgrapes";
 pub const APP_HOMEPAGE: &str = "https://github.com/WinIslandProject/WinIsland";
-pub const WINDOW_TITLE: &str = "WinIsland";
+pub const WINDOW_TITLE: &str = "Notchy";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Educe, Settings)]
 #[educe(Default)]

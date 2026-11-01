@@ -53,7 +53,7 @@ impl InputHooks for WindowsInput {
                     .map_err(PlatformError::backend)?
                 };
                 *slot.borrow_mut() = Some(HookGuard(hook));
-                log::info!("Volume keys are handled by WinIsland");
+                log::info!("Volume keys are handled by Notchy");
             }
             *VOLUME_CALLBACK.lock() = Some(callback);
             Ok(())

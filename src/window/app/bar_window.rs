@@ -17,7 +17,7 @@ use crate::platform::{WindowRef, window};
 
 use super::App;
 
-const BAR_WINDOW_TITLE: &str = "WinIsland Bar";
+const BAR_WINDOW_TITLE: &str = "Notchy Bar";
 /// Room above the bar for panels and previews, in logical pixels.
 const PANEL_SPACE: f32 = 420.0;
 

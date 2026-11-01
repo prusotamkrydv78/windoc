@@ -954,7 +954,7 @@ fn draw_message(
         PageState::SafeMode => (
             "Paused in safe mode",
             [
-                "Restart WinIsland normally to see your AI coding stats.",
+                "Restart Notchy normally to see your AI coding stats.",
                 "",
             ],
         ),

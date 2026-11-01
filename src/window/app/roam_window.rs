@@ -12,7 +12,7 @@ use crate::ui::widget::compact::mascot::roam;
 
 use super::App;
 
-const ROAM_WINDOW_TITLE: &str = "WinIsland Robot";
+const ROAM_WINDOW_TITLE: &str = "Notchy Robot";
 
 /// Geometry of the playground window in physical pixels.
 #[derive(Clone, Copy, Default, PartialEq)]

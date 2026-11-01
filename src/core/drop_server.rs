@@ -177,7 +177,7 @@ fn token() -> Option<String> {
 fn drop_folder() -> PathBuf {
     dirs::download_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("WinIsland Drop")
+        .join("Notchy Drop")
 }
 
 fn sanitize(name: &str) -> String {

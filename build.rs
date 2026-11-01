@@ -25,8 +25,8 @@ fn main() {
         }
 
         res.set("CompanyName", "Eatgrapes");
-        res.set("FileDescription", "WinIsland");
-        res.set("ProductName", "WinIsland");
+        res.set("FileDescription", "Notchy");
+        res.set("ProductName", "Notchy");
         res.set("LegalCopyright", "Copyright (c) Eatgrapes");
 
         let package = package_identity();

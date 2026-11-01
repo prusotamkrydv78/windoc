@@ -1,12 +1,12 @@
-# Builds a portable WinIsland: one ZIP your friends unzip and run, no installer, no admin.
+# Builds a portable Notchy: one ZIP your friends unzip and run, no installer, no admin.
 #
 #   powershell -ExecutionPolicy Bypass -File packaging\portable\Build-Portable.ps1
 #
-# Produces dist\WinIsland-<version>-portable.zip with WinIsland.exe, the licences (GPL-3.0
+# Produces dist\Notchy-<version>-portable.zip with Notchy.exe, the licences (GPL-3.0
 # requires them to travel with the program) and a short read-me.
 
 param(
-    # Skip `cargo build --release` when target\release\WinIsland.exe is already current.
+    # Skip `cargo build --release` when target\release\Notchy.exe is already current.
     [switch]$NoBuild
 )
 
@@ -23,16 +23,16 @@ if (-not $NoBuild) {
     if ($LASTEXITCODE -ne 0) { throw 'cargo build --release failed.' }
 }
 
-$exe = Join-Path $root 'target\release\WinIsland.exe'
+$exe = Join-Path $root 'target\release\Notchy.exe'
 if (-not (Test-Path $exe)) { throw "Release build not found: $exe" }
 
-$name = "WinIsland-$version-portable"
+$name = "Notchy-$version-portable"
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist $name
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $stage
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licenses') | Out-Null
 
-Copy-Item $exe (Join-Path $stage 'WinIsland.exe')
+Copy-Item $exe (Join-Path $stage 'Notchy.exe')
 foreach ($file in 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM_NOTICE.md') {
     Copy-Item (Join-Path $root $file) (Join-Path $stage 'licenses' $file)
 }

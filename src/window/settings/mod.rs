@@ -609,7 +609,7 @@ impl SettingsApp {
         self.target_monitor = target_monitor;
         let id = window()
             .create_settings(SettingsSpec {
-                title: "WinIsland Settings",
+                title: "Notchy Settings",
                 logical_size: LogicalWindowSize::new(WIN_W as f64, WIN_H as f64),
                 monitor: self.target_monitor.as_ref().map(MonitorRef::id),
             })
@@ -1397,7 +1397,7 @@ impl SettingsApp {
     pub(crate) fn bring_to_front(&self) {
         if let Some(window) = &self.window {
             window.set_minimized(false);
-            let _ = crate::platform::display().bring_foreign_window_to_front("WinIsland Settings");
+            let _ = crate::platform::display().bring_foreign_window_to_front("Notchy Settings");
             window.request_redraw();
         }
     }

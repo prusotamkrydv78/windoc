@@ -725,7 +725,7 @@ fn commit_export_backup(app: &mut SettingsApp, passphrase: &str) {
         return;
     }
     let Some(path) = rfd::FileDialog::new()
-        .set_file_name("winisland-backup.wibk")
+        .set_file_name("notchy-backup.wibk")
         .add_filter("Backup", &["wibk"])
         .save_file()
     else {
