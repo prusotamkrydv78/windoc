@@ -471,6 +471,9 @@ fn preferences() -> Preferences {
 
 /// How long each scene plays: longer when calm, shorter when playful.
 fn scene_seconds() -> f32 {
+    if demo() {
+        return 5.0;
+    }
     [22.0, SCENE_SECONDS, 9.0][usize::from(preferences().liveliness)]
 }
 
@@ -748,7 +751,7 @@ fn ease(x: f32) -> f32 {
 
 /// The scene to play now and how far into it we are, in seconds.
 fn current_scene(time: f32, hour: u16, focus_running: bool) -> (Scene, f32) {
-    if !(5..23).contains(&hour) {
+    if !(5..23).contains(&hour) && !demo() {
         return (Scene::Night, time);
     }
     if focus_running {
@@ -767,11 +770,27 @@ fn greeting(name: &str) -> String {
 }
 
 /// How long the robot takes to walk on with a new scene, and off at its end.
-const ENTER_SECONDS: f32 = 1.4;
-const EXIT_SECONDS: f32 = 1.2;
-/// How far it walks, in robot units: past the notch's edge, where the notch's own clip
-/// hides it, so it always leaves fully instead of vanishing part-way.
-const STROLL: f32 = 75.0;
+const ENTER_SECONDS: f32 = 1.2;
+const EXIT_SECONDS: f32 = 1.0;
+/// How far it walks, in robot units. Short and fixed: it fades as it goes, so the
+/// transition looks the same in a narrow or a wide notch and is never cut by its edge.
+const STROLL: f32 = 18.0;
+
+/// Test hook: with `WINISLAND_MASCOT_DEMO=1` scenes change every few seconds, day or night,
+/// so transitions can be watched without waiting.
+fn demo() -> bool {
+    static DEMO: OnceLock<bool> = OnceLock::new();
+    *DEMO.get_or_init(|| std::env::var_os("WINISLAND_MASCOT_DEMO").is_some_and(|v| v == "1"))
+}
+
+/// How visible the robot and its props are at `elapsed` seconds into a scene: it fades in
+/// as it walks on and out as it walks off, finishing exactly at the scene's edges.
+fn scene_visibility(scene: Scene, elapsed: f32, length: f32) -> f32 {
+    if matches!(scene, Scene::Night) {
+        return 1.0;
+    }
+    ease(elapsed / ENTER_SECONDS) * ease((length - elapsed) / EXIT_SECONDS)
+}
 
 /// A little hop per step while the robot is walking on or off, in robot units.
 fn step_bob(shift: f32, time: f32) -> f32 {
@@ -881,10 +900,11 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
         };
         // It walks on with the reaction and off again, like a scene.
         let shift = scene_shift(Scene::Wave, elapsed, reaction.seconds());
+        let visible = scene_visibility(Scene::Wave, elapsed, reaction.seconds());
         let stage = Stage {
             painter,
             unit,
-            alpha,
+            alpha: (f32::from(alpha) * visible) as u8,
             x: x + shift * unit,
             floor: rect.center_y() + (11.0 - step_bob(shift, time)) * unit,
             mid: rect.center_y(),
@@ -920,15 +940,18 @@ pub(super) fn draw(painter: Painter<'_>, rect: Rect, scale: f32, alpha: u8) {
     // Wide scenes shrink just enough to fit the slot; the rest use the full height.
     let unit = unit.min(rect.width() / (left_reach + reach + 2.0)).max(0.5 * scale);
     let offset = ((rect.width() / unit - (left_reach + reach)) / 2.0).max(1.0);
-    let shift = if walk == 0.0 {
-        scene_shift(scene, elapsed, length)
+    let (shift, visible) = if walk == 0.0 {
+        (
+            scene_shift(scene, elapsed, length),
+            scene_visibility(scene, elapsed, length),
+        )
     } else {
-        0.0
+        (0.0, 1.0)
     };
     let stage = Stage {
         painter,
         unit,
-        alpha,
+        alpha: (f32::from(alpha) * visible) as u8,
         // After a card it walks back in from the side, carrying its scene; at each scene
         // change it carries the old props out and the new ones in.
         x: rect.left + (offset + left_reach + walk + shift) * unit,
@@ -2740,6 +2763,10 @@ mod tests {
 
     #[test]
     fn robot_walks_on_and_off_at_scene_edges() {
+        // Invisible at both edges, so a scene change never cuts it off.
+        assert_eq!(scene_visibility(Scene::Chai, 0.0, SCENE_SECONDS), 0.0);
+        assert!(scene_visibility(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS) > 0.99);
+        assert_eq!(scene_visibility(Scene::Chai, SCENE_SECONDS, SCENE_SECONDS), 0.0);
         // Starts off to the left, stands in place mid-scene, ends off to the right.
         assert!(scene_shift(Scene::Chai, 0.0, SCENE_SECONDS) <= -STROLL + 0.01);
         assert_eq!(scene_shift(Scene::Chai, SCENE_SECONDS / 2.0, SCENE_SECONDS), 0.0);
