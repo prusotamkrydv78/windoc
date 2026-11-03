@@ -29,6 +29,12 @@ const ID_BACK: u16 = 1705;
 const ID_PRESET_OPENROUTER: u16 = 1706;
 const ID_PRESET_OPENAI: u16 = 1707;
 const ID_FIELD: u16 = 1710;
+const ID_MAGIC: u16 = 1720;
+const MAGIC: [crate::core::assistant::Magic; 3] = [
+    crate::core::assistant::Magic::Translate,
+    crate::core::assistant::Magic::Summarise,
+    crate::core::assistant::Magic::Fix,
+];
 const FIELDS: usize = 4;
 
 const GAP: f32 = 10.0;
@@ -60,6 +66,8 @@ struct State {
     saved_at: Option<Instant>,
     test: Option<Result<String, String>>,
     testing: bool,
+    /// The left card shows the last answer instead of the recap.
+    show_answer: bool,
 }
 
 thread_local! {
@@ -90,6 +98,7 @@ struct Layout {
     recap_button: Rect,
     settings_button: Rect,
     fields: [Rect; FIELDS],
+    magic: [Rect; 3],
     presets: [Rect; 2],
     save: Rect,
     test: Rect,
@@ -128,7 +137,16 @@ fn layout(grid: Rect) -> Layout {
     let save = Rect::from_xywh(inner.left, bottom, save_w, 30.0);
     let test = Rect::from_xywh(save.right + 8.0, bottom, test_w, 30.0);
     let back = Rect::from_xywh(inner.right - back_w, bottom, back_w, 30.0);
+    // Clipboard magic: three small pills above the bottom buttons.
+    let mut magic = [Rect::default(); 3];
+    let mut left_x = inner.left;
+    for (index, rect) in magic.iter_mut().enumerate() {
+        let width = text_width(MAGIC[index].label(), BUTTON) + 22.0;
+        *rect = Rect::from_xywh(left_x, bottom - 32.0, width, 24.0);
+        left_x += width + 6.0;
+    }
     Layout {
+        magic,
         left,
         right,
         search,
@@ -222,19 +240,26 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
         if state.settings_open {
             draw_settings(ctx, &layout, state);
         } else {
-            draw_recap(ctx, &layout);
+            draw_recap(ctx, &layout, state);
         }
         draw_timeline(ctx, &layout, state);
     });
     true
 }
 
-fn draw_recap(ctx: &TabContext<'_>, layout: &Layout) {
+fn draw_recap(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
     let painter = ctx.painter;
     let colors = ctx.colors;
     let inner = layout.left.inset(PAD);
-    text(painter, "What did I miss?", TITLE, Rect::from_xywh(inner.left, inner.top, inner.width(), 22.0), colors.text_primary);
+    let answer = state.show_answer.then(crate::core::assistant::last_answer).flatten();
+    let heading = if state.show_answer { "Answer" } else { "What did I miss?" };
+    text(painter, heading, TITLE, Rect::from_xywh(inner.left, inner.top, inner.width(), 22.0), colors.text_primary);
     let (body, meta) = match recap::latest() {
+        _ if state.show_answer && crate::core::assistant::busy() => ("Thinking…".to_string(), String::new()),
+        _ if state.show_answer => match answer {
+            Some((question, answer)) => (answer, format!("You asked: {question}")),
+            None => ("Thinking…".to_string(), String::new()),
+        },
         _ if recap::busy() => ("Thinking…".to_string(), String::new()),
         Some(latest) => {
             let by = latest.model.map_or("Built-in summary".to_string(), |model| format!("by {model}"));
@@ -248,13 +273,19 @@ fn draw_recap(ctx: &TabContext<'_>, layout: &Layout) {
             },
         ),
     };
-    let lines = wrap(&body, BODY, inner.width(), 6);
+    let lines = wrap(&body, BODY, inner.width(), 4);
     let mut top = inner.top + 30.0;
     for line in &lines {
         text(painter, line, BODY, Rect::from_xywh(inner.left, top, inner.width(), 18.0), colors.text_primary);
         top += 19.0;
     }
     text(painter, &meta, typography::CAPTION, Rect::from_xywh(inner.left, top + 4.0, inner.width(), 16.0), colors.text_secondary);
+    for (index, rect) in layout.magic.iter().enumerate() {
+        let id = ID_MAGIC + index as u16;
+        let hover = hovered(ctx, id);
+        painter.fill_round_rect(*rect, Radius::uniform(12.0), if hover { colors.surface_interactive } else { colors.surface_overlay });
+        text_center(painter, MAGIC[index].label(), BUTTON, *rect, if hover { colors.text_primary } else { colors.text_secondary });
+    }
     button(ctx, layout.recap_button, if recap::busy() { "Recapping…" } else { "Recap last 3 hours" }, hovered(ctx, ID_RECAP), true);
     button(ctx, layout.settings_button, "Settings", hovered(ctx, ID_SETTINGS), false);
 }
@@ -360,13 +391,13 @@ fn draw_timeline(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
     let painter = ctx.painter;
     let colors = ctx.colors;
     if state.search_focused {
-        kit::search_field(painter, layout.search, &state.query, "Search everything…", colors);
+        kit::search_field(painter, layout.search, &state.query, "Search, or ask a question ending in ?", colors);
     } else {
         let hover = hovered(ctx, ID_SEARCH);
         painter.fill_round_rect(layout.search, Radius::uniform(15.0), if hover { colors.surface_interactive } else { colors.surface_overlay });
         text(
             painter,
-            if state.query.is_empty() { "Search everything…" } else { &state.query },
+            if state.query.is_empty() { "Search, or ask a question ending in ?" } else { &state.query },
             typography::LABEL,
             Rect::from_ltrb(layout.search.left + 14.0, layout.search.top, layout.search.right - 10.0, layout.search.bottom),
             colors.text_secondary,
@@ -429,6 +460,8 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
     let open = with_state(|state| state.settings_open);
     let id = if layout.search.contains(point) {
         Some(ID_SEARCH)
+    } else if let Some(index) = (!open).then(|| layout.magic.iter().position(|rect| rect.contains(point))).flatten() {
+        Some(ID_MAGIC + index as u16)
     } else if !open && layout.recap_button.contains(point) {
         Some(ID_RECAP)
     } else if !open && layout.settings_button.contains(point) {
@@ -487,7 +520,14 @@ pub fn apply(hit: DashboardHit) -> bool {
             state.focus = None;
         }
         match id {
-            ID_RECAP => recap::request(memory::now_ms().saturating_sub(3 * 3_600_000), Reason::Manual),
+            _ if (ID_MAGIC..ID_MAGIC + 3).contains(&id) => {
+                let text = winisland_platform_windows::get_clipboard_text().unwrap_or_default();
+                crate::core::assistant::magic(MAGIC[(id - ID_MAGIC) as usize], text);
+            }
+            ID_RECAP => {
+                state.show_answer = false;
+                recap::request(memory::now_ms().saturating_sub(3 * 3_600_000), Reason::Manual);
+            }
             ID_SETTINGS => state.settings_open = true,
             ID_BACK => {
                 state.settings_open = false;
@@ -541,7 +581,15 @@ pub fn handle_key(key: &Key) -> bool {
                 Key::Backspace => {
                     state.query.pop();
                 }
-                Key::Enter => state.search_focused = false,
+                Key::Enter => {
+                    state.search_focused = false;
+                    // A question: the robot answers from Memory.
+                    if state.query.trim_end().ends_with('?') {
+                        crate::core::assistant::ask(state.query.trim().to_string(), crate::core::assistant::Asker::Tab);
+                        state.show_answer = true;
+                        state.settings_open = false;
+                    }
+                }
                 Key::Character(text) => {
                     if state.query.chars().count() < 80 {
                         state.query.extend(text.chars().filter(|character| !character.is_control()));
@@ -577,5 +625,5 @@ pub fn poll(_now: Instant) {}
 
 /// Whether the tab needs frames (a caret blinks or a recap is running).
 pub fn animating() -> bool {
-    wants_keyboard() || recap::busy() || with_state(|state| state.testing)
+    wants_keyboard() || recap::busy() || crate::core::assistant::busy() || with_state(|state| state.testing)
 }

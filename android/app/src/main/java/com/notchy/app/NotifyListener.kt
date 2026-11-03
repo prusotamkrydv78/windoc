@@ -81,8 +81,18 @@ class NotifyListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName == packageName || sbn.isOngoing) return
+        if (sbn.packageName == packageName) return
         val notification = sbn.notification
+        // Calls and live progress (rides, deliveries) are ongoing: mirror them separately.
+        if (notification.category == Notification.CATEGORY_CALL) {
+            publishCall(sbn)
+            return
+        }
+        if (isLive(sbn)) {
+            publishLive(sbn)
+            return
+        }
+        if (sbn.isOngoing) return
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
         if (notification.category == Notification.CATEGORY_TRANSPORT) return
         val extras = notification.extras
@@ -100,9 +110,11 @@ class NotifyListener : NotificationListenerService() {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
         val sent = Link.send("notif") {
+            put("key", sbn.key)
             put("app", app)
             put("title", title)
             put("text", text)
+            put("reply", replyAction(notification) != null)
         }
         if (sent) Stats.add(this, "alerts")
         val joined = "$title $text"
@@ -112,7 +124,98 @@ class NotifyListener : NotificationListenerService() {
         RobotService.instance?.noticeAlert(app)
     }
 
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        val notification = sbn.notification
+        if (notification.category == Notification.CATEGORY_CALL) {
+            Link.send("call_end")
+        } else if (sbn.key in liveKeys) {
+            liveKeys -= sbn.key
+            Link.send("live_end") { put("key", sbn.key) }
+        }
+    }
+
+    // ---- Replies from the PC --------------------------------------------------------------
+
+    private fun replyAction(notification: Notification): Notification.Action? =
+        notification.actions?.firstOrNull { action -> action.remoteInputs?.isNotEmpty() == true }
+
+    /** Sends [text] through the notification's own reply box, as if typed on the phone. */
+    fun reply(key: String, text: String): Boolean {
+        val sbn = runCatching { getActiveNotifications(arrayOf(key)) }.getOrNull()?.firstOrNull() ?: return false
+        val action = replyAction(sbn.notification) ?: return false
+        val input = action.remoteInputs.first()
+        val intent = android.content.Intent()
+        val results = android.os.Bundle().apply { putCharSequence(input.resultKey, text) }
+        android.app.RemoteInput.addResultsToIntent(action.remoteInputs, intent, results)
+        return runCatching { action.actionIntent.send(this, 0, intent); true }.getOrDefault(false)
+    }
+
+    // ---- Calls ---------------------------------------------------------------------------
+
+    private fun publishCall(sbn: StatusBarNotification) {
+        val notification = sbn.notification
+        val extras = notification.extras
+        val name = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().ifEmpty { "Unknown caller" }
+        // A running call shows a chronometer; a ringing one does not.
+        val ongoing = extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER) || notification.`when` < System.currentTimeMillis() - 5_000 && sbn.isOngoing && notification.fullScreenIntent == null
+        val actions = notification.actions?.mapNotNull { it.title?.toString() }.orEmpty()
+        Link.send("call") {
+            put("name", name)
+            put("state", if (ongoing) "ongoing" else "ringing")
+            put("actions", org.json.JSONArray(actions.take(3) + if (ongoing) listOf("Mute") else emptyList()))
+        }
+        if (!ongoing) RobotService.instance?.say("Call: ${name.take(12)}")
+    }
+
+    /** Presses the call notification's button named [action] (or mutes the mic). */
+    fun callAction(action: String) {
+        if (action == "Mute") {
+            val audio = getSystemService(android.media.AudioManager::class.java)
+            audio.isMicrophoneMute = !audio.isMicrophoneMute
+            return
+        }
+        val call = runCatching { activeNotifications }.getOrNull()
+            ?.firstOrNull { it.notification.category == Notification.CATEGORY_CALL } ?: return
+        call.notification.actions?.firstOrNull { it.title?.toString() == action }?.actionIntent?.let {
+            runCatching { it.send() }
+        }
+    }
+
+    // ---- Live progress (rides, deliveries) -------------------------------------------------
+
+    private val liveKeys = mutableSetOf<String>()
+
+    private fun isLive(sbn: StatusBarNotification): Boolean {
+        val extras = sbn.notification.extras
+        val hasBar = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0) > 0
+        val trackingApp = TRACKING_APPS.any { sbn.packageName.contains(it) }
+        return sbn.isOngoing && (hasBar || trackingApp) && sbn.notification.category != Notification.CATEGORY_TRANSPORT
+    }
+
+    private fun publishLive(sbn: StatusBarNotification) {
+        val extras = sbn.notification.extras
+        val max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0)
+        val progress = extras.getInt(Notification.EXTRA_PROGRESS, 0)
+        val app = runCatching {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
+        }.getOrDefault(sbn.packageName)
+        liveKeys += sbn.key
+        Link.send("live") {
+            put("key", sbn.key)
+            put("app", app)
+            put("title", extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty())
+            put("text", extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty())
+            if (max > 0) put("progress", progress * 100 / max)
+        }
+    }
+
     companion object {
+        /** Ride and delivery apps whose ongoing notifications are worth a live pill on the PC. */
+        private val TRACKING_APPS = listOf(
+            "ubercab", "olacabs", "rapido", "swiggy", "zomato", "amazon", "flipkart", "blinkit",
+            "zepto", "bigbasket", "dunzo", "porter", "irctc", "makemytrip",
+        )
+
         var instance: NotifyListener? = null
             private set
 

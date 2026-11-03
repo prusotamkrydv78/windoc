@@ -68,7 +68,15 @@ object Link {
     fun clearAnswers() {
         recap = null
         memory = null
+        answer = null
     }
+
+    /** The answer to the last question asked with `ask`. */
+    var answer: String? = null
+        private set
+    /** The PC's screen time today, in minutes, or -1. */
+    var pcScreenMinutes = -1L
+        private set
 
     /** The PC's recent clipboard texts, after asking with `clip_history`. */
     var pcHistory: List<String>? = null
@@ -312,6 +320,14 @@ object Link {
             }
             "robot" -> {
                 appContext?.let { RobotLife.save(it, message) }
+                notifyListeners()
+            }
+            "answer" -> {
+                answer = message.optString("text")
+                notifyListeners()
+            }
+            "pc_screen_time" -> {
+                pcScreenMinutes = if (message.isNull("minutes")) -1 else message.optLong("minutes", -1)
                 notifyListeners()
             }
             "recap" -> {

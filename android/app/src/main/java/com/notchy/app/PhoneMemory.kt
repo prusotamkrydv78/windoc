@@ -113,6 +113,22 @@ object PhoneMemory {
             .getOrElse { summarise(alerts) to null }
     }
 
+    /** A question answered from the phone's own day of alerts (used when the PC is away). Blocking. */
+    fun ask(context: Context, question: String): String {
+        val alerts = since(context, System.currentTimeMillis() - KEEP_MS)
+        val settings = ai(context)
+        if (settings.key.isEmpty()) {
+            val words = question.split(" ").filter { it.length > 3 }
+            val hits = alerts.filter { alert -> words.any { "${alert.app} ${alert.title} ${alert.text}".contains(it, ignoreCase = true) } }
+            return if (hits.isEmpty()) "Nothing about that in today's alerts. Add an AI key in Setup for smarter answers."
+            else hits.takeLast(5).joinToString("\n") { "${it.app} · ${it.title}: ${it.text}" }
+        }
+        val log = alerts.takeLast(80).joinToString("\n") { "- ${it.app} · ${it.title}: ${it.text.replace('\n', ' ')}" }
+        val prompt = "Answer using only these phone notifications from today. If they don't say, " +
+            "say you don't know. One or two sentences.\n\n$log\n\nQuestion: $question"
+        return runCatching { chat(settings, prompt) }.getOrElse { "The AI didn't answer: ${it.message}" }
+    }
+
     // ---- AI settings ---------------------------------------------------------------------
 
     data class Ai(val baseUrl: String, val key: String, val model: String)

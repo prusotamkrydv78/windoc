@@ -189,7 +189,11 @@ class MainActivity : Activity() {
             fifth.addView(tile("✦", "What did I miss?") { askRecap() }, weighted())
             fifth.addView(tile("⌕", "Timeline") { showTimeline("") }, weighted())
             grid.addView(fourth, matchWidth())
+            val sixth = row(10)
+            sixth.addView(tile("?", "Ask the robot") { askRobot() }, weighted())
+            sixth.addView(tile("◷", "Screen time") { showScreenTime() }, weighted())
             grid.addView(fifth, matchWidth())
+            grid.addView(sixth, matchWidth())
             addView(grid, matchWidth())
             Link.pcMedia?.let { media -> addView(pcMediaCard(media), matchWidth()) }
             addView(sectionTitle("Today"))
@@ -381,6 +385,59 @@ class MainActivity : Activity() {
                 render()
             }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** A question for the robot: the PC answers from Memory, or the phone from its own log. */
+    private fun askRobot() {
+        val field = EditText(this).apply { hint = "When did Ravi send that file?"; isSingleLine = true }
+        AlertDialog.Builder(this)
+            .setTitle("Ask the robot")
+            .setView(FrameLayout(this).apply {
+                setPadding(dp(20), dp(8), dp(20), 0)
+                addView(field)
+            })
+            .setPositiveButton("Ask") { _, _ ->
+                val question = field.text.toString().trim()
+                if (question.isEmpty()) return@setPositiveButton
+                Link.clearAnswers()
+                if (Link.send("ask") { put("q", question) }) {
+                    await({ Link.answer }, 60) { showAnswer(question, it) }
+                } else {
+                    Thread {
+                        val answer = PhoneMemory.ask(this, question)
+                        runOnUiThread { showAnswer(question, answer) }
+                    }.start()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAnswer(question: String, answer: String) {
+        AlertDialog.Builder(this).setTitle(question).setMessage(answer).setPositiveButton("OK", null).show()
+    }
+
+    /** Phone vs PC screen time today. */
+    private fun showScreenTime() {
+        val phone = ScreenTime.today(this)
+        if (phone == null) {
+            AlertDialog.Builder(this)
+                .setTitle("Screen time")
+                .setMessage("Allow usage access so Notchy can count your phone's screen time.")
+                .setPositiveButton("Allow") { _, _ -> startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        val (minutes, top) = phone
+        fun hm(value: Long) = "${value / 60}h ${value % 60}m"
+        val pc = if (Link.pcScreenMinutes >= 0) hm(Link.pcScreenMinutes) else "not linked"
+        val apps = top.joinToString("\n") { "• ${it.first}: ${hm(it.second)}" }
+        AlertDialog.Builder(this)
+            .setTitle("Today: phone ${hm(minutes)} · PC $pc")
+            .setMessage(if (apps.isEmpty()) "No apps yet today" else apps)
+            .setPositiveButton("OK", null)
             .show()
     }
 
@@ -667,6 +724,13 @@ class MainActivity : Activity() {
             },
             Permission("Draw over apps", "The robot around the camera", Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            },
+            Permission(
+                "Usage access",
+                "Screen time on the phone, side by side with the PC",
+                ScreenTime.allowed(this),
+            ) {
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
             },
             Permission(
                 "Do Not Disturb access",

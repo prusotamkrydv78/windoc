@@ -1,4 +1,5 @@
 pub mod ai_usage_service;
+pub mod assistant;
 pub mod audio;
 pub mod brain;
 pub mod backup_service;

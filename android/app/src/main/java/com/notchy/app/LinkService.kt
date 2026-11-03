@@ -61,8 +61,15 @@ class LinkService : Service() {
             if (queued > 0) RobotService.instance?.say("Gave PC $queued alerts")
             RobotService.instance?.say("Linked to ${Link.pcName ?: "PC"}")
         }
+        if (!Link.connected && wasConnected) {
+            // Lost the PC: if the phone also left its Wi-Fi in 90 s, you probably left the desk.
+            main.removeCallbacks(leaveCheck)
+            main.postDelayed(leaveCheck, 90_000)
+        }
+        if (Link.connected) main.removeCallbacks(leaveCheck)
         if (!Link.connected) {
             cancel(MEDIA_ID)
+            cancel(MEETING_ID)
             cancel(FOCUS_ID)
             inMeeting = false
             focusing = false
@@ -106,6 +113,7 @@ class LinkService : Service() {
         Link.start(this)
         UnlockWatcher.start(this)
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        main.postDelayed(screenTick, 60_000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -177,7 +185,109 @@ class LinkService : Service() {
             }
             "focus" -> showFocus(message.optLong("until"))
             "phone_media" -> NotifyListener.instance?.command(message.optString("cmd"))
+            "reply" -> {
+                val ok = NotifyListener.instance?.reply(message.optString("key"), message.optString("text")) == true
+                RobotService.instance?.say(if (ok) "Replied ✓" else "Can't reply to that")
+            }
+            "call_action" -> NotifyListener.instance?.callAction(message.optString("a"))
+            "next_meeting" -> showMeeting(message)
+            "need_internet" -> offerHotspot()
         }
+    }
+
+    // ---- Meeting countdown (Fluid Cloud) and the offline hotspot hint ---------------------
+
+    private fun showMeeting(message: JSONObject) {
+        val title = message.optString("title")
+        if (title.isEmpty()) {
+            cancel(MEETING_ID)
+            return
+        }
+        val starts = message.optLong("starts")
+        val link = message.optString("link").takeIf { it.startsWith("https://") }
+        LiveUpdates.ensureChannel(this)
+        val builder = Notification.Builder(this, "live")
+            .setSmallIcon(R.drawable.ic_notchy)
+            .setContentTitle(title)
+            .setContentText(if (starts > System.currentTimeMillis()) "Meeting starts soon" else "Meeting started")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setWhen(starts)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(starts > System.currentTimeMillis())
+            .setTimeoutAfter((starts - System.currentTimeMillis()).coerceAtLeast(0) + 15 * 60_000)
+            .setCategory(Notification.CATEGORY_EVENT)
+        if (link != null) {
+            val join = PendingIntent.getActivity(
+                this, 7, Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            builder.setContentIntent(join).addAction(Notification.Action.Builder(null as Icon?, "Join", join).build())
+        }
+        val notification = builder.build()
+        notification.extras.putBoolean("android.requestPromotedOngoing", true)
+        manager().notify(MEETING_ID, notification)
+        RobotService.instance?.say("Meeting soon")
+    }
+
+    /** The PC lost its internet: Android won't let apps switch the hotspot on, so offer a tap. */
+    private fun offerHotspot() {
+        val tether = Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val target = if (tether.resolveActivity(packageManager) != null) tether
+        else Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val open = PendingIntent.getActivity(this, 8, target, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        manager().notify(
+            HOTSPOT_ID,
+            Notification.Builder(this, CHANNEL_ALERT)
+                .setSmallIcon(R.drawable.ic_notchy)
+                .setContentTitle("${Link.pcName ?: "Your PC"} lost internet")
+                .setContentText("Tap to turn on your hotspot")
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setTimeoutAfter(10 * 60_000)
+                .build(),
+        )
+        RobotService.instance?.say("PC is offline")
+    }
+
+    // ---- Screen time and the leave-home checklist ------------------------------------------
+
+    private val screenTick = object : Runnable {
+        override fun run() {
+            ScreenTime.today(this@LinkService)?.let { (minutes, top) ->
+                Link.send("screen_time") {
+                    put("minutes", minutes)
+                    put("top", org.json.JSONArray(top.map { org.json.JSONArray(listOf(it.first, it.second)) }))
+                }
+                ScreenTime.nudge(this@LinkService, minutes)
+            }
+            main.postDelayed(this, 10 * 60_000)
+        }
+    }
+
+    private val leaveCheck = Runnable {
+        if (!Link.connected && !onWifi()) {
+            manager().notify(
+                LEAVE_ID,
+                Notification.Builder(this, CHANNEL_ALERT)
+                    .setSmallIcon(R.drawable.ic_notchy)
+                    .setContentTitle("Heading out?")
+                    .setContentText("Charger · earbuds · wallet · keys")
+                    .setStyle(Notification.BigTextStyle().bigText("Before you go: laptop charger, earbuds, wallet, keys. Your PC locks itself if you turned that on."))
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(15 * 60_000)
+                    .build(),
+            )
+            RobotService.instance?.say("Got your charger?")
+        }
+    }
+
+    private fun onWifi(): Boolean {
+        val connectivity = getSystemService(android.net.ConnectivityManager::class.java)
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+        return capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
     }
 
     /** Handoff from the PC: a link copied there opens here with one tap. */
@@ -419,6 +529,9 @@ class LinkService : Service() {
         private const val HANDOFF_ID = 24
         private const val WAVE_ID = 25
         private const val PC_LOW_ID = 26
+        private const val MEETING_ID = 28
+        private const val HOTSPOT_ID = 29
+        private const val LEAVE_ID = 31
         private const val ACTION_STOP_RING = "com.notchy.app.STOP_RING"
         private const val ACTION_MEDIA = "com.notchy.app.MEDIA"
         private const val ACTION_WANT = "com.notchy.app.WANT"

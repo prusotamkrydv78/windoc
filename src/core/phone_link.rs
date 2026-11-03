@@ -65,6 +65,10 @@ impl Default for Pairing {
 
 #[derive(Clone, Debug)]
 pub struct PhoneNotification {
+    /// The phone's notification key, for replying.
+    pub key: String,
+    /// The phone can reply to it from here.
+    pub can_reply: bool,
     pub app: String,
     pub title: String,
     pub text: String,
@@ -135,6 +139,31 @@ struct Shared {
     /// The last clipboard text that came from the phone, so it is not echoed back.
     echo: Option<String>,
     revision: u64,
+    call: Option<Call>,
+    live: Vec<LiveItem>,
+    phone_screen: Option<(u32, Vec<(String, u32)>)>,
+}
+
+/// A phone call, mirrored on the PC.
+#[derive(Clone, Debug)]
+pub struct Call {
+    pub name: String,
+    /// "ringing" or "ongoing".
+    pub state: String,
+    pub since: Instant,
+    /// Buttons the phone's call notification offers.
+    pub actions: Vec<String>,
+}
+
+/// A delivery, ride or other live progress from the phone.
+#[derive(Clone, Debug)]
+pub struct LiveItem {
+    pub key: String,
+    pub app: String,
+    pub title: String,
+    pub text: String,
+    /// 0–100, or `None` without a bar.
+    pub progress: Option<u8>,
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
@@ -149,6 +178,9 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     last_seen: None,
     echo: None,
     revision: 0,
+    call: None,
+    live: Vec::new(),
+    phone_screen: None,
 });
 static STARTED: AtomicBool = AtomicBool::new(false);
 static LOADED: AtomicBool = AtomicBool::new(false);
@@ -421,6 +453,93 @@ fn send_offered(id: u64) {
         && file_progress().is_none()
     {
         std::thread::spawn(move || send_files(vec![path]));
+    }
+}
+
+pub fn call() -> Option<Call> {
+    SHARED.lock().call.clone()
+}
+
+pub fn live_items() -> Vec<LiveItem> {
+    SHARED.lock().live.clone()
+}
+
+/// The phone's screen time today: minutes and the top apps.
+pub fn phone_screen_time() -> Option<(u32, Vec<(String, u32)>)> {
+    SHARED.lock().phone_screen.clone()
+}
+
+/// Answer, decline, hang up or mute the phone's call.
+pub fn call_action(action: &str) -> bool {
+    send(json!({"t": "call_action", "a": action}))
+}
+
+/// Replies to a phone notification through its own reply box.
+pub fn reply(key: &str, text: &str) -> bool {
+    send(json!({"t": "reply", "key": key, "text": text}))
+}
+
+/// An answer to a question the phone asked.
+pub fn send_answer(question: &str, answer: &str) {
+    send(json!({"t": "answer", "q": question, "text": answer}));
+}
+
+#[derive(Default)]
+struct ContextState {
+    meeting: Option<(String, i64)>,
+    minutes: Option<u64>,
+    sent_minutes_at: Option<Instant>,
+    online: Option<bool>,
+}
+
+static CONTEXT: Mutex<ContextState> = Mutex::new(ContextState {
+    meeting: None,
+    minutes: None,
+    sent_minutes_at: None,
+    online: None,
+});
+
+/// What else the PC knows, mirrored to the phone when it changes: the next meeting (for a
+/// Fluid Cloud countdown with Join), the PC's screen time today, and whether it is online.
+pub fn publish_context(
+    meeting: Option<(String, i64, Option<String>)>,
+    screen_minutes: Option<u64>,
+    online: bool,
+) {
+    if SHARED.lock().outbox.is_none() {
+        *CONTEXT.lock() = ContextState::default();
+        return;
+    }
+    let mut context = CONTEXT.lock();
+    let key = meeting.as_ref().map(|(title, until, _)| (title.clone(), *until));
+    if key != context.meeting {
+        context.meeting = key;
+        match &meeting {
+            Some((title, until, link)) => {
+                let starts = epoch_ms() as i64 + until * 60_000;
+                send(json!({"t": "next_meeting", "title": title, "starts": starts, "link": link}));
+            }
+            None => {
+                send(json!({"t": "next_meeting", "title": ""}));
+            }
+        }
+    }
+    if context
+        .sent_minutes_at
+        .is_none_or(|at| at.elapsed() > Duration::from_secs(300))
+        && screen_minutes != context.minutes
+    {
+        context.minutes = screen_minutes;
+        context.sent_minutes_at = Some(Instant::now());
+        send(json!({"t": "pc_screen_time", "minutes": screen_minutes}));
+    }
+    if context.online != Some(online) {
+        let was = context.online;
+        context.online = Some(online);
+        // Only after the PC was online and dropped: the phone offers its hotspot.
+        if was == Some(true) && !online {
+            send(json!({"t": "need_internet"}));
+        }
     }
 }
 
@@ -852,6 +971,8 @@ async fn session(stream: TcpStream, peer: SocketAddr) -> std::io::Result<()> {
         shared.outbox = None;
         shared.connection = None;
         shared.media = None;
+        shared.call = None;
+        shared.live.clear();
         changed(&mut shared);
     }
     result
@@ -959,6 +1080,8 @@ fn handle(message: &Value) {
         }
         "notif" => {
             let notification = PhoneNotification {
+                key: text(message, "key", 200),
+                can_reply: message["reply"].as_bool().unwrap_or(false),
                 app: text(message, "app", 40),
                 title: text(message, "title", 120),
                 text: text(message, "text", 400),
@@ -1068,6 +1191,79 @@ fn handle(message: &Value) {
                 })
                 .collect();
             send(json!({"t": "memory", "items": items}));
+        }
+        "ask" => {
+            let question = text(message, "q", 400);
+            if !question.is_empty() {
+                crate::core::assistant::ask(question, crate::core::assistant::Asker::Phone);
+            }
+        }
+        "call" => {
+            let mut shared = SHARED.lock();
+            let name = text(message, "name", 80);
+            let state = text(message, "state", 20);
+            let ringing_now = state == "ringing" && shared.call.as_ref().is_none_or(|call| call.state != "ringing");
+            shared.call = Some(Call {
+                name: name.clone(),
+                state,
+                since: shared.call.as_ref().map_or_else(Instant::now, |call| call.since),
+                actions: message["actions"]
+                    .as_array()
+                    .map(|actions| actions.iter().filter_map(|action| action.as_str().map(str::to_string)).take(4).collect())
+                    .unwrap_or_default(),
+            });
+            if ringing_now {
+                shared.events.push(Event::Toast("Phone is ringing".to_string(), name.clone()));
+                crate::core::memory::record(crate::core::memory::Kind::PhoneAlert, name, "Incoming call", "Phone");
+            }
+            changed(&mut shared);
+        }
+        "call_end" => {
+            let mut shared = SHARED.lock();
+            shared.call = None;
+            changed(&mut shared);
+        }
+        "live" => {
+            let item = LiveItem {
+                key: text(message, "key", 200),
+                app: text(message, "app", 40),
+                title: text(message, "title", 120),
+                text: text(message, "text", 200),
+                progress: message["progress"].as_u64().map(|value| value.min(100) as u8),
+            };
+            let mut shared = SHARED.lock();
+            match shared.live.iter_mut().find(|known| known.key == item.key) {
+                Some(known) => *known = item,
+                None => {
+                    crate::core::memory::record(crate::core::memory::Kind::PhoneAlert, item.title.clone(), item.text.clone(), item.app.clone());
+                    shared.live.push(item);
+                    if shared.live.len() > 4 {
+                        shared.live.remove(0);
+                    }
+                }
+            }
+            changed(&mut shared);
+        }
+        "live_end" => {
+            let key = text(message, "key", 200);
+            let mut shared = SHARED.lock();
+            shared.live.retain(|item| item.key != key);
+            changed(&mut shared);
+        }
+        "screen_time" => {
+            let minutes = message["minutes"].as_u64().unwrap_or(0) as u32;
+            let top = message["top"]
+                .as_array()
+                .map(|apps| {
+                    apps.iter()
+                        .filter_map(|app| Some((app[0].as_str()?.chars().take(30).collect(), app[1].as_u64()? as u32)))
+                        .take(5)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut shared = SHARED.lock();
+            shared.phone_screen = Some((minutes, top));
+            changed(&mut shared);
         }
         "note" => {
             let note = text(message, "text", 600);

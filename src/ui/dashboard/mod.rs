@@ -2377,7 +2377,8 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
 /// Whether `destination` is the active dashboard page.
 /// Whether the Memory tab is editing text or waiting on a recap (caret and spinner frames).
 pub fn memory_animating() -> bool {
-    showing(Destination::Memory) && tabs::memory::animating()
+    (showing(Destination::Memory) && tabs::memory::animating())
+        || (showing(Destination::Phone) && tabs::phone::animating())
 }
 
 /// Whether the Play tab is open with a game running (it needs smooth frames).

@@ -27,6 +27,11 @@ const ID_TOGGLE: u16 = 1610;
 const ID_MEDIA: u16 = 1620;
 const ID_COPY_CODE: u16 = 1640;
 const ID_WAVE: u16 = 1660;
+const ID_CALL_ACTION: u16 = 1680;
+const ID_SUGGEST: u16 = 1685;
+const ID_REPLY_FIELD: u16 = 1688;
+const ID_REPLY_CLOSE: u16 = 1689;
+const ID_ROW_SELECT: u16 = 1690;
 const MAX_FRIENDS: usize = 6;
 const MAX_ROWS: u16 = 12;
 
@@ -68,6 +73,121 @@ struct State {
     code_at: Option<Instant>,
     notifications: Vec<PhoneNotification>,
     friends: Vec<Friend>,
+    /// The notification being replied to, by key, with its app/title/text.
+    replying: Option<PhoneNotification>,
+    reply_text: String,
+    reply_focused: bool,
+}
+
+/// What the strip along the bottom of the right card shows, most important first.
+enum Strip {
+    Call(phone_link::Call),
+    Reply(PhoneNotification),
+    Live(phone_link::LiveItem),
+    Friends,
+    None,
+}
+
+fn strip(state: &State) -> Strip {
+    if let Some(call) = phone_link::call() {
+        Strip::Call(call)
+    } else if let Some(notification) = state.replying.clone() {
+        Strip::Reply(notification)
+    } else if let Some(item) = phone_link::live_items().last().cloned() {
+        Strip::Live(item)
+    } else if !state.friends.is_empty() {
+        Strip::Friends
+    } else {
+        Strip::None
+    }
+}
+
+fn strip_rect(right: Rect) -> Rect {
+    let inner = right.inset(PAD);
+    Rect::from_ltrb(inner.left, right.bottom - PAD - 30.0, inner.right, right.bottom - PAD)
+}
+
+/// Chips laid out left to right from `left` inside the strip.
+fn chips(strip: Rect, left: f32, labels: &[String]) -> Vec<Rect> {
+    let mut x = left;
+    let mut out = Vec::new();
+    for label in labels {
+        let width = text_width(label, BUTTON) + 24.0;
+        if x + width > strip.right {
+            break;
+        }
+        out.push(Rect::from_xywh(x, strip.top + 1.0, width, 28.0));
+        x += width + 6.0;
+    }
+    out
+}
+
+fn reply_labels(notification: &PhoneNotification) -> Vec<String> {
+    let mut labels: Vec<String> = crate::core::assistant::replies_for(&notification.key)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|reply| reply.chars().take(28).collect())
+        .collect();
+    labels.insert(0, "Type…".to_string());
+    labels
+}
+
+fn draw_strip(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
+    let painter = ctx.painter;
+    let colors = ctx.colors;
+    let area = strip_rect(layout.right);
+    match strip(state) {
+        Strip::Call(call) => {
+            painter.fill_round_rect(area.inset(-4.0), Radius::uniform(16.0), colors.state_success.with_alpha(36));
+            let label = format!("☎ {} · {}", call.name, if call.state == "ringing" { "ringing" } else { "on call" });
+            let label_w = text_width(&label, NAME).min(area.width() * 0.5);
+            text(painter, &label, NAME, Rect::from_xywh(area.left + 4.0, area.top, label_w, area.height()), colors.text_primary);
+            for (index, rect) in chips(area, area.left + label_w + 14.0, &call.actions).iter().enumerate() {
+                let id = ID_CALL_ACTION + index as u16;
+                let danger = call.actions[index].to_lowercase().contains("decline") || call.actions[index].to_lowercase().contains("hang");
+                let fill = if danger { colors.state_error } else { colors.state_success };
+                painter.fill_round_rect(*rect, Radius::uniform(14.0), if hovered(ctx, id) { fill.with_alpha(220) } else { fill });
+                text_center(painter, &call.actions[index], BUTTON, *rect, Rgba::WHITE);
+            }
+        }
+        Strip::Reply(notification) => {
+            let labels = reply_labels(&notification);
+            let rects = chips(area, area.left, &labels);
+            for (index, rect) in rects.iter().enumerate() {
+                let id = if index == 0 { ID_REPLY_FIELD } else { ID_SUGGEST + index as u16 - 1 };
+                if index == 0 && (state.reply_focused || !state.reply_text.is_empty()) {
+                    continue;
+                }
+                let hover = hovered(ctx, id);
+                painter.fill_round_rect(*rect, Radius::uniform(14.0), if hover { colors.surface_interactive } else { colors.surface_overlay });
+                text_center(painter, &labels[index], BUTTON, *rect, colors.text_primary);
+            }
+            if state.reply_focused || !state.reply_text.is_empty() {
+                // The typed reply takes the whole strip.
+                let field = Rect::from_ltrb(area.left, area.top, area.right - 34.0, area.bottom);
+                kit::search_field(painter, field, &state.reply_text, &format!("Reply to {}…", notification.title), colors);
+            }
+            let close = Rect::from_xywh(area.right - 28.0, area.top + 2.0, 26.0, 26.0);
+            kit::icon_button(painter, close, kit::CLOSE, hovered(ctx, ID_REPLY_CLOSE), true, colors);
+        }
+        Strip::Live(item) => {
+            painter.fill_round_rect(area.inset(-4.0), Radius::uniform(16.0), colors.surface_overlay);
+            let title = format!("{} · {}", item.app, item.title);
+            text(painter, &title, NAME, Rect::from_ltrb(area.left + 6.0, area.top - 1.0, area.right - 6.0, area.top + 15.0), colors.text_primary);
+            if let Some(progress) = item.progress {
+                let track = Rect::from_ltrb(area.left + 6.0, area.top + 20.0, area.right - 6.0, area.top + 24.0);
+                painter.fill_round_rect(track, Radius::uniform(2.0), colors.surface_interactive);
+                painter.fill_round_rect(
+                    Rect::from_xywh(track.left, track.top, (track.width() * f32::from(progress) / 100.0).max(4.0), 4.0),
+                    Radius::uniform(2.0),
+                    colors.accent_primary,
+                );
+            } else {
+                text(painter, &item.text, typography::CAPTION, Rect::from_ltrb(area.left + 6.0, area.top + 15.0, area.right - 6.0, area.bottom), colors.text_secondary);
+            }
+        }
+        Strip::Friends | Strip::None => {}
+    }
 }
 
 thread_local! {
@@ -303,7 +423,11 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
             draw_pairing(ctx, &layout, state);
             draw_features(ctx, &layout);
         }
-        draw_friends(ctx, &layout, state);
+        if matches!(strip(state), Strip::Friends) {
+            draw_friends(ctx, &layout, state);
+        } else {
+            draw_strip(ctx, &layout, state);
+        }
     });
     true
 }
@@ -451,11 +575,15 @@ fn draw_phone(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
     match &connection {
         Some(connection) => {
             painter.fill_circle(dot, 3.5, colors.state_success);
-            let status = match connection.battery {
+            let mut status = match connection.battery {
                 Some((percent, true)) => format!("Connected · {percent}% charging"),
                 Some((percent, false)) => format!("Connected · {percent}%"),
                 None => "Connected".to_string(),
             };
+            // Screen-time duel: the phone's minutes today.
+            if let Some((minutes, _)) = phone_link::phone_screen_time() {
+                status.push_str(&format!(" · screen {}h {:02}m", minutes / 60, minutes % 60));
+            }
             text(
                 painter,
                 &status,
@@ -605,7 +733,7 @@ fn draw_notifications(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         Rect::from_xywh(inner.left, inner.top, inner.width() - 80.0, 26.0),
         colors.text_primary,
     );
-    let rows = rows_rect(layout.right, !state.friends.is_empty());
+    let rows = rows_rect(layout.right, !matches!(strip(state), Strip::None));
     if state.notifications.is_empty() {
         let center = rows.center_y() - 10.0;
         kit::glyph(
@@ -769,11 +897,32 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
     LAST_GRID.with(|cell| cell.set(grid));
     let layout = layout(grid);
     let friends = with_state(|state| state.friends.clone());
-    if let Some(index) = friend_chips(layout.right, &friends)
-        .iter()
-        .position(|chip| chip.contains(point))
-    {
-        return Some(DashboardHit::Tab(ID_WAVE + index as u16));
+    let area = strip_rect(layout.right);
+    let strip_hit = with_state(|state| match strip(state) {
+        Strip::Call(call) => chips(area, area.left + text_width(&format!("☎ {} · on call", call.name), NAME).min(area.width() * 0.5) + 14.0, &call.actions)
+            .iter()
+            .position(|rect| rect.contains(point))
+            .map(|index| ID_CALL_ACTION + index as u16),
+        Strip::Reply(notification) => {
+            if Rect::from_xywh(area.right - 28.0, area.top + 2.0, 26.0, 26.0).contains(point) {
+                Some(ID_REPLY_CLOSE)
+            } else if (state.reply_focused || !state.reply_text.is_empty()) && area.contains(point) {
+                Some(ID_REPLY_FIELD)
+            } else {
+                chips(area, area.left, &reply_labels(&notification))
+                    .iter()
+                    .position(|rect| rect.contains(point))
+                    .map(|index| if index == 0 { ID_REPLY_FIELD } else { ID_SUGGEST + index as u16 - 1 })
+            }
+        }
+        Strip::Friends => friend_chips(layout.right, &friends)
+            .iter()
+            .position(|chip| chip.contains(point))
+            .map(|index| ID_WAVE + index as u16),
+        _ => None,
+    });
+    if let Some(id) = strip_hit {
+        return Some(DashboardHit::Tab(id));
     }
     if !phone_link::paired() {
         return None;
@@ -798,14 +947,18 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
     } else if clear_rect(layout.right).contains(point) {
         Some(ID_CLEAR)
     } else {
-        let rows = rows_rect(layout.right, !friends.is_empty());
+        let rows = with_state(|state| rows_rect(layout.right, !matches!(strip(state), Strip::None)));
         with_state(|state| {
             let shown = row_count(rows, state.notifications.len());
             (0..shown).find_map(|slot| {
-                let code = state.notifications[slot].otp.as_ref()?;
-                copy_chip(row_rect(rows, slot), code)
-                    .contains(point)
-                    .then_some(ID_COPY_CODE + slot as u16)
+                let row = row_rect(rows, slot);
+                let notification = &state.notifications[slot];
+                if let Some(code) = notification.otp.as_ref()
+                    && copy_chip(row, code).contains(point)
+                {
+                    return Some(ID_COPY_CODE + slot as u16);
+                }
+                (notification.can_reply && row.contains(point) && slot < 10).then_some(ID_ROW_SELECT + slot as u16)
             })
         })
     };
@@ -862,6 +1015,40 @@ pub fn apply(hit: DashboardHit) -> bool {
         _ if (ID_MEDIA..ID_MEDIA + 3).contains(&id) => {
             phone_link::phone_media_command(["prev", "toggle", "next"][(id - ID_MEDIA) as usize]);
         }
+        _ if (ID_ROW_SELECT..ID_ROW_SELECT + 10).contains(&id) => {
+            if let Some(notification) = state.notifications.get((id - ID_ROW_SELECT) as usize).cloned() {
+                crate::core::assistant::suggest_replies(
+                    notification.key.clone(),
+                    notification.app.clone(),
+                    notification.title.clone(),
+                    notification.text.clone(),
+                );
+                state.replying = Some(notification);
+                state.reply_text.clear();
+                state.reply_focused = false;
+            }
+        }
+        ID_REPLY_FIELD => state.reply_focused = true,
+        ID_REPLY_CLOSE => {
+            state.replying = None;
+            state.reply_text.clear();
+            state.reply_focused = false;
+        }
+        _ if (ID_SUGGEST..ID_SUGGEST + 3).contains(&id) => {
+            if let Some(notification) = state.replying.clone() {
+                let index = (id - ID_SUGGEST) as usize;
+                if let Some(reply) = crate::core::assistant::replies_for(&notification.key).and_then(|replies| replies.get(index).cloned())
+                    && phone_link::reply(&notification.key, &reply)
+                {
+                    state.replying = None;
+                }
+            }
+        }
+        _ if (ID_CALL_ACTION..ID_CALL_ACTION + 4).contains(&id) => {
+            if let Some(action) = phone_link::call().and_then(|call| call.actions.get((id - ID_CALL_ACTION) as usize).cloned()) {
+                phone_link::call_action(&action);
+            }
+        }
         _ if (ID_WAVE..ID_WAVE + MAX_FRIENDS as u16).contains(&id) => {
             if let Some(friend) = state.friends.get((id - ID_WAVE) as usize)
                 && friends::wave(friend.address)
@@ -883,11 +1070,43 @@ pub fn apply(hit: DashboardHit) -> bool {
 }
 
 pub fn wants_keyboard() -> bool {
-    false
+    with_state(|state| state.reply_focused)
 }
 
-pub fn handle_key(_key: &Key) -> bool {
-    false
+pub fn handle_key(key: &Key) -> bool {
+    with_state(|state| {
+        if !state.reply_focused {
+            return false;
+        }
+        match key {
+            Key::Escape => state.reply_focused = false,
+            Key::Backspace => {
+                state.reply_text.pop();
+            }
+            Key::Enter => {
+                if let Some(notification) = state.replying.clone()
+                    && !state.reply_text.trim().is_empty()
+                    && phone_link::reply(&notification.key, state.reply_text.trim())
+                {
+                    state.replying = None;
+                    state.reply_text.clear();
+                    state.reply_focused = false;
+                }
+            }
+            Key::Character(text) => {
+                if state.reply_text.chars().count() < 500 {
+                    state.reply_text.extend(text.chars().filter(|character| !character.is_control()));
+                }
+            }
+            _ => {}
+        }
+        true
+    })
+}
+
+/// A caret blinks while typing a reply.
+pub fn animating() -> bool {
+    wants_keyboard()
 }
 
 pub fn poll(_now: Instant) {}

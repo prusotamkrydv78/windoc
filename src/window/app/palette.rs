@@ -197,6 +197,33 @@ impl App {
                     .collect(),
             );
         }
+        phone_link::publish_context(
+            self.calendar.next_meeting(15),
+            self.screen_time
+                .today_minutes(now)
+                .map(|(minutes, _)| minutes),
+            crate::core::system_watch::snapshot().online,
+        );
+        crate::core::assistant::diary_poll_throttled(now);
+        for done in crate::core::assistant::take() {
+            use crate::core::assistant::{Asker, Done};
+            match done {
+                Done::Answer { question, answer, from } => match from {
+                    Asker::Phone => phone_link::send_answer(&question, &answer),
+                    Asker::Tab => {}
+                },
+                Done::Magic { text, what } => {
+                    if winisland_platform_windows::set_clipboard_text(&text).is_ok() {
+                        crate::platform::notify().show_toast(&format!("{what}: copied"), &text);
+                        mascot::react(Reaction::Copied);
+                    }
+                }
+                Done::Replies { .. } => {}
+                Done::Diary(text) => crate::platform::notify().show_toast("Your day", &text),
+                Done::Failed(error) => crate::platform::notify().show_toast("Notchy", &error),
+            }
+            window.request_redraw();
+        }
         for (recap, reason) in crate::core::recap::take_finished() {
             match reason {
                 crate::core::recap::Reason::Back => {

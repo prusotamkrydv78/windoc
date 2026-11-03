@@ -157,6 +157,44 @@ impl CalendarService {
     }
 }
 
+impl CalendarService {
+    /// The next timed event starting within `lead_minutes` (or running now, up to 10 minutes
+    /// in), as `(title, minutes until start, join link)`. Does not mark it announced.
+    pub fn next_meeting(&self, lead_minutes: i64) -> Option<(String, i64, Option<String>)> {
+        let local = crate::platform::shell().local_datetime();
+        let local_now = civil_minutes(
+            i64::from(local.year),
+            i64::from(local.month),
+            i64::from(local.day),
+            i64::from(local.hour),
+            i64::from(local.minute),
+        );
+        let utc_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|time| (time.as_secs() / 60) as i64)
+            .unwrap_or_default();
+        self.events
+            .iter()
+            .filter_map(|event| {
+                if event.all_day || event.start.len() < 13 {
+                    return None;
+                }
+                let field = |range: std::ops::Range<usize>| event.start[range].parse::<i64>().ok();
+                let start = civil_minutes(field(0..4)?, field(4..6)?, field(6..8)?, field(9..11)?, field(11..13)?);
+                let until = start - if event.utc { utc_now } else { local_now };
+                ((-10..=lead_minutes).contains(&until)).then(|| {
+                    let link = event
+                        .location
+                        .split_whitespace()
+                        .find(|word| word.starts_with("https://"))
+                        .map(str::to_string);
+                    (event.title.clone(), until, link)
+                })
+            })
+            .min_by_key(|(_, until, _)| *until)
+    }
+}
+
 /// Minutes since 1970-01-01 00:00 for a proleptic Gregorian date and time.
 fn civil_minutes(year: i64, month: i64, day: i64, hour: i64, minute: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
