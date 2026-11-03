@@ -93,6 +93,16 @@ impl App {
         }
         if let Some(event) = crate::ui::dashboard::poll(now) {
             crate::ui::widget::compact::mascot::focus_finished();
+            crate::core::memory::record(
+                crate::core::memory::Kind::Focus,
+                match event {
+                    winisland_core::focus::FocusEvent::PhaseFinished { finished, .. } => {
+                        format!("{finished:?} finished")
+                    }
+                },
+                "",
+                "",
+            );
             if !self.expanded && !self.is_hidden() {
                 self.compact_overlay
                     .push_activity(crate::ui::compact::Activity {
@@ -1306,7 +1316,7 @@ impl App {
             || self.is_right_dragging
             || (self.expanded
                 && self.page_visible(ExpandedPage::Home)
-                && crate::ui::dashboard::play_animating())
+                && (crate::ui::dashboard::play_animating() || crate::ui::dashboard::memory_animating()))
             || (self.expanded
                 && self.page_visible(ExpandedPage::Calendar)
                 && crate::ui::expanded::calendar_view::is_animating());

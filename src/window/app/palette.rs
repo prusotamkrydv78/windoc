@@ -197,6 +197,19 @@ impl App {
                     .collect(),
             );
         }
+        for (recap, reason) in crate::core::recap::take_finished() {
+            match reason {
+                crate::core::recap::Reason::Back => {
+                    mascot::react(Reaction::Notice);
+                    crate::platform::notify().show_toast("While you were away", &recap.text);
+                }
+                crate::core::recap::Reason::Phone => {
+                    phone_link::send_recap(&recap.text, recap.model.as_deref());
+                }
+                crate::core::recap::Reason::Manual => {}
+            }
+            window.request_redraw();
+        }
         let media = self.current_media_info();
         let media = (!media.title.is_empty())
             .then(|| (media.title.clone(), media.artist.clone(), media.is_playing));
@@ -231,6 +244,12 @@ impl App {
                 Event::Arrived => mascot::react(Reaction::Notice),
                 Event::Thrown => mascot::react(Reaction::Catch),
                 Event::File(path) => {
+                    crate::core::memory::record(
+                        crate::core::memory::Kind::FileIn,
+                        path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default(),
+                        "From phone",
+                        "",
+                    );
                     let name = path
                         .file_name()
                         .map(|name| name.to_string_lossy().into_owned())

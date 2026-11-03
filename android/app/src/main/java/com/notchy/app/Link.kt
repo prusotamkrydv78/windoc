@@ -55,6 +55,21 @@ object Link {
     var pcMeeting = false
         private set
 
+    /** The last recap from the PC: `(text, model or null)`. */
+    var recap: Pair<String, String?>? = null
+        private set
+    /** The last Memory search results: `(kind, title, detail, app, at)`. */
+    var memory: List<MemoryItem>? = null
+        private set
+
+    data class MemoryItem(val kind: String, val title: String, val detail: String, val app: String, val at: Long)
+
+    /** Forgets old answers before asking again. */
+    fun clearAnswers() {
+        recap = null
+        memory = null
+    }
+
     /** The PC's recent clipboard texts, after asking with `clip_history`. */
     var pcHistory: List<String>? = null
         private set
@@ -293,6 +308,18 @@ object Link {
             }
             "meeting" -> {
                 pcMeeting = message.optBoolean("on")
+                notifyListeners()
+            }
+            "recap" -> {
+                recap = message.optString("text") to message.optString("model").takeIf { it.isNotEmpty() && it != "null" }
+                notifyListeners()
+            }
+            "memory" -> {
+                val items = message.optJSONArray("items")
+                memory = (0 until (items?.length() ?: 0)).map {
+                    val item = items!!.getJSONObject(it)
+                    MemoryItem(item.optString("kind"), item.optString("title"), item.optString("detail"), item.optString("app"), item.optLong("at"))
+                }
                 notifyListeners()
             }
             "clip_history" -> {

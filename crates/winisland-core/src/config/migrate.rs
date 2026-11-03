@@ -1,6 +1,6 @@
 use super::AppConfig;
 
-pub const CONFIG_VERSION: u32 = 9;
+pub const CONFIG_VERSION: u32 = 10;
 
 /// Smallest expanded panel that fits the standard dashboard layout comfortably.
 const MIN_DASHBOARD_WIDTH: f32 = 720.0;
@@ -92,6 +92,14 @@ pub fn migrate(config: &mut AppConfig, from_version: u32) -> bool {
         for workspace in &mut config.workspaces {
             if !workspace.modules.iter().any(|module| module == "dashboard_phone") {
                 workspace.modules.push("dashboard_phone".to_string());
+            }
+        }
+    }
+    if from_version < 10 {
+        // The Memory tab is new: show it in every existing workspace.
+        for workspace in &mut config.workspaces {
+            if !workspace.modules.iter().any(|module| module == "dashboard_memory") {
+                workspace.modules.push("dashboard_memory".to_string());
             }
         }
     }

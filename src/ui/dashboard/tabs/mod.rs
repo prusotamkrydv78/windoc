@@ -21,6 +21,7 @@ pub mod clock;
 pub mod converter;
 pub mod drop;
 pub mod links;
+pub mod memory;
 pub mod message;
 pub mod notes;
 pub mod phone;
@@ -60,6 +61,7 @@ macro_rules! route {
             Destination::Drop => drop::$call($($arg),*),
             Destination::Play => play::$call($($arg),*),
             Destination::Phone => phone::$call($($arg),*),
+            Destination::Memory => memory::$call($($arg),*),
             _ => $default,
         }
     };
@@ -122,4 +124,5 @@ pub fn poll_all(now: Instant) {
     drop::poll(now);
     play::poll(now);
     phone::poll(now);
+    memory::poll(now);
 }

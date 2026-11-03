@@ -1155,6 +1155,8 @@ pub enum Destination {
     Play,
     /// Notchy Link to the phone app; reached from More.
     Phone,
+    /// Timeline, search and the AI recap; reached from More.
+    Memory,
 }
 
 impl Destination {
@@ -1168,7 +1170,7 @@ impl Destination {
     ];
     /// The icon dock, in order: every module, like a launcher.
     /// Every page, as an icon row; each mode can hide the ones it does not need.
-    pub const DOCK: [Self; 19] = [
+    pub const DOCK: [Self; 20] = [
         Self::Home,
         Self::System,
         Self::Media,
@@ -1186,13 +1188,14 @@ impl Destination {
         Self::Units,
         Self::Message,
         Self::Phone,
+        Self::Memory,
         Self::Drop,
         Self::Play,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 18] = [
+    pub const MORE_ITEMS: [Self; 19] = [
         Self::System,
         Self::Media,
         Self::Clipboard,
@@ -1209,6 +1212,7 @@ impl Destination {
         Self::Units,
         Self::Message,
         Self::Phone,
+        Self::Memory,
         Self::Drop,
         Self::Play,
     ];
@@ -1235,6 +1239,7 @@ impl Destination {
             Self::Drop => "subtitle_drop",
             Self::Play => "subtitle_play",
             Self::Phone => "subtitle_phone",
+            Self::Memory => "subtitle_memory",
         }
     }
 
@@ -1261,6 +1266,7 @@ impl Destination {
             Self::Drop => Icon::Phone,
             Self::Play => Icon::Pet,
             Self::Phone => Icon::Devices,
+            Self::Memory => Icon::Brain,
         }
     }
 
@@ -1286,6 +1292,7 @@ impl Destination {
             Self::Drop => "dashboard_drop",
             Self::Play => "dashboard_play",
             Self::Phone => "dashboard_phone",
+            Self::Memory => "dashboard_memory",
         }
     }
 }
@@ -2368,6 +2375,11 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
 }
 
 /// Whether `destination` is the active dashboard page.
+/// Whether the Memory tab is editing text or waiting on a recap (caret and spinner frames).
+pub fn memory_animating() -> bool {
+    showing(Destination::Memory) && tabs::memory::animating()
+}
+
 /// Whether the Play tab is open with a game running (it needs smooth frames).
 pub fn play_animating() -> bool {
     showing(Destination::Play) && tabs::play::animating()

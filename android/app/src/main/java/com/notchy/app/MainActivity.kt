@@ -185,7 +185,11 @@ class MainActivity : Activity() {
             }, weighted())
             fourth.addView(tile("⌗", "Scan to PC") { scanToPc() }, weighted())
             grid.addView(third, matchWidth())
+            val fifth = row(10)
+            fifth.addView(tile("✦", "What did I miss?") { askRecap() }, weighted())
+            fifth.addView(tile("⌕", "Timeline") { showTimeline("") }, weighted())
             grid.addView(fourth, matchWidth())
+            grid.addView(fifth, matchWidth())
             addView(grid, matchWidth())
             Link.pcMedia?.let { media -> addView(pcMediaCard(media), matchWidth()) }
             addView(sectionTitle("Today"))
@@ -293,6 +297,83 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Sending scan to ${Link.pcName}…", Toast.LENGTH_SHORT).show()
         } else {
             contentResolver.delete(uri, null, null)
+        }
+    }
+
+    /** Waits up to [seconds] for an answer from the PC, then runs [show] once. */
+    private fun <T> await(read: () -> T?, seconds: Long, show: (T) -> Unit) {
+        var done = false
+        lateinit var listener: () -> Unit
+        listener = {
+            val value = read()
+            if (value != null && !done) {
+                done = true
+                Link.removeListener(listener)
+                show(value)
+            }
+        }
+        Link.addListener(listener)
+        content.postDelayed({
+            Link.removeListener(listener)
+            if (!done) Toast.makeText(this, "The PC didn't answer", Toast.LENGTH_SHORT).show()
+        }, seconds * 1000)
+    }
+
+    /** The robot on the PC sums up the last three hours of phone alerts. */
+    private fun askRecap() {
+        Link.clearAnswers()
+        if (!Link.send("recap") { put("hours", 3) }) {
+            act(false, "")
+            return
+        }
+        Toast.makeText(this, "Asking the robot…", Toast.LENGTH_SHORT).show()
+        await({ Link.recap }, 60) { (text, model) ->
+            AlertDialog.Builder(this)
+                .setTitle("What you missed")
+                .setMessage(text + "\n\n" + (model?.let { "Written by $it" } ?: "Built-in summary"))
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    /** Notchy Memory on the PC, searchable from here. */
+    private fun showTimeline(query: String) {
+        Link.clearAnswers()
+        if (!Link.send("memory_search") { put("q", query) }) {
+            act(false, "")
+            return
+        }
+        await({ Link.memory }, 10) { items ->
+            val list = column(6).apply { setPadding(dp(16), dp(8), dp(16), dp(8)) }
+            val search = EditText(this).apply {
+                hint = "Search everything"
+                isSingleLine = true
+                setText(query)
+                imeOptions = EditorInfo.IME_ACTION_SEARCH
+            }
+            list.addView(search, matchWidth())
+            if (items.isEmpty()) list.addView(label("Nothing yet", 14f, Ui.DIM))
+            val clock = java.text.SimpleDateFormat("d MMM, h:mm a", java.util.Locale.getDefault())
+            for (item in items) {
+                list.addView(column(2).apply {
+                    setPadding(dp(14), dp(10), dp(14), dp(10))
+                    background = rounded(Ui.CARD2, dp(14).toFloat())
+                    addView(label("${item.kind} · ${clock.format(java.util.Date(item.at))}", 11f, Ui.ACCENT, bold = true))
+                    addView(label(if (item.app.isEmpty()) item.title else "${item.app} · ${item.title}", 14f, Ui.TEXT, bold = true))
+                    if (item.detail.isNotEmpty()) addView(label(item.detail, 13f, Ui.DIM))
+                }, matchWidth())
+            }
+            lateinit var dialog: AlertDialog
+            search.setOnEditorActionListener { _, _, _ ->
+                dialog.dismiss()
+                showTimeline(search.text.toString())
+                true
+            }
+            dialog = AlertDialog.Builder(this)
+                .setTitle("Timeline")
+                .setView(ScrollView(this).apply { addView(list) })
+                .setNegativeButton("Close", null)
+                .show()
         }
     }
 

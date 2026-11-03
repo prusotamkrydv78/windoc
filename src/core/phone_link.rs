@@ -358,6 +358,7 @@ pub fn send_files(paths: Vec<std::path::PathBuf>) {
         if !send(json!({"t": "file_start", "id": id, "name": name, "size": size})) {
             break;
         }
+        crate::core::memory::record(crate::core::memory::Kind::FileOut, name.clone(), "Sent to phone", "");
         let mut buffer = vec![0u8; 192 * 1024];
         loop {
             let read = match file.read(&mut buffer) {
@@ -397,6 +398,7 @@ pub fn offer_download(path: std::path::PathBuf) {
     };
     let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());
     let id = epoch_ms();
+    crate::core::memory::record(crate::core::memory::Kind::Download, name.clone(), path.display().to_string(), "");
     if send(json!({"t": "download", "id": id, "name": name, "size": size})) {
         let mut offered = OFFERED.lock();
         offered.push((id, path));
@@ -423,6 +425,11 @@ fn send_offered(id: u64) {
 /// A friend's PC waved: the phone robot passes it on.
 pub fn forward_wave(name: &str) {
     send(json!({"t": "wave", "name": name}));
+}
+
+/// A recap the phone asked for.
+pub fn send_recap(text: &str, model: Option<&str>) {
+    send(json!({"t": "recap", "text": text, "model": model}));
 }
 
 /// Makes the phone ring at full volume, even on silent.
@@ -493,6 +500,7 @@ struct PollState {
     locked: bool,
     meeting: bool,
     meeting_at: Option<Instant>,
+    away_since: Option<u64>,
 }
 
 thread_local! {
@@ -562,10 +570,33 @@ pub fn poll(now: Instant, media: Option<(&str, &str, bool)>, focus: Option<Durat
                 let meeting = camera || microphone;
                 if meeting != state.meeting {
                     state.meeting = meeting;
+                    crate::core::memory::record(
+                        crate::core::memory::Kind::Meeting,
+                        if meeting { "Meeting started" } else { "Meeting ended" },
+                        if camera { "Camera on" } else { "Microphone on" },
+                        "",
+                    );
                     send(json!({"t": "meeting", "on": meeting, "camera": camera}));
                 }
             }
             let away = idle_for().is_some_and(|idle| idle >= AWAY_AFTER);
+            // Back at the PC after a while: the robot recaps what the phone got meanwhile.
+            if away && !state.away {
+                state.away_since = Some(
+                    crate::core::memory::now_ms().saturating_sub(AWAY_AFTER.as_millis() as u64),
+                );
+            }
+            if !away && state.away
+                && let Some(since) = state.away_since.take()
+            {
+                let missed = crate::core::memory::since(since)
+                    .iter()
+                    .filter(|entry| entry.kind == crate::core::memory::Kind::PhoneAlert)
+                    .count();
+                if missed >= 2 {
+                    crate::core::recap::request(since, crate::core::recap::Reason::Back);
+                }
+            }
             if away != state.away
                 || state
                     .presence_at
@@ -902,6 +933,13 @@ fn handle(message: &Value) {
             };
             let otp = find_otp(&format!("{} {}", notification.title, notification.text));
             let notification = PhoneNotification { otp, ..notification };
+            // Codes are never kept in Memory.
+            crate::core::memory::record(
+                crate::core::memory::Kind::PhoneAlert,
+                notification.title.clone(),
+                if notification.otp.is_some() { "A one-time code".to_string() } else { notification.text.clone() },
+                notification.app.clone(),
+            );
             let mut shared = SHARED.lock();
             let alerts = shared.pairing.as_ref().is_some_and(|pairing| pairing.alerts);
             if let Some(code) = &notification.otp {
@@ -928,6 +966,7 @@ fn handle(message: &Value) {
         "clip" => {
             let clip = text(message, "text", 200_000);
             if !clip.is_empty() {
+                crate::core::memory::record(crate::core::memory::Kind::Clip, "From phone", clip.clone(), "");
                 let mut shared = SHARED.lock();
                 shared.echo = Some(clip.clone());
                 shared.events.push(Event::Clip(clip));
@@ -968,6 +1007,27 @@ fn handle(message: &Value) {
                 .map(|item| item.chars().take(2000).collect())
                 .collect();
             send(json!({"t": "clip_history", "items": items}));
+        }
+        "recap" => {
+            let hours = message["hours"].as_u64().unwrap_or(3).clamp(1, 48);
+            let since = crate::core::memory::now_ms().saturating_sub(hours * 3_600_000);
+            crate::core::recap::request(since, crate::core::recap::Reason::Phone);
+        }
+        "memory_search" => {
+            let query = text(message, "q", 80);
+            let items: Vec<Value> = crate::core::memory::search(&query, 60)
+                .into_iter()
+                .map(|entry| {
+                    json!({
+                        "at": entry.at,
+                        "kind": entry.kind.label(),
+                        "title": entry.title,
+                        "detail": entry.detail.chars().take(200).collect::<String>(),
+                        "app": entry.app,
+                    })
+                })
+                .collect();
+            send(json!({"t": "memory", "items": items}));
         }
         "wave_friends" => {
             for friend in crate::core::friends::nearby() {

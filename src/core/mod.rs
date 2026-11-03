@@ -1,5 +1,6 @@
 pub mod ai_usage_service;
 pub mod audio;
+pub mod brain;
 pub mod backup_service;
 pub mod calendar_service;
 pub mod chime;
@@ -13,8 +14,11 @@ pub mod focus_store;
 pub mod friends;
 pub mod json_store;
 pub mod mascot_memory;
+pub mod memory;
+pub mod memory_sql;
 pub mod persistence;
 pub mod phone_link;
+pub mod recap;
 pub mod safe_mode;
 pub mod screen_time;
 pub mod screenshot_watch;

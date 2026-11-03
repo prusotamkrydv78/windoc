@@ -26,6 +26,8 @@ pub enum Icon {
     Phone,
     /// A phone beside a laptop, for Notchy Link.
     Devices,
+    /// Notchy Memory: a little brain.
+    Brain,
     Agenda,
     Settings,
     Search,
@@ -72,6 +74,7 @@ impl Icon {
             }
             Self::Chart => "M4 4 V20 H20 M8 16 V11 M12 16 V7 M16 16 V13",
             Self::Phone => "M8 2.5 H16 V21.5 H8 Z M11 18.5 H13",
+            Self::Brain => "M9 4 A3 3 0 0 0 6 7 A3 3 0 0 0 4 10 A3 3 0 0 0 5 14 A3 3 0 0 0 8 19 A2.5 2.5 0 0 0 12 18 V5 A2.5 2.5 0 0 0 9 4 Z M15 4 A3 3 0 0 1 18 7 A3 3 0 0 1 20 10 A3 3 0 0 1 19 14 A3 3 0 0 1 16 19 A2.5 2.5 0 0 1 12 18",
             Self::Devices => "M3 6 H15 V15 H3 Z M1 18 H13 M17 9 H22 V20 H17 Z M19 17.5 H20",
             Self::Agenda => "M9 6 H20 M9 12 H20 M9 18 H20 M4.5 6 H4.51 M4.5 12 H4.51 M4.5 18 H4.51",
             Self::Settings => {
