@@ -2375,6 +2375,22 @@ fn draw_weather_page(painter: Painter<'_>, grid: Rect, colors: &SemanticColors) 
 }
 
 /// Whether `destination` is the active dashboard page.
+/// Notes whose title or detail contains every word of `query`, as `(title, detail)`.
+pub fn note_matches(query: &str, limit: usize) -> Vec<(String, String)> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    NOTE_ROWS.with(|cell| {
+        cell.borrow()
+            .iter()
+            .filter(|(_, title, detail)| {
+                let lower = format!("{title} {detail}").to_lowercase();
+                words.iter().all(|word| lower.contains(word))
+            })
+            .take(limit)
+            .map(|(_, title, detail)| (title.clone(), detail.clone()))
+            .collect()
+    })
+}
+
 /// Whether the Memory tab is editing text or waiting on a recap (caret and spinner frames).
 pub fn memory_animating() -> bool {
     (showing(Destination::Memory) && tabs::memory::animating())

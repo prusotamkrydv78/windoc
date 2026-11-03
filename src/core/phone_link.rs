@@ -423,6 +423,21 @@ pub fn set_history(items: Vec<String>) {
     *HISTORY.lock() = items;
 }
 
+/// Clipboard history texts containing every word of `query`, newest first.
+pub fn history_matches(query: &str, limit: usize) -> Vec<String> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    HISTORY
+        .lock()
+        .iter()
+        .filter(|item| {
+            let lower = item.to_lowercase();
+            words.iter().all(|word| lower.contains(word))
+        })
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
 static OFFERED: Mutex<Vec<(u64, std::path::PathBuf)>> = Mutex::new(Vec::new());
 
 /// A download finished on the PC: the phone shows it, with "Get it here".

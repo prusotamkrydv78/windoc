@@ -404,7 +404,18 @@ fn draw_timeline(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         );
     }
     let fit = (layout.rows.height() / ROW_H).floor().max(0.0) as usize;
-    let entries: Vec<Entry> = memory::search(&state.query, fit);
+    let mut entries: Vec<Entry> = memory::search(&state.query, fit);
+    // Universal search: Notes and the clipboard history join the timeline's matches.
+    if !state.query.trim().is_empty() && !state.query.trim_end().ends_with('?') {
+        let now = memory::now_ms();
+        for (title, detail) in crate::ui::dashboard::note_matches(&state.query, 3) {
+            entries.push(Entry { at: now, kind: Kind::Note, title: format!("Note · {title}"), detail, app: String::new() });
+        }
+        for text in crate::core::phone_link::history_matches(&state.query, 3) {
+            entries.push(Entry { at: now, kind: Kind::Clip, title: "Clipboard".to_string(), detail: text, app: String::new() });
+        }
+        entries.truncate(fit);
+    }
     if entries.is_empty() {
         text_center(
             painter,
