@@ -105,6 +105,8 @@ pub enum Event {
     File(std::path::PathBuf),
     /// The phone's battery ran low.
     PhoneLow(u8),
+    /// The robot was petted on the phone.
+    Petted,
 }
 
 /// A file arriving from the phone in chunks.
@@ -480,6 +482,28 @@ pub fn publish_focus(remaining: Option<Duration>) {
     send(json!({"t": "focus", "until": until}));
 }
 
+/// The robot's shared life: what it remembers on the PC, for the phone robot.
+fn publish_robot() {
+    use crate::core::mascot_memory::{self, Memory};
+    let memory = Memory::load();
+    let focus_minutes_today = memory
+        .focus_days
+        .iter()
+        .find(|(day, _)| *day == memory.day)
+        .map_or(0, |(_, seconds)| (*seconds / 60.0) as u32);
+    send(json!({
+        "t": "robot",
+        "days": memory.active_days,
+        "streak": memory.streak,
+        "focus_today": memory.focus_sessions,
+        "focus_minutes": focus_minutes_today,
+        "breaks": memory.breaks,
+        "copies": memory.copies,
+        "unlocked": mascot_memory::unlocked_count(memory.active_days),
+        "plant": mascot_memory::plant_stage(memory.active_days),
+    }));
+}
+
 fn publish_presence(away: bool) {
     let battery = crate::platform::battery();
     send(json!({
@@ -501,6 +525,7 @@ struct PollState {
     meeting: bool,
     meeting_at: Option<Instant>,
     away_since: Option<u64>,
+    robot_at: Option<Instant>,
 }
 
 thread_local! {
@@ -523,6 +548,7 @@ pub fn poll(now: Instant, media: Option<(&str, &str, bool)>, focus: Option<Durat
             state.presence_at = None;
             state.meeting = false;
             state.meeting_at = None;
+            state.robot_at = None;
             let lock_on_leave = SHARED
                 .lock()
                 .pairing
@@ -559,6 +585,14 @@ pub fn poll(now: Instant, media: Option<(&str, &str, bool)>, focus: Option<Durat
             if until != state.sent_focus {
                 publish_focus(focus);
                 state.sent_focus = until;
+            }
+            // One robot, two bodies: share its life with the phone every minute.
+            if state
+                .robot_at
+                .is_none_or(|at| now.saturating_duration_since(at) > Duration::from_secs(60))
+            {
+                state.robot_at = Some(now);
+                publish_robot();
             }
             // Meeting mode: the camera or mic is in use, so the phone goes quiet too.
             if state
@@ -1047,6 +1081,11 @@ fn handle(message: &Value) {
             }
         }
         "want_file" => send_offered(message["id"].as_u64().unwrap_or(0)),
+        "pet" => {
+            let mut shared = SHARED.lock();
+            shared.events.push(Event::Petted);
+            changed(&mut shared);
+        }
         "throw" => {
             let mut shared = SHARED.lock();
             shared.events.push(Event::Thrown);

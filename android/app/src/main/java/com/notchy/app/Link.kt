@@ -310,6 +310,10 @@ object Link {
                 pcMeeting = message.optBoolean("on")
                 notifyListeners()
             }
+            "robot" -> {
+                appContext?.let { RobotLife.save(it, message) }
+                notifyListeners()
+            }
             "recap" -> {
                 recap = message.optString("text") to message.optString("model").takeIf { it.isNotEmpty() && it != "null" }
                 notifyListeners()

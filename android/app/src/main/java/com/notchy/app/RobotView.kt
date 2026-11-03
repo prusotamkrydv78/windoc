@@ -59,6 +59,16 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
             return hour >= 23 || hour < 6
         }
 
+    /** Tapped: the robot was petted. */
+    var onPet: (() -> Unit)? = null
+
+    /** Accessories unlocked on the PC (0 to 3) and the Focus streak, drawn as tiny badges. */
+    var badges = 0
+        set(value) { field = value; invalidate() }
+    var streak = 0
+        set(value) { field = value; invalidate() }
+    private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
     /** Long-press: opens the quick panel. */
     var onThrow: (() -> Unit)? = null
 
@@ -173,6 +183,7 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
                 if (pressedAt != 0L) {
                     doHop()
                     peek()
+                    onPet?.invoke()
                 }
                 pressedAt = 0L
             }
@@ -212,6 +223,22 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
             val g = RectF(r).apply { inset(-3f * density, -3f * density) }
             canvas.drawRoundRect(g, g.height() / 2f, g.height() / 2f, glow)
             canvas.drawRoundRect(r, r.height() / 2f, r.height() / 2f, eye)
+        }
+
+        // Earned on the PC: one dot per accessory, and a warm dot for a 3+ day Focus streak.
+        if (open < 0.2f && (badges > 0 || streak >= 3)) {
+            val colors = listOf(Color.rgb(255, 122, 89), Color.rgb(120, 170, 255), Color.rgb(255, 214, 61))
+            var x = rect.right - h * 0.42f
+            val y = top + h * 0.5f
+            for (index in 0 until badges.coerceAtMost(3)) {
+                badgePaint.color = colors[index]
+                canvas.drawCircle(x, y, 1.8f * density, badgePaint)
+                x -= 5f * density
+            }
+            if (streak >= 3) {
+                badgePaint.color = Color.rgb(255, 150, 60)
+                canvas.drawCircle(rect.left + h * 0.42f, y, 2.2f * density, badgePaint)
+            }
         }
 
         val said = message

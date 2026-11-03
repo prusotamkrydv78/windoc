@@ -105,6 +105,14 @@ class RobotService : Service() {
         view?.focused = on
     }
 
+    /** The PC robot's unlocked accessories and Focus streak, shown as badges on the pill. */
+    fun setBadges(unlocked: Int, streak: Int) {
+        view?.post {
+            view?.badges = unlocked
+            view?.streak = streak
+        }
+    }
+
     /** Thrown over to the PC from the quick panel. */
     fun throwToPc() {
         view?.let { robot ->
@@ -163,6 +171,11 @@ class RobotService : Service() {
             }
         }
         val robot = RobotView(this, holeSize)
+        robot.onPet = { RobotLife.pet(this) }
+        RobotLife.get(this).let { life ->
+            robot.badges = life.unlocked
+            robot.streak = life.streak
+        }
         // Long-press: the quick panel (timer, flashlight, note, throw to PC).
         robot.onThrow = {
             startActivity(Intent(this, QuickPanelActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

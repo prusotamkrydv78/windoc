@@ -612,6 +612,34 @@ class MainActivity : Activity() {
                 }, matchWidth())
             }
         }, matchWidth())
+        addView(sectionTitle("Robot's life"))
+        val life = RobotLife.get(this@MainActivity)
+        addView(card(18).apply {
+            if (RobotLife.synced(this@MainActivity) == 0L) {
+                addView(label("Link your PC and the robot brings its memories over: days together, Focus streak, unlocked accessories and its plant.", 14f, Ui.DIM))
+            } else {
+                val stats = row(10)
+                for ((value, name) in listOf(
+                    life.days.toString() to "Days",
+                    "${life.streak}" to "Streak",
+                    life.pets.toString() to "Pets",
+                )) {
+                    stats.addView(column(2).apply {
+                        gravity = Gravity.CENTER
+                        addView(label(value, 22f, Ui.TEXT, bold = true).apply { gravity = Gravity.CENTER })
+                        addView(label(name, 12f, Ui.DIM, bold = true).apply { gravity = Gravity.CENTER })
+                    }, weighted())
+                }
+                addView(stats, matchWidth())
+                addView(label("Today: ${life.focusToday} Focus sessions (${life.focusMinutes} min), ${life.breaks} breaks", 14f, Ui.DIM))
+                addView(label("Copied ${life.copies} things together · plant: ${RobotLife.plantName(life.plant)}", 14f, Ui.DIM))
+                val owned = RobotLife.ACCESSORIES.take(life.unlocked)
+                addView(label(
+                    if (owned.isEmpty()) "Accessories unlock after 3, 7 and 14 days together" else "Wearing: ${owned.joinToString(", ")}",
+                    14f, Ui.MINT,
+                ))
+            }
+        }, matchWidth())
         addView(sectionTitle("OPPO Fluid Cloud"))
         addView(card(20).apply {
             addView(label("Live events in OPPO's notch", 17f, Ui.TEXT, bold = true))

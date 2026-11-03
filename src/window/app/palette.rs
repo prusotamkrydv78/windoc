@@ -243,6 +243,7 @@ impl App {
                 Event::Toast(title, text) => crate::platform::notify().show_toast(&title, &text),
                 Event::Arrived => mascot::react(Reaction::Notice),
                 Event::Thrown => mascot::react(Reaction::Catch),
+                Event::Petted => mascot::react(Reaction::Jump),
                 Event::File(path) => {
                     crate::core::memory::record(
                         crate::core::memory::Kind::FileIn,
