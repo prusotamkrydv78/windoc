@@ -46,6 +46,19 @@ impl App {
                 }
                 self.hide_host_backdrop();
             }
+            Some(crate::window::settings::PluginSettingsRequest::ConnectPhone) => {
+                self.visible = true;
+                if !self.expanded {
+                    self.expand();
+                }
+                self.current_page = crate::ui::expanded::pager::ExpandedPage::Home;
+                self.snap_to_current_page();
+                crate::ui::dashboard::show(crate::ui::dashboard::Destination::Phone);
+                if let Some(window) = &self.window {
+                    window.set_visible(true);
+                    window.request_redraw();
+                }
+            }
             Some(crate::window::settings::PluginSettingsRequest::Exit) => {
                 self.close_settings();
                 window().exit();

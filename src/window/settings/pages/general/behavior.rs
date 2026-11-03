@@ -35,6 +35,7 @@ pub(super) enum BehaviorAction {
     RemoveWorldClock(usize),
     HideIsland,
     Exit,
+    ConnectPhone,
 }
 
 impl SettingsApp {
@@ -83,6 +84,22 @@ impl SettingsApp {
                 .collect(),
             true,
             BehaviorAction::Language,
+        );
+        page.group_end();
+        page.section("Phone".to_string());
+        page.group_start();
+        page.row_button(
+            if crate::core::phone_link::paired() {
+                "Notchy phone app (linked)".to_string()
+            } else {
+                "Connect the Notchy phone app".to_string()
+            },
+            "Show pairing QR".to_string(),
+            true,
+            BehaviorAction::ConnectPhone,
+        );
+        page.row_label(
+            "Opens the notch on the Phone page. In the phone app tap Pair and scan the QR; both must be on the same Wi-Fi.".to_string(),
         );
         page.group_end();
         page.section(tr("section_screen_time"));
@@ -390,6 +407,11 @@ impl SettingsApp {
             (BehaviorAction::HideIsland, ClickResult::RowButton(_)) => {
                 self.plugin_request =
                     Some(crate::window::settings::PluginSettingsRequest::HideIsland);
+                false
+            }
+            (BehaviorAction::ConnectPhone, ClickResult::RowButton(_)) => {
+                self.plugin_request =
+                    Some(crate::window::settings::PluginSettingsRequest::ConnectPhone);
                 false
             }
             (BehaviorAction::Exit, ClickResult::RowButton(_)) => {

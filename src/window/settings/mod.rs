@@ -178,6 +178,8 @@ pub(crate) enum PluginSettingsRequest {
     StartFresh,
     HideIsland,
     Exit,
+    /// Open the notch on the Phone page to pair the phone app.
+    ConnectPhone,
     Install(std::path::PathBuf),
     LoadMarketplace,
     InstallMarketplace(Box<MarketplacePlugin>),

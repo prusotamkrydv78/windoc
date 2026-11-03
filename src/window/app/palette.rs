@@ -58,6 +58,7 @@ impl App {
                 "focus" => dashboard::show(Destination::Focus),
                 "notes" => dashboard::show(Destination::Notes),
                 "clock" => dashboard::show(Destination::Clock),
+                "phone" => dashboard::show(Destination::Phone),
                 _ => dashboard::show(Destination::Home),
             },
             Command::ConvertImages(format) => {
