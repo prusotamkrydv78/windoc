@@ -23,7 +23,7 @@ use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use sha2::{Digest, Sha256};
 use windows::Win32::Foundation::{
-    BOOL, CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_INVALIDARG, E_NOTIMPL, E_POINTER,
+    CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_INVALIDARG, E_NOTIMPL, E_POINTER,
     HLOCAL, LocalFree, NTSTATUS, S_FALSE,
 };
 use windows::Win32::Graphics::Gdi::HBITMAP;
@@ -47,7 +47,7 @@ use windows::Win32::UI::Shell::{
     ICredentialProvider_Impl, ICredentialProviderCredential, ICredentialProviderCredential_Impl,
     ICredentialProviderCredentialEvents, ICredentialProviderEvents, SHStrDupW,
 };
-use windows_core::{GUID, HRESULT, IUnknown, Interface, PCWSTR, PWSTR, Ref, implement};
+use windows_core::{BOOL, GUID, HRESULT, IUnknown, Interface, PCWSTR, PWSTR, Ref, implement};
 
 /// {6E3F8C2A-4B1D-4F7A-9C55-2D8E1A7B9F31}
 pub const CLSID_NOTCHY_UNLOCK: GUID = GUID::from_u128(0x6e3f8c2a_4b1d_4f7a_9c55_2d8e1a7b9f31);
@@ -286,7 +286,7 @@ fn pack_logon(config: &Config, unlock: bool) -> Vec<u8> {
     let mut out = vec![0u8; HEADER];
     let message_type: u32 = if unlock { 7 } else { 2 }; // KerbWorkstationUnlockLogon / KerbInteractiveLogon
     out[0..4].copy_from_slice(&message_type.to_le_bytes());
-    let mut write_string = |slot: usize, text: &[u16], out: &mut Vec<u8>| {
+    let write_string = |slot: usize, text: &[u16], out: &mut Vec<u8>| {
         let offset = out.len() as u64;
         let bytes = (text.len() * 2) as u16;
         out[slot..slot + 2].copy_from_slice(&bytes.to_le_bytes());
