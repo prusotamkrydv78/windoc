@@ -31,6 +31,11 @@ class QuickPanelActivity : Activity() {
         }
         column.addView(label("Notchy", 20f, Ui.TEXT, bold = true))
 
+        column.addView(pill("🎤  Talk to the robot", primary = true) {
+            startActivity(Intent(this, VoiceActivity::class.java))
+            finish()
+        }, matchWidth())
+
         column.addView(sectionTitle("Timer"))
         val timers = row(8)
         for (minutes in listOf(1, 5, 10, 25)) {

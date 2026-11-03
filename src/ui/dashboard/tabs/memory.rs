@@ -383,7 +383,8 @@ fn kind_color(kind: Kind, ctx: &TabContext<'_>) -> Rgba {
         Kind::Clip => ctx.colors.state_info,
         Kind::FileIn | Kind::FileOut | Kind::Download => ctx.colors.state_success,
         Kind::Focus | Kind::Meeting => ctx.colors.state_warning,
-        Kind::Recap | Kind::Note => ctx.colors.text_secondary,
+        Kind::Recap | Kind::Note | Kind::Photo => ctx.colors.text_secondary,
+        Kind::Expense => ctx.colors.state_error,
     }
 }
 

@@ -111,6 +111,29 @@ pub enum Event {
     PhoneLow(u8),
     /// The robot was petted on the phone.
     Petted,
+    /// A phone note for the PC's Notes tab.
+    Note(String),
+    /// The phone wants the PC's notes list.
+    NotesWanted,
+    /// An "on this day" photo arrived: `(path, years ago)`.
+    Photo(std::path::PathBuf, u32),
+}
+
+/// Photo ids announced with `photo_memory`, so the finished file is labelled.
+static PHOTO_YEARS: Mutex<Vec<(u64, u32)>> = Mutex::new(Vec::new());
+
+/// The PC's notes, for the phone's Notes page.
+pub fn send_notes(notes: Vec<(String, String)>) {
+    let notes: Vec<Value> = notes
+        .into_iter()
+        .map(|(title, detail)| json!({"title": title, "detail": detail}))
+        .collect();
+    send(json!({"t": "notes", "items": notes}));
+}
+
+/// Smart Focus: a nudge the phone robot repeats.
+pub fn send_nudge(text: &str) {
+    send(json!({"t": "nudge", "text": text}));
 }
 
 /// A file arriving from the phone in chunks.
@@ -1085,8 +1108,16 @@ fn handle(message: &Value) {
             drop(done.file);
             if done.written == done.expected {
                 send(json!({"t": "file_ok", "id": done.id}));
+                let years = PHOTO_YEARS
+                    .lock()
+                    .iter()
+                    .find(|(id, _)| *id == done.id)
+                    .map(|(_, years)| *years);
                 let mut shared = SHARED.lock();
-                shared.events.push(Event::File(done.path));
+                shared.events.push(match years {
+                    Some(years) => Event::Photo(done.path, years),
+                    None => Event::File(done.path),
+                });
                 changed(&mut shared);
             } else {
                 let _ = std::fs::remove_file(&done.path);
@@ -1283,7 +1314,35 @@ fn handle(message: &Value) {
         "note" => {
             let note = text(message, "text", 600);
             if !note.is_empty() {
-                crate::core::memory::record(crate::core::memory::Kind::Note, "Note from phone", note, "");
+                crate::core::memory::record(crate::core::memory::Kind::Note, "Note from phone", note.clone(), "");
+                // Shared notes: it also lands in the PC's Notes tab.
+                let mut shared = SHARED.lock();
+                shared.events.push(Event::Note(note));
+                changed(&mut shared);
+            }
+        }
+        "notes_list" => {
+            let mut shared = SHARED.lock();
+            shared.events.push(Event::NotesWanted);
+            changed(&mut shared);
+        }
+        "expense" => {
+            let amount = message["amount"].as_f64().unwrap_or(0.0);
+            let merchant = text(message, "merchant", 80);
+            crate::core::memory::record(
+                crate::core::memory::Kind::Expense,
+                format!("₹{amount:.2} · {}", if merchant.is_empty() { "payment" } else { &merchant }),
+                text(message, "text", 300),
+                text(message, "app", 40),
+            );
+        }
+        "photo_memory" => {
+            let id = message["id"].as_u64().unwrap_or(0);
+            let years = message["years"].as_u64().unwrap_or(1) as u32;
+            let mut photos = PHOTO_YEARS.lock();
+            photos.push((id, years));
+            if photos.len() > 5 {
+                photos.remove(0);
             }
         }
         "wave_friends" => {

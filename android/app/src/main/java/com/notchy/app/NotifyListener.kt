@@ -109,6 +109,8 @@ class NotifyListener : NotificationListenerService() {
         val app = runCatching {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
+        // Bank and UPI messages: a spending log.
+        Expenses.record(this, app, "$title $text")
         val sent = Link.send("notif") {
             put("key", sbn.key)
             put("app", app)

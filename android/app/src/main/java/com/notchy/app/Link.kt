@@ -69,7 +69,12 @@ object Link {
         recap = null
         memory = null
         answer = null
+        pcNotes = null
     }
+
+    /** The PC's notes, after asking with `notes_list`: `(title, detail)`. */
+    var pcNotes: List<Pair<String, String>>? = null
+        private set
 
     /** The answer to the last question asked with `ask`. */
     var answer: String? = null
@@ -160,8 +165,7 @@ object Link {
      * Sends a file in 192 KB chunks. Call off the main thread. [progress] gets bytes sent.
      * Throws when the link drops.
      */
-    fun sendFile(context: Context, file: PcLink.FileInfo, progress: (Long) -> Unit) {
-        val id = System.nanoTime()
+    fun sendFile(context: Context, file: PcLink.FileInfo, id: Long = System.nanoTime(), progress: (Long) -> Unit) {
         if (!send("file_start") { put("id", id); put("name", file.name); put("size", file.size) }) {
             error("PC not connected")
         }
@@ -320,6 +324,14 @@ object Link {
             }
             "robot" -> {
                 appContext?.let { RobotLife.save(it, message) }
+                notifyListeners()
+            }
+            "notes" -> {
+                val items = message.optJSONArray("items")
+                pcNotes = (0 until (items?.length() ?: 0)).map {
+                    val item = items!!.getJSONObject(it)
+                    item.optString("title") to item.optString("detail")
+                }
                 notifyListeners()
             }
             "answer" -> {

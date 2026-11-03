@@ -56,6 +56,7 @@ class LinkService : Service() {
         if (Link.connected && !wasConnected) {
             sendBattery()
             NotifyListener.instance?.publishMedia()
+            PhotoMemories.maybeSend(this)
             val queued = PhoneMemory.queued(this)
             Thread { PhoneMemory.flush(this) }.start()
             if (queued > 0) RobotService.instance?.say("Gave PC $queued alerts")
@@ -112,6 +113,7 @@ class LinkService : Service() {
         Link.addListener(linkListener)
         Link.start(this)
         UnlockWatcher.start(this)
+        Places.watch(this)
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         main.postDelayed(screenTick, 60_000)
     }
@@ -191,6 +193,7 @@ class LinkService : Service() {
             }
             "call_action" -> NotifyListener.instance?.callAction(message.optString("a"))
             "next_meeting" -> showMeeting(message)
+            "nudge" -> RobotService.instance?.say("Focus time? 🎯")
             "need_internet" -> offerHotspot()
         }
     }

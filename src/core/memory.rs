@@ -34,6 +34,10 @@ pub enum Kind {
     Recap,
     /// A quick note from the phone.
     Note,
+    /// A payment the phone saw in a bank or UPI message.
+    Expense,
+    /// "On this day" photo from the phone.
+    Photo,
 }
 
 impl Kind {
@@ -48,6 +52,8 @@ impl Kind {
             Self::Meeting => "Meeting",
             Self::Recap => "Recap",
             Self::Note => "Note",
+            Self::Expense => "Spent",
+            Self::Photo => "Photo",
         }
     }
 }

@@ -193,7 +193,17 @@ class MainActivity : Activity() {
             sixth.addView(tile("?", "Ask the robot") { askRobot() }, weighted())
             sixth.addView(tile("◷", "Screen time") { showScreenTime() }, weighted())
             grid.addView(fifth, matchWidth())
+            val seventh = row(10)
+            seventh.addView(tile("✎", "Notes") { showNotes() }, weighted())
+            seventh.addView(tile("₹", "Spending") {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Last 7 days")
+                    .setMessage(Expenses.weekly(this@MainActivity))
+                    .setPositiveButton("OK", null)
+                    .show()
+            }, weighted())
             grid.addView(sixth, matchWidth())
+            grid.addView(seventh, matchWidth())
             addView(grid, matchWidth())
             Link.pcMedia?.let { media -> addView(pcMediaCard(media), matchWidth()) }
             addView(sectionTitle("Today"))
@@ -416,6 +426,39 @@ class MainActivity : Activity() {
 
     private fun showAnswer(question: String, answer: String) {
         AlertDialog.Builder(this).setTitle(question).setMessage(answer).setPositiveButton("OK", null).show()
+    }
+
+    /** Shared notes: the PC's Notes and the phone's quick notes, with a box to add one. */
+    private fun showNotes() {
+        Link.clearAnswers()
+        val linked = Link.send("notes_list")
+        val build: (List<Pair<String, String>>) -> Unit = { pcNotes ->
+            val list = column(8).apply { setPadding(dp(16), dp(8), dp(16), dp(8)) }
+            val field = EditText(this).apply { hint = "New note (saved on both)"; minLines = 2 }
+            list.addView(field, matchWidth())
+            fun card(title: String, detail: String, where: String) = column(2).apply {
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                background = rounded(Ui.CARD2, dp(14).toFloat())
+                addView(label(where, 11f, Ui.ACCENT, bold = true))
+                addView(label(title, 14f, Ui.TEXT, bold = true))
+                if (detail.isNotEmpty()) addView(label(detail, 13f, Ui.DIM))
+            }
+            pcNotes.forEach { (title, detail) -> list.addView(card(title, detail, "PC"), matchWidth()) }
+            Notes.all(this).takeLast(20).reversed().forEach { list.addView(card(it.take(80), "", "Phone"), matchWidth()) }
+            AlertDialog.Builder(this)
+                .setTitle("Notes")
+                .setView(ScrollView(this).apply { addView(list) })
+                .setPositiveButton("Save") { _, _ ->
+                    val text = field.text.toString().trim()
+                    if (text.isNotEmpty()) {
+                        Notes.add(this, text)
+                        Link.send("note") { put("text", text) }
+                    }
+                }
+                .setNegativeButton("Close", null)
+                .show()
+        }
+        if (linked) await({ Link.pcNotes }, 8, build) else build(emptyList())
     }
 
     /** Phone vs PC screen time today. */
@@ -726,6 +769,20 @@ class MainActivity : Activity() {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             },
             Permission(
+                "Photos",
+                "\"On this day\" photos sent to the PC once a day",
+                PhotoMemories.allowed(this),
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.READ_MEDIA_IMAGES), 2)
+            },
+            Permission(
+                "Location (for Wi-Fi names)",
+                "Lets the robot tell home from office by your Wi-Fi",
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED,
+            ) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 3)
+            },
+            Permission(
                 "Usage access",
                 "Screen time on the phone, side by side with the PC",
                 ScreenTime.allowed(this),
@@ -775,6 +832,24 @@ class MainActivity : Activity() {
 
         addView(sectionTitle("On the phone"))
         val phone = card(8)
+        val ssid = Places.currentSsid(this@MainActivity)
+        val saved = Places.labelled(this@MainActivity)
+        phone.addView(settingRow(
+            "Places",
+            if (ssid == null) "Connect to Wi-Fi (and allow location) to name it Home or Office"
+            else "This Wi-Fi: $ssid · ${saved[ssid]?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "not named"}",
+            "Name it",
+            ssid != null && saved.containsKey(ssid),
+        ) {
+            if (ssid == null) return@settingRow
+            AlertDialog.Builder(this@MainActivity)
+                .setTitle("What is \"$ssid\"?")
+                .setItems(arrayOf("Home", "Office")) { _, which ->
+                    Places.label(this@MainActivity, if (which == 0) Places.Place.HOME else Places.Place.OFFICE)
+                    render()
+                }
+                .show()
+        })
         val ai = PhoneMemory.ai(this@MainActivity)
         phone.addView(settingRow(
             "AI recap",

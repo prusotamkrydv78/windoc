@@ -205,6 +205,16 @@ impl App {
             crate::core::system_watch::snapshot().online,
         );
         crate::core::assistant::diary_poll_throttled(now);
+        // Smart Focus: lots of app switching and no Focus running → suggest one.
+        if let Some(nudge) = crate::core::smart_focus::poll(
+            now,
+            &crate::core::system_watch::snapshot().foreground_app,
+            crate::ui::dashboard::focus_running(),
+        ) {
+            mascot::react(Reaction::Notice);
+            crate::platform::notify().show_toast("Lots of switching", &nudge);
+            phone_link::send_nudge(&nudge);
+        }
         for done in crate::core::assistant::take() {
             use crate::core::assistant::{Asker, Done};
             match done {
@@ -271,6 +281,23 @@ impl App {
                 Event::Arrived => mascot::react(Reaction::Notice),
                 Event::Thrown => mascot::react(Reaction::Catch),
                 Event::Petted => mascot::react(Reaction::Jump),
+                Event::Note(text) => {
+                    crate::ui::dashboard::add_quick_note(&text);
+                    crate::platform::notify().show_toast("Note from your phone", &text);
+                }
+                Event::NotesWanted => phone_link::send_notes(crate::ui::dashboard::note_matches("", 40)),
+                Event::Photo(path, years) => {
+                    let ago = if years == 1 { "a year ago".to_string() } else { format!("{years} years ago") };
+                    crate::core::memory::record(
+                        crate::core::memory::Kind::Photo,
+                        format!("On this day, {ago}"),
+                        path.display().to_string(),
+                        "",
+                    );
+                    crate::platform::notify().show_toast("On this day", &format!("A photo from {ago} — it's on your Shelf"));
+                    mascot::react(Reaction::Catch);
+                    self.shelf.add(path);
+                }
                 Event::File(path) => {
                     crate::core::memory::record(
                         crate::core::memory::Kind::FileIn,
