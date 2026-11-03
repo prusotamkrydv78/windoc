@@ -4,7 +4,19 @@ Notchy is a living notch for Windows, written in Rust: a notch with a little rob
 
 The initial codebase is derived from the GPL-3.0-licensed WinIsland source distributed in the BuddyDesk repository. This repository starts with new Git history so the application can be redesigned incrementally while retaining the licence and attribution required by the upstream project.
 
-## Build
+## Repository layout
+
+This one repository holds both halves of Notchy:
+
+| Folder | What it is |
+|---|---|
+| `src/`, `crates/`, `resources/`, `build.rs`, `Cargo.toml` | **PC app** (Rust workspace): the notch, dashboard, Notchy Link, Memory and AI |
+| `crates/notchy-unlock/` | "Unlock with phone" Windows credential provider (DLL) |
+| `packaging/` | Installers and the unlock install/uninstall scripts |
+| `android/` | **Phone app** (Kotlin, Gradle): phone notch robot, Link service, notifications, unlock |
+| `docs/` | Product, engineering and UI guides |
+
+## Build the PC app
 
 Requirements:
 
@@ -15,6 +27,16 @@ Requirements:
 ```powershell
 cargo build --release
 ```
+
+## Build the phone app
+
+```powershell
+cd android
+.\Setup-AndroidSdk.ps1   # first time only
+.\Build-Android.ps1      # APK goes to dist/
+```
+
+Install the APK on the phone, open the notch on the PC → Phone page (or Settings → Phone → Show pairing QR) and scan the code from the app. Both devices must be on the same Wi-Fi.
 
 ## Development checks
 
