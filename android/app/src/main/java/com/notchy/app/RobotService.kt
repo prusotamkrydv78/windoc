@@ -56,6 +56,17 @@ class RobotService : Service() {
                 Intent.ACTION_USER_PRESENT -> {
                     val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
                     val missed = PhoneMemory.since(context, System.currentTimeMillis() - 30 * 60_000).size
+                    // The morning brief from the PC, once, on the first unlock of the morning.
+                    val prefs = context.getSharedPreferences("app", MODE_PRIVATE)
+                    val brief = prefs.getString("brief", null)
+                    val fresh = System.currentTimeMillis() - prefs.getLong("brief_at", 0) < 12 * 3_600_000L
+                    if (hour in 5..11 && brief != null && fresh && !prefs.getBoolean("brief_shown", false)) {
+                        prefs.edit().putBoolean("brief_shown", true).apply()
+                        say("☀ $brief")
+                        view?.yawn()
+                        return
+                    }
+                    if (hour >= 12) prefs.edit().putBoolean("brief_shown", false).apply()
                     say(
                         when {
                             missed >= 3 -> "$missed new alerts"

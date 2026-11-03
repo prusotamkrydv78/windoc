@@ -157,6 +157,23 @@ pub fn publish_weather(weather: Option<(&str, &str)>) {
     }
 }
 
+static BRIEF_DAY: Mutex<String> = Mutex::new(String::new());
+
+/// The morning brief, once a day after 5 am while the phone is linked.
+pub fn publish_brief(meetings: usize, weather: Option<String>) {
+    let local = crate::platform::shell().local_datetime();
+    if local.hour < 5 || SHARED.lock().outbox.is_none() {
+        return;
+    }
+    let today = format!("{}-{}-{}", local.year, local.month, local.day);
+    let mut day = BRIEF_DAY.lock();
+    if *day == today {
+        return;
+    }
+    *day = today;
+    send(json!({"t": "brief", "meetings": meetings, "weather": weather}));
+}
+
 /// Smart Focus: a nudge the phone robot repeats.
 pub fn send_nudge(text: &str) {
     send(json!({"t": "nudge", "text": text}));

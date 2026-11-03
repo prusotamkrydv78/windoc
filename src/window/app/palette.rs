@@ -205,6 +205,42 @@ impl App {
             crate::core::system_watch::snapshot().online,
         );
         crate::core::assistant::diary_poll_throttled(now);
+        phone_link::publish_brief(
+            self.calendar.today_count(),
+            self.weather
+                .summary(&self.config)
+                .map(|summary| summary.temperature.clone()),
+        );
+        if self.routine_checked.is_none_or(|at| now.saturating_duration_since(at) > std::time::Duration::from_secs(60)) {
+            self.routine_checked = Some(now);
+            use crate::core::routine::Nudge;
+            match crate::core::routine::poll(crate::ui::dashboard::focus_running()) {
+                Some(Nudge::Focus(hour)) => {
+                    mascot::react(Reaction::Notice);
+                    let text = format!("You usually focus around {hour}:00. Start a session?");
+                    crate::platform::notify().show_toast("Focus time", &text);
+                    phone_link::send_nudge(&text);
+                }
+                Some(Nudge::Bedtime(hour)) => {
+                    mascot::react(Reaction::Bedtime);
+                    crate::platform::notify().show_toast(
+                        "Winding down?",
+                        &format!("You usually stop around {hour}:00. The robot is getting sleepy."),
+                    );
+                }
+                Some(Nudge::Spending(summary)) => {
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        handle.spawn(async move {
+                            let report = crate::core::routine::spending_report(summary).await;
+                            crate::core::memory::record(crate::core::memory::Kind::Recap, "Your week's spending", report.clone(), "");
+                            crate::platform::notify().show_toast("Your week's spending", &report);
+                            phone_link::send_recap(&report, None);
+                        });
+                    }
+                }
+                None => {}
+            }
+        }
         // Smart Focus: lots of app switching and no Focus running → suggest one.
         if let Some(nudge) = crate::core::smart_focus::poll(
             now,

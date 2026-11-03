@@ -158,6 +158,13 @@ impl CalendarService {
 }
 
 impl CalendarService {
+    /// How many events are on today's date.
+    pub fn today_count(&self) -> usize {
+        let local = crate::platform::shell().local_datetime();
+        let today = format!("{:04}{:02}{:02}", local.year, local.month, local.day);
+        self.events.iter().filter(|event| event.start.starts_with(&today)).count()
+    }
+
     /// The next timed event starting within `lead_minutes` (or running now, up to 10 minutes
     /// in), as `(title, minutes until start, join link)`. Does not mark it announced.
     pub fn next_meeting(&self, lead_minutes: i64) -> Option<(String, i64, Option<String>)> {

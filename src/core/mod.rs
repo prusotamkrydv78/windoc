@@ -20,6 +20,7 @@ pub mod memory_sql;
 pub mod persistence;
 pub mod phone_link;
 pub mod recap;
+pub mod routine;
 pub mod safe_mode;
 pub mod screen_time;
 pub mod screenshot_watch;

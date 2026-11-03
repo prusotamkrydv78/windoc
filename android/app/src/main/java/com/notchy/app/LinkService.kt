@@ -195,6 +195,16 @@ class LinkService : Service() {
             "next_meeting" -> showMeeting(message)
             "nudge" -> RobotService.instance?.say("Focus time? 🎯")
             "wear" -> RobotService.instance?.setWear(message.optString("wear"))
+            "brief" -> {
+                val meetings = message.optInt("meetings")
+                val weather = message.optString("weather").takeIf { it.isNotEmpty() && it != "null" }
+                val text = listOfNotNull(
+                    when (meetings) { 0 -> "No meetings"; 1 -> "1 meeting"; else -> "$meetings meetings" } + " today",
+                    weather,
+                ).joinToString(" · ")
+                getSharedPreferences("app", MODE_PRIVATE).edit().putString("brief", text)
+                    .putLong("brief_at", System.currentTimeMillis()).apply()
+            }
             "need_internet" -> offerHotspot()
         }
     }

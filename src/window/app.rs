@@ -78,6 +78,8 @@ pub struct App {
     palette_focused: bool,
     /// Clipboard revision last shared with the phone.
     phone_history_revision: u64,
+    /// When the routine was last checked (once a minute).
+    routine_checked: Option<std::time::Instant>,
     /// Hover-to-open timing: when the cursor started resting, when it left, and whether
     /// the current expansion came from hovering.
     hover_open_since: Option<Instant>,
@@ -273,6 +275,7 @@ impl Default for App {
             shelf: crate::core::shelf_store::ShelfService::load(),
             palette_focused: false,
             phone_history_revision: u64::MAX,
+            routine_checked: None,
             hover_open_since: None,
             hover_leave_since: None,
             hover_last_cursor: None,
