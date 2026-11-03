@@ -26,7 +26,7 @@ pub use audio::WindowsAudio;
 pub use clipboard::{
     ClipboardChange, ClipboardContent, ClipboardFormat, ClipboardMonitor,
     MAX_IMAGE_BYTES as MAX_CLIPBOARD_IMAGE_BYTES, set_image as set_clipboard_image,
-    set_text as set_clipboard_text,
+    get_text as get_clipboard_text, set_text as set_clipboard_text,
 };
 pub use display::{WindowsDisplay, foreground_app, monitor_areas_at};
 pub use drag_out::drag_files_out;

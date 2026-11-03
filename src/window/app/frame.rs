@@ -154,6 +154,12 @@ impl App {
             self.attention_pulse_started = Some(now);
         }
         if self.clipboard.take_captured() {
+            if let Some(winisland_core::clipboard::ClipboardBody::Text(text)
+            | winisland_core::clipboard::ClipboardBody::Link(text)) =
+                self.clipboard.items().first().map(|item| &item.body)
+            {
+                crate::core::phone_link::publish_clip(text);
+            }
             self.attention_pulse_started = Some(now);
             self.push_copied_activity();
             window.request_redraw();
@@ -247,6 +253,7 @@ impl App {
         }
         self.poll_image_job();
         self.poll_drop(now);
+        self.poll_phone_link(now, &window);
         self.calendar.poll(&self.config.calendar_feeds, now);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::Agenda) {
             crate::ui::dashboard::sync_agenda(self.calendar.revision(), || {

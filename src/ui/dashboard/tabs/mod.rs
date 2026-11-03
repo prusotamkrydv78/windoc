@@ -23,6 +23,7 @@ pub mod drop;
 pub mod links;
 pub mod message;
 pub mod notes;
+pub mod phone;
 pub mod play;
 pub mod screen_time;
 pub mod shelf;
@@ -58,6 +59,7 @@ macro_rules! route {
             Destination::AiUsage => ai_coding::$call($($arg),*),
             Destination::Drop => drop::$call($($arg),*),
             Destination::Play => play::$call($($arg),*),
+            Destination::Phone => phone::$call($($arg),*),
             _ => $default,
         }
     };
@@ -119,4 +121,5 @@ pub fn poll_all(now: Instant) {
     ai_coding::poll(now);
     drop::poll(now);
     play::poll(now);
+    phone::poll(now);
 }

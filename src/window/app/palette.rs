@@ -168,4 +168,57 @@ impl App {
             self.shelf.add(path);
         }
     }
+
+    /// Notchy Link: mirrors media and Focus to the phone and acts on what the phone sent.
+    pub(super) fn poll_phone_link(&mut self, now: std::time::Instant, window: &crate::platform::WindowRef) {
+        use crate::core::phone_link::{self, Event};
+        use crate::ui::widget::compact::mascot::{self, Reaction};
+        if crate::core::safe_mode::active() {
+            return;
+        }
+        let media = self.current_media_info();
+        let media = (!media.title.is_empty())
+            .then(|| (media.title.clone(), media.artist.clone(), media.is_playing));
+        let events = phone_link::poll(
+            now,
+            media
+                .as_ref()
+                .map(|(title, artist, playing)| (title.as_str(), artist.as_str(), *playing)),
+            crate::ui::dashboard::focus_remaining(now),
+        );
+        if events.is_empty() {
+            return;
+        }
+        for event in events {
+            match event {
+                Event::Clip(text) => {
+                    if let Err(error) = winisland_platform_windows::set_clipboard_text(&text) {
+                        log::warn!("Cannot copy from phone: {error}");
+                    }
+                }
+                Event::OpenUrl(url) => {
+                    if let Err(error) = crate::platform::shell().open_url(&url) {
+                        log::warn!("Cannot open link from phone: {error}");
+                    }
+                }
+                Event::Media(command) => match command.as_str() {
+                    "prev" => self.smtc.request_prev(),
+                    "next" => self.smtc.request_next(),
+                    _ => self.smtc.request_toggle_play(),
+                },
+                Event::Toast(title, text) => crate::platform::notify().show_toast(&title, &text),
+                Event::Arrived => mascot::react(Reaction::Notice),
+                Event::Thrown => mascot::react(Reaction::Catch),
+                Event::Ring => {
+                    mascot::react(Reaction::Surprised);
+                    for _ in 0..3 {
+                        crate::core::chime::play(crate::core::chime::Sound::DeviceIn);
+                    }
+                    crate::platform::notify()
+                        .show_toast("Here I am!", "Your phone is looking for this PC");
+                }
+            }
+        }
+        window.request_redraw();
+    }
 }

@@ -574,6 +574,15 @@ pub fn set_image(width: u32, height: u32, rgba: &[u8]) -> Result<(), PlatformErr
 }
 
 /// Puts `text` on the clipboard as Unicode text.
+/// The clipboard's text right now, if any.
+pub fn get_text() -> Option<String> {
+    open_for_write().ok()?;
+    let text = read_text();
+    // SAFETY: The clipboard was opened above by this thread.
+    let _ = unsafe { CloseClipboard() };
+    text
+}
+
 pub fn set_text(text: &str) -> Result<(), PlatformError> {
     use windows::Win32::System::DataExchange::{EmptyClipboard, SetClipboardData};
     use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc};

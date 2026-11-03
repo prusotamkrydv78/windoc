@@ -13,6 +13,7 @@ pub mod focus_store;
 pub mod json_store;
 pub mod mascot_memory;
 pub mod persistence;
+pub mod phone_link;
 pub mod safe_mode;
 pub mod screen_time;
 pub mod screenshot_watch;

@@ -24,6 +24,8 @@ pub enum Icon {
     Link,
     Chart,
     Phone,
+    /// A phone beside a laptop, for Notchy Link.
+    Devices,
     Agenda,
     Settings,
     Search,
@@ -70,6 +72,7 @@ impl Icon {
             }
             Self::Chart => "M4 4 V20 H20 M8 16 V11 M12 16 V7 M16 16 V13",
             Self::Phone => "M8 2.5 H16 V21.5 H8 Z M11 18.5 H13",
+            Self::Devices => "M3 6 H15 V15 H3 Z M1 18 H13 M17 9 H22 V20 H17 Z M19 17.5 H20",
             Self::Agenda => "M9 6 H20 M9 12 H20 M9 18 H20 M4.5 6 H4.51 M4.5 12 H4.51 M4.5 18 H4.51",
             Self::Settings => {
                 "M12 9 A3 3 0 1 1 11.99 9 M12 2.5 V5 M12 19 V21.5 M2.5 12 H5 M19 12 H21.5 \

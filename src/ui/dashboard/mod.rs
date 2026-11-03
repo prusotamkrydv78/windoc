@@ -443,6 +443,18 @@ pub fn add_quick_note(text: &str) {
     NOTE_ROWS.with(|cell| *cell.borrow_mut() = note_rows(&store));
 }
 
+/// Time left in a running timed Focus phase, for the phone's countdown.
+pub fn focus_remaining(now: Instant) -> Option<Duration> {
+    PAGE.with(|page| {
+        let page = page.borrow();
+        if page.focus.state() != TimerState::Running {
+            return None;
+        }
+        let length = page.focus.phase_length()?;
+        Some(length.saturating_sub(page.focus.elapsed(now)))
+    })
+}
+
 /// Switches the dashboard to `destination`.
 pub fn show(destination: Destination) {
     PAGE.with(|page| {
@@ -1141,6 +1153,8 @@ pub enum Destination {
     Drop,
     /// Quick games; reached from More.
     Play,
+    /// Notchy Link to the phone app; reached from More.
+    Phone,
 }
 
 impl Destination {
@@ -1154,7 +1168,7 @@ impl Destination {
     ];
     /// The icon dock, in order: every module, like a launcher.
     /// Every page, as an icon row; each mode can hide the ones it does not need.
-    pub const DOCK: [Self; 18] = [
+    pub const DOCK: [Self; 19] = [
         Self::Home,
         Self::System,
         Self::Media,
@@ -1171,13 +1185,14 @@ impl Destination {
         Self::Converter,
         Self::Units,
         Self::Message,
+        Self::Phone,
         Self::Drop,
         Self::Play,
     ];
     /// Shown in the compact size class; the rest move into More.
     pub const COMPACT: [Self; 3] = [Self::Home, Self::Focus, Self::More];
     /// Modules listed on the More page when they are not already in the dock.
-    pub const MORE_ITEMS: [Self; 17] = [
+    pub const MORE_ITEMS: [Self; 18] = [
         Self::System,
         Self::Media,
         Self::Clipboard,
@@ -1193,6 +1208,7 @@ impl Destination {
         Self::Converter,
         Self::Units,
         Self::Message,
+        Self::Phone,
         Self::Drop,
         Self::Play,
     ];
@@ -1218,6 +1234,7 @@ impl Destination {
             Self::Agenda => "subtitle_agenda",
             Self::Drop => "subtitle_drop",
             Self::Play => "subtitle_play",
+            Self::Phone => "subtitle_phone",
         }
     }
 
@@ -1243,6 +1260,7 @@ impl Destination {
             Self::Agenda => Icon::Calendar,
             Self::Drop => Icon::Phone,
             Self::Play => Icon::Pet,
+            Self::Phone => Icon::Devices,
         }
     }
 
@@ -1267,6 +1285,7 @@ impl Destination {
             Self::Agenda => "dashboard_agenda",
             Self::Drop => "dashboard_drop",
             Self::Play => "dashboard_play",
+            Self::Phone => "dashboard_phone",
         }
     }
 }
