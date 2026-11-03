@@ -22,6 +22,18 @@ import kotlin.concurrent.thread
 class ShareActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Shared text or links go straight over Notchy Link: links open on the PC.
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (intent.action == Intent.ACTION_SEND && sharedText != null && intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM) == null) {
+            val sent = ClipSendActivity.sendText(sharedText)
+            android.widget.Toast.makeText(
+                this,
+                if (sent) "Sent to ${Link.pcName ?: "PC"}" else "Link your PC in Notchy first",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            finish()
+            return
+        }
         val uris = sharedUris(intent)
         val pad = (20 * resources.displayMetrics.density).toInt()
         val column = LinearLayout(this).apply {

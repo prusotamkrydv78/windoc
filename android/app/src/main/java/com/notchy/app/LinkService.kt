@@ -1,0 +1,294 @@
+package com.notchy.app
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.RingtoneManager
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import org.json.JSONObject
+
+/**
+ * Keeps Notchy Link connected in the background and acts on what the PC sends: clipboard,
+ * "find my phone", the PC's music as a notification with controls, and Focus sessions as a
+ * Live Update countdown (which ColorOS shows in Fluid Cloud).
+ */
+class LinkService : Service() {
+    private val main = Handler(Looper.getMainLooper())
+    private var player: MediaPlayer? = null
+    private var savedAlarmVolume = -1
+    private var lastBattery = -1 to false
+    private var wasAway = false
+    private var wasConnected = false
+
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+            val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+            if (level >= 0) {
+                lastBattery = level * 100 / scale to charging
+                sendBattery()
+            }
+        }
+    }
+
+    private val linkListener: () -> Unit = {
+        if (Link.connected && !wasConnected) {
+            sendBattery()
+            NotifyListener.instance?.publishMedia()
+            RobotService.instance?.say("Linked to ${Link.pcName ?: "PC"}")
+        }
+        if (!Link.connected) {
+            cancel(MEDIA_ID)
+            cancel(FOCUS_ID)
+        }
+        wasConnected = Link.connected
+        if (Link.pcAway && !wasAway && Link.connected) {
+            RobotService.instance?.say("I followed you here")
+        }
+        wasAway = Link.pcAway
+        showMedia()
+        updateForeground()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createChannels()
+        startAsForeground()
+        instance = this
+        Link.onMessage = ::onMessage
+        Link.addListener(linkListener)
+        Link.start(this)
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP_RING -> stopRing()
+            ACTION_MEDIA -> Link.send("media_cmd") { put("cmd", intent.getStringExtra("cmd") ?: "toggle") }
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        instance = null
+        stopRing()
+        Link.removeListener(linkListener)
+        Link.onMessage = null
+        Link.stop()
+        unregisterReceiver(batteryReceiver)
+        super.onDestroy()
+    }
+
+    private fun sendBattery() {
+        val (percent, charging) = lastBattery
+        if (percent >= 0) Link.send("battery") { put("pct", percent); put("charging", charging) }
+    }
+
+    private fun onMessage(message: JSONObject) {
+        when (message.optString("t")) {
+            "clip" -> {
+                val text = message.optString("text")
+                if (text.isNotEmpty()) {
+                    getSystemService(ClipboardManager::class.java)
+                        .setPrimaryClip(ClipData.newPlainText("From PC", text))
+                    RobotService.instance?.say("Copied from PC")
+                }
+            }
+            "ring" -> ring()
+            "focus" -> showFocus(message.optLong("until"))
+            "phone_media" -> NotifyListener.instance?.command(message.optString("cmd"))
+        }
+    }
+
+    // ---- Find my phone -------------------------------------------------------------------
+
+    private fun ring() {
+        if (player != null) return
+        val audio = getSystemService(AudioManager::class.java)
+        savedAlarmVolume = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+        audio.setStreamVolume(AudioManager.STREAM_ALARM, audio.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        player = runCatching {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+                )
+                setDataSource(this@LinkService, uri)
+                isLooping = true
+                prepare()
+                start()
+            }
+        }.getOrNull()
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, LinkService::class.java).setAction(ACTION_STOP_RING),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = Notification.Builder(this, CHANNEL_ALERT)
+            .setSmallIcon(R.drawable.ic_notchy)
+            .setContentTitle("Your PC is looking for this phone")
+            .setContentText("Tap to stop ringing")
+            .setContentIntent(stop)
+            .setDeleteIntent(stop)
+            .addAction(Notification.Action.Builder(null as Icon?, "Found it", stop).build())
+            .setCategory(Notification.CATEGORY_ALARM)
+            .build()
+        manager().notify(RING_ID, notification)
+        RobotService.instance?.say("Here I am!")
+        main.postDelayed({ stopRing() }, 45_000)
+    }
+
+    private fun stopRing() {
+        player?.let { runCatching { it.stop(); it.release() } }
+        player = null
+        if (savedAlarmVolume >= 0) {
+            getSystemService(AudioManager::class.java)
+                .setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0)
+            savedAlarmVolume = -1
+        }
+        cancel(RING_ID)
+    }
+
+    // ---- PC music ------------------------------------------------------------------------
+
+    private var shownMedia: Triple<String, String, Boolean>? = null
+
+    private fun mediaAction(cmd: String, label: String, code: Int): Notification.Action {
+        val intent = PendingIntent.getService(
+            this, code, Intent(this, LinkService::class.java).setAction(ACTION_MEDIA).putExtra("cmd", cmd),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return Notification.Action.Builder(null as Icon?, label, intent).build()
+    }
+
+    private fun showMedia() {
+        val media = Link.pcMedia
+        if (media == shownMedia) return
+        shownMedia = media
+        if (media == null) {
+            cancel(MEDIA_ID)
+            return
+        }
+        val (title, artist, playing) = media
+        val notification = Notification.Builder(this, CHANNEL_MEDIA)
+            .setSmallIcon(R.drawable.ic_notchy)
+            .setContentTitle(title)
+            .setContentText(if (artist.isEmpty()) "Playing on ${Link.pcName}" else "$artist · on ${Link.pcName}")
+            .setOnlyAlertOnce(true)
+            .addAction(mediaAction("prev", "Back", 10))
+            .addAction(mediaAction("toggle", if (playing) "Pause" else "Play", 11))
+            .addAction(mediaAction("next", "Next", 12))
+            .setStyle(Notification.MediaStyle().setShowActionsInCompactView(0, 1, 2))
+            .build()
+        manager().notify(MEDIA_ID, notification)
+    }
+
+    // ---- Focus as a Live Update ----------------------------------------------------------
+
+    private fun showFocus(until: Long) {
+        if (until <= System.currentTimeMillis()) {
+            cancel(FOCUS_ID)
+            return
+        }
+        LiveUpdates.ensureChannel(this)
+        val builder = Notification.Builder(this, "live")
+            .setSmallIcon(R.drawable.ic_notchy)
+            .setContentTitle("Focus on ${Link.pcName ?: "PC"}")
+            .setContentText("Stay with it — the robot is guarding your time")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setWhen(until)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+            .setTimeoutAfter(until - System.currentTimeMillis() + 2000)
+            .setCategory(Notification.CATEGORY_STOPWATCH)
+        val notification = builder.build()
+        notification.extras.putBoolean("android.requestPromotedOngoing", true)
+        manager().notify(FOCUS_ID, notification)
+    }
+
+    // ---- Plumbing ------------------------------------------------------------------------
+
+    private fun manager() = getSystemService(NotificationManager::class.java)
+    private fun cancel(id: Int) = manager().cancel(id)
+
+    private fun createChannels() {
+        val manager = manager()
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_LINK, "Link status", NotificationManager.IMPORTANCE_MIN))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL_MEDIA, "PC music", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ALERT, "Find my phone", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+            },
+        )
+    }
+
+    private fun foregroundNotification(): Notification {
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val text = if (Link.connected) "Linked to ${Link.pcName}" else "Looking for your PC…"
+        return Notification.Builder(this, CHANNEL_LINK)
+            .setSmallIcon(R.drawable.ic_notchy)
+            .setContentTitle("Notchy Link")
+            .setContentText(text)
+            .setContentIntent(open)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun startAsForeground() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(LINK_ID, foregroundNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(LINK_ID, foregroundNotification())
+        }
+    }
+
+    private fun updateForeground() = manager().notify(LINK_ID, foregroundNotification())
+
+    companion object {
+        private const val CHANNEL_LINK = "link"
+        private const val CHANNEL_MEDIA = "pc_media"
+        private const val CHANNEL_ALERT = "find_phone"
+        private const val LINK_ID = 20
+        private const val MEDIA_ID = 21
+        private const val FOCUS_ID = 22
+        private const val RING_ID = 23
+        private const val ACTION_STOP_RING = "com.notchy.app.STOP_RING"
+        private const val ACTION_MEDIA = "com.notchy.app.MEDIA"
+
+        var instance: LinkService? = null
+            private set
+
+        fun start(context: Context) {
+            if (Link.isPaired(context)) {
+                context.startForegroundService(Intent(context, LinkService::class.java))
+            }
+        }
+    }
+}

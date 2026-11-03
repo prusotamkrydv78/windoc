@@ -44,12 +44,20 @@ class RobotService : Service() {
         if (Settings.canDrawOverlays(this)) addRobot()
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         running = true
+        instance = this
+        getSharedPreferences("app", MODE_PRIVATE).edit().putBoolean("robot", true).apply()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
+    /** The robot says [text] in the pill for a few seconds. */
+    fun say(text: String) {
+        view?.say(text)
+    }
+
     override fun onDestroy() {
         running = false
+        instance = null
         unregisterReceiver(batteryReceiver)
         view?.let { windows.removeView(it) }
         view = null
@@ -89,6 +97,13 @@ class RobotService : Service() {
             }
         }
         val robot = RobotView(this, holeSize)
+        robot.onThrow = {
+            if (Link.send("throw")) {
+                robot.postDelayed({ robot.say("Caught by ${Link.pcName ?: "PC"}") }, 900)
+            } else {
+                robot.postDelayed({ robot.say("PC not linked") }, 900)
+            }
+        }
         val width = robot.maxWidth.toInt()
         val height = (robot.pillH * 1.6f).toInt()
         val params = WindowManager.LayoutParams(
@@ -120,5 +135,13 @@ class RobotService : Service() {
         private const val ID = 7
         var running = false
             private set
+        var instance: RobotService? = null
+            private set
+
+        /** Stopped by the user: don't bring it back after a restart. */
+        fun stop(context: Context) {
+            context.getSharedPreferences("app", MODE_PRIVATE).edit().putBoolean("robot", false).apply()
+            context.stopService(Intent(context, RobotService::class.java))
+        }
     }
 }

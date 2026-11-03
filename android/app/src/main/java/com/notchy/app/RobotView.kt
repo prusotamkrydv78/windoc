@@ -43,6 +43,13 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
     private var look = 0f
     private var battery = -1
     private var charging = false
+    /** Shown instead of the time and battery while set. */
+    private var message: String? = null
+    /** 0..1 while the robot is thrown up to the PC: the eyes fly off and come back. */
+    private var thrown = 0f
+
+    /** Long-press: the robot is thrown over to the PC. */
+    var onThrow: (() -> Unit)? = null
 
     private val restW get() = hole * 3.4f
     private val openW get() = hole * 3.4f + 150f * density
@@ -64,6 +71,13 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
         invalidate()
     }
 
+    /** Widens and shows [text] for a few seconds. */
+    fun say(text: String, millis: Long = 3500) {
+        message = text
+        doHop()
+        peek(millis)
+    }
+
     /** Widens for a few seconds, then settles back. */
     fun peek(millis: Long = 3500) {
         animateOpen(1f)
@@ -71,7 +85,25 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
         postDelayed(close, millis)
     }
 
-    private val close = Runnable { animateOpen(0f) }
+    private val close = Runnable {
+        animateOpen(0f)
+        postDelayed({ if (open == 0f) message = null }, 450)
+    }
+
+    private fun throwUp() {
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1400
+            addUpdateListener { thrown = it.animatedValue as Float; invalidate() }
+            start()
+        }
+        onThrow?.invoke()
+    }
+
+    private var pressedAt = 0L
+    private val longPress = Runnable {
+        pressedAt = 0L
+        throwUp()
+    }
 
     private fun animateOpen(target: Float) {
         openAnimator?.cancel()
@@ -116,9 +148,23 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) {
-            doHop()
-            peek()
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                pressedAt = event.eventTime
+                postDelayed(longPress, 550)
+            }
+            MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                if (pressedAt != 0L) {
+                    doHop()
+                    peek()
+                }
+                pressedAt = 0L
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPress)
+                pressedAt = 0L
+            }
         }
         return true
     }
@@ -132,7 +178,9 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
         canvas.drawRoundRect(rect, h / 2f, h / 2f, pill)
 
         // Eyes sit either side of the camera hole and squash when blinking.
-        val bounce = sin(hop * Math.PI).toFloat() * h * 0.18f
+        // Thrown: the eyes shoot up out of the pill, then drop back in.
+        val fly = if (thrown in 0.001f..0.999f) sin(thrown * Math.PI).toFloat() * h * 2.2f else 0f
+        val bounce = sin(hop * Math.PI).toFloat() * h * 0.18f + fly
         val eyeW = hole * 0.42f
         val eyeH = max(eyeH(h) * (1f - blink * 0.85f), 1.5f * density)
         val gap = hole * 0.95f
@@ -146,7 +194,15 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
             canvas.drawRoundRect(r, r.height() / 2f, r.height() / 2f, eye)
         }
 
-        if (open > 0.4f) {
+        val said = message
+        if (open > 0.4f && said != null) {
+            label.alpha = ((open - 0.4f) / 0.6f * 255).toInt().coerceIn(0, 255)
+            val baseline = top + h / 2f + label.textSize * 0.36f
+            // Left of the camera hole when it fits, else the whole pill.
+            val tw = label.measureText(said)
+            val x = (rect.left + h * 0.55f).coerceAtMost(cx - hole * 1.6f - tw).coerceAtLeast(rect.left + h * 0.4f)
+            canvas.drawText(said, x, baseline, label)
+        } else if (open > 0.4f) {
             val alpha = ((open - 0.4f) / 0.6f * 255).toInt().coerceIn(0, 255)
             label.alpha = alpha
             val baseline = top + h / 2f + label.textSize * 0.36f
