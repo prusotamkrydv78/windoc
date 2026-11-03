@@ -933,16 +933,22 @@ fn handle(message: &Value) {
             };
             let otp = find_otp(&format!("{} {}", notification.title, notification.text));
             let notification = PhoneNotification { otp, ..notification };
-            // Codes are never kept in Memory.
-            crate::core::memory::record(
+            // Codes are never kept in Memory. Queued alerts happened while the PC was away:
+            // keep their time and don't pop them up now.
+            let queued = message["queued"].as_bool().unwrap_or(false);
+            let at = message["at"].as_u64().unwrap_or_else(crate::core::memory::now_ms);
+            crate::core::memory::record_at(
+                at,
                 crate::core::memory::Kind::PhoneAlert,
                 notification.title.clone(),
                 if notification.otp.is_some() { "A one-time code".to_string() } else { notification.text.clone() },
                 notification.app.clone(),
             );
             let mut shared = SHARED.lock();
-            let alerts = shared.pairing.as_ref().is_some_and(|pairing| pairing.alerts);
-            if let Some(code) = &notification.otp {
+            let alerts = shared.pairing.as_ref().is_some_and(|pairing| pairing.alerts) && !queued;
+            if queued {
+                // Shown in the list and the timeline only.
+            } else if let Some(code) = &notification.otp {
                 shared.echo = Some(code.clone());
                 shared.events.push(Event::Clip(code.clone()));
                 shared.events.push(Event::Toast(
@@ -1028,6 +1034,12 @@ fn handle(message: &Value) {
                 })
                 .collect();
             send(json!({"t": "memory", "items": items}));
+        }
+        "note" => {
+            let note = text(message, "text", 600);
+            if !note.is_empty() {
+                crate::core::memory::record(crate::core::memory::Kind::Note, "Note from phone", note, "");
+            }
         }
         "wave_friends" => {
             for friend in crate::core::friends::nearby() {

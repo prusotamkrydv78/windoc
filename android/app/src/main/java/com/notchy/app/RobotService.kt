@@ -32,8 +32,54 @@ class RobotService : Service() {
             val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
             val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL
-            if (level >= 0) view?.setBattery(level * 100 / scale.coerceAtLeast(1), charging)
+            if (level >= 0) {
+                val percent = level * 100 / scale.coerceAtLeast(1)
+                view?.setBattery(percent, charging)
+                // Low battery, said once per discharge.
+                if (!charging && percent <= 15 && !warnedLow) {
+                    warnedLow = true
+                    say("Feed me ⚡ $percent%")
+                }
+                if (charging || percent > 20) warnedLow = false
+            }
         }
+    }
+
+    private var warnedLow = false
+    private var lastChatter = 0L
+
+    /** The phone's own moments: unlock, headphones. */
+    private val phoneReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_USER_PRESENT -> {
+                    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                    val missed = PhoneMemory.since(context, System.currentTimeMillis() - 30 * 60_000).size
+                    say(
+                        when {
+                            missed >= 3 -> "$missed new alerts"
+                            hour in 5..10 -> "Good morning!"
+                            hour >= 23 || hour < 5 -> "Bedtime soon?"
+                            else -> "Hi again!"
+                        },
+                    )
+                }
+                Intent.ACTION_HEADSET_PLUG -> if (intent.getIntExtra("state", 0) == 1) say("Tunes time ♪")
+            }
+        }
+    }
+
+    /** A message arrived: a quick glance, at most every 20 seconds so it never nags. */
+    fun noticeAlert(app: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastChatter < 20_000) return
+        lastChatter = now
+        say(app.take(14))
+    }
+
+    /** The phone's player started a new song. */
+    fun nowPlaying(title: String) {
+        if (title.isNotEmpty()) say("♪ ${title.take(18)}")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -43,6 +89,10 @@ class RobotService : Service() {
         startAsForeground()
         if (Settings.canDrawOverlays(this)) addRobot()
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        registerReceiver(phoneReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_HEADSET_PLUG)
+        })
         running = true
         instance = this
         getSharedPreferences("app", MODE_PRIVATE).edit().putBoolean("robot", true).apply()
@@ -55,6 +105,16 @@ class RobotService : Service() {
         view?.focused = on
     }
 
+    /** Thrown over to the PC from the quick panel. */
+    fun throwToPc() {
+        view?.let { robot ->
+            robot.throwNow()
+            robot.postDelayed({
+                robot.say(if (Link.send("throw")) "Caught by ${Link.pcName ?: "PC"}" else "PC not linked")
+            }, 900)
+        }
+    }
+
     /** The robot says [text] in the pill for a few seconds. */
     fun say(text: String) {
         view?.say(text)
@@ -64,6 +124,7 @@ class RobotService : Service() {
         running = false
         instance = null
         unregisterReceiver(batteryReceiver)
+        unregisterReceiver(phoneReceiver)
         view?.let { windows.removeView(it) }
         view = null
         super.onDestroy()
@@ -102,12 +163,9 @@ class RobotService : Service() {
             }
         }
         val robot = RobotView(this, holeSize)
+        // Long-press: the quick panel (timer, flashlight, note, throw to PC).
         robot.onThrow = {
-            if (Link.send("throw")) {
-                robot.postDelayed({ robot.say("Caught by ${Link.pcName ?: "PC"}") }, 900)
-            } else {
-                robot.postDelayed({ robot.say("PC not linked") }, 900)
-            }
+            startActivity(Intent(this, QuickPanelActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         val width = robot.maxWidth.toInt()
         val height = (robot.pillH * 1.6f).toInt()

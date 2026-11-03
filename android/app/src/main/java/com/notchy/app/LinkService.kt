@@ -56,6 +56,9 @@ class LinkService : Service() {
         if (Link.connected && !wasConnected) {
             sendBattery()
             NotifyListener.instance?.publishMedia()
+            val queued = PhoneMemory.queued(this)
+            Thread { PhoneMemory.flush(this) }.start()
+            if (queued > 0) RobotService.instance?.say("Gave PC $queued alerts")
             RobotService.instance?.say("Linked to ${Link.pcName ?: "PC"}")
         }
         if (!Link.connected) {

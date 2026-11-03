@@ -59,7 +59,7 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
             return hour >= 23 || hour < 6
         }
 
-    /** Long-press: the robot is thrown over to the PC. */
+    /** Long-press: opens the quick panel. */
     var onThrow: (() -> Unit)? = null
 
     private val restW get() = hole * 3.4f
@@ -102,12 +102,16 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
     }
 
     private fun throwUp() {
+        onThrow?.invoke()
+    }
+
+    /** The eyes shoot up out of the pill and drop back in. */
+    fun throwNow() {
         ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 1400
             addUpdateListener { thrown = it.animatedValue as Float; invalidate() }
             start()
         }
-        onThrow?.invoke()
     }
 
     private var pressedAt = 0L

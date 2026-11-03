@@ -53,9 +53,15 @@ class NotifyListener : NotificationListenerService() {
         publishMedia()
     }
 
+    private var lastTitle = ""
+
     fun publishMedia() {
         val metadata = controller?.metadata
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
+        if (title != lastTitle && controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            lastTitle = title
+            RobotService.instance?.nowPlaying(title)
+        }
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
         val playing = controller?.playbackState?.state == PlaybackState.STATE_PLAYING
         Link.send("phone_media") {
@@ -99,6 +105,11 @@ class NotifyListener : NotificationListenerService() {
             put("text", text)
         }
         if (sent) Stats.add(this, "alerts")
+        val joined = "$title $text"
+        val isCode = Regex("""\b\d{4,8}\b""").containsMatchIn(joined) &&
+            Regex("(?i)otp|code|verif|password|passcode|pin").containsMatchIn(joined)
+        PhoneMemory.record(this, app, title, text, isCode, sent)
+        RobotService.instance?.noticeAlert(app)
     }
 
     companion object {

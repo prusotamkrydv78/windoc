@@ -323,17 +323,65 @@ class MainActivity : Activity() {
     private fun askRecap() {
         Link.clearAnswers()
         if (!Link.send("recap") { put("hours", 3) }) {
-            act(false, "")
+            // No PC: the phone recaps from its own memory (and its own AI key, if set).
+            Toast.makeText(this, "Thinking…", Toast.LENGTH_SHORT).show()
+            Thread {
+                val (text, model) = PhoneMemory.recap(this, 3)
+                runOnUiThread { showRecap(text, model) }
+            }.start()
             return
         }
         Toast.makeText(this, "Asking the robot…", Toast.LENGTH_SHORT).show()
-        await({ Link.recap }, 60) { (text, model) ->
-            AlertDialog.Builder(this)
-                .setTitle("What you missed")
-                .setMessage(text + "\n\n" + (model?.let { "Written by $it" } ?: "Built-in summary"))
-                .setPositiveButton("OK", null)
-                .show()
+        await({ Link.recap }, 60) { (text, model) -> showRecap(text, model) }
+    }
+
+    private fun showRecap(text: String, model: String?) {
+        AlertDialog.Builder(this)
+            .setTitle("What you missed")
+            .setMessage(text + "\n\n" + (model?.let { "Written by $it" } ?: "Built-in summary"))
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    /** Edits the phone's own AI settings (used when the PC is away). */
+    private fun editAi() {
+        val ai = PhoneMemory.ai(this)
+        val url = EditText(this).apply { hint = PhoneMemory.OPENROUTER; setText(ai.baseUrl); isSingleLine = true }
+        val key = EditText(this).apply {
+            hint = if (ai.key.isEmpty()) "API key (sk-… or sk-or-…)" else "Key saved · type to replace"
+            isSingleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
+        val model = EditText(this).apply { hint = "openai/gpt-4o-mini"; setText(ai.model); isSingleLine = true }
+        val presets = row(8)
+        presets.addView(pill("OpenRouter") { url.setText(PhoneMemory.OPENROUTER); model.setText("openai/gpt-4o-mini") }, weighted())
+        presets.addView(pill("OpenAI") { url.setText(PhoneMemory.OPENAI); model.setText("gpt-4o-mini") }, weighted())
+        val form = column(8).apply {
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(presets, matchWidth())
+            addView(label("Base URL", 12f, Ui.DIM))
+            addView(url, matchWidth())
+            addView(label("API key", 12f, Ui.DIM))
+            addView(key, matchWidth())
+            addView(label("Model", 12f, Ui.DIM))
+            addView(model, matchWidth())
+        }
+        AlertDialog.Builder(this)
+            .setTitle("AI on the phone")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setPositiveButton("Save") { _, _ ->
+                PhoneMemory.saveAi(
+                    this,
+                    PhoneMemory.Ai(url.text.toString(), key.text.toString().ifBlank { ai.key }, model.text.toString()),
+                )
+                render()
+            }
+            .setNeutralButton("Remove key") { _, _ ->
+                PhoneMemory.saveAi(this, ai.copy(key = ""))
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     /** Notchy Memory on the PC, searchable from here. */
@@ -633,8 +681,27 @@ class MainActivity : Activity() {
         }
         addView(link, matchWidth())
 
+        addView(sectionTitle("On the phone"))
+        val phone = card(8)
+        val ai = PhoneMemory.ai(this@MainActivity)
+        phone.addView(settingRow(
+            "AI recap",
+            if (ai.key.isEmpty()) "Add an OpenRouter or OpenAI key for smart recaps without the PC" else "${ai.model} · used when the PC is away",
+            if (ai.key.isEmpty()) "Add key" else "On",
+            ai.key.isNotEmpty(),
+        ) { editAi() })
+        val queued = PhoneMemory.queued(this@MainActivity)
+        phone.addView(settingRow(
+            "Waiting for the PC",
+            "Alerts kept while the PC is away, sent when it's back",
+            "$queued",
+            true,
+        ) {})
+        addView(phone, matchWidth())
+
         addView(sectionTitle("Tips"))
         addView(card(18).apply {
+            addView(label("• Long-press the camera robot for a timer, the flashlight and quick notes.", 14f, Ui.DIM))
             addView(label("• Add the “Clipboard → PC” tile to Quick Settings for one-tap sending.", 14f, Ui.DIM))
             addView(label("• Share any link with Notchy and it opens on the PC.", 14f, Ui.DIM))
             addView(label("• Share photos with “Send to PC” for full-size transfers via Drop.", 14f, Ui.DIM))

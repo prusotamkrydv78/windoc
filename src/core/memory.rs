@@ -32,6 +32,8 @@ pub enum Kind {
     Meeting,
     /// A recap the robot wrote.
     Recap,
+    /// A quick note from the phone.
+    Note,
 }
 
 impl Kind {
@@ -45,6 +47,7 @@ impl Kind {
             Self::Focus => "Focus",
             Self::Meeting => "Meeting",
             Self::Recap => "Recap",
+            Self::Note => "Note",
         }
     }
 }
@@ -147,9 +150,14 @@ fn load() {
 
 /// Adds an entry (and appends it to this month's file).
 pub fn record(kind: Kind, title: impl Into<String>, detail: impl Into<String>, app: impl Into<String>) {
+    record_at(now_ms(), kind, title, detail, app);
+}
+
+/// [`record`] with the time it happened (alerts the phone kept while the PC was away).
+pub fn record_at(at: u64, kind: Kind, title: impl Into<String>, detail: impl Into<String>, app: impl Into<String>) {
     load();
     let entry = Entry {
-        at: now_ms(),
+        at: at.min(now_ms()),
         kind,
         title: title.into().chars().take(200).collect(),
         detail: detail.into().chars().take(600).collect(),
@@ -167,6 +175,7 @@ pub fn record(kind: Kind, title: impl Into<String>, detail: impl Into<String>, a
     }
     let mut store = STORE.lock();
     store.entries.push(entry);
+    store.entries.sort_by_key(|entry| entry.at);
     if store.entries.len() > KEEP_IN_MEMORY {
         store.entries.remove(0);
     }
