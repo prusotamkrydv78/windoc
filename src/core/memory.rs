@@ -210,12 +210,6 @@ pub fn merge(rows: Vec<Entry>) {
     store.revision += 1;
 }
 
-/// Bumps on every change, for redraws.
-pub fn revision() -> u64 {
-    load();
-    STORE.lock().revision
-}
-
 /// Newest first, matching every word of `query` (case-insensitive) when it is not empty.
 pub fn search(query: &str, limit: usize) -> Vec<Entry> {
     load();
@@ -256,14 +250,6 @@ pub fn since(ms: u64) -> Vec<Entry> {
         .filter(|entry| entry.at >= ms)
         .cloned()
         .collect()
-}
-
-/// Deletes every memory file and entry.
-pub fn forget_all() {
-    let _ = std::fs::remove_dir_all(folder());
-    let mut store = STORE.lock();
-    store.entries.clear();
-    store.revision += 1;
 }
 
 #[cfg(test)]
