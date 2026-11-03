@@ -1,0 +1,28 @@
+[package]
+name = "notchy-unlock"
+version = "0.1.0"
+edition = "2024"
+description = "Windows sign-in tile: unlock this PC with the Notchy phone app's fingerprint check"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+chacha20poly1305 = "0.10.1"
+base64 = "0.23.1"
+getrandom = "0.3"
+sha2 = "0.11.0"
+windows-core = "0.62.2"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_System_Memory",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Authentication_Identity",
+    "Win32_Security_Credentials",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+    "Win32_System_SystemInformation",
+] }

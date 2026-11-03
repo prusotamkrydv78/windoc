@@ -32,6 +32,10 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
  * - Setup: every permission with its state, the link, and help.
  */
 class MainActivity : Activity() {
+    private companion object {
+        const val SCAN_REQUEST = 7
+    }
+
     private enum class Page(val title: String, val glyph: String) {
         HOME("Home", "⌂"),
         REMOTE("Remote", "◎"),
@@ -168,10 +172,36 @@ class MainActivity : Activity() {
             val second = row(10)
             second.addView(tile("⊘", "Lock PC") { act(Link.send("lock_pc"), "PC locked") }, weighted())
             second.addView(tile("↑", "Throw robot") { act(Link.send("throw"), "Caught by ${Link.pcName}") }, weighted())
+            val third = row(10)
+            third.addView(tile("☰", "PC clipboard") { showPcClipboard() }, weighted())
+            third.addView(tile("✋", "Wave friends") {
+                act(Link.send("wave_friends"), "Waved at Notchy friends nearby")
+            }, weighted())
             grid.addView(first, matchWidth())
             grid.addView(second, matchWidth())
+            val fourth = row(10)
+            fourth.addView(tile("▣", "Stand mode") {
+                startActivity(Intent(this@MainActivity, StandActivity::class.java))
+            }, weighted())
+            fourth.addView(tile("⌗", "Scan to PC") { scanToPc() }, weighted())
+            grid.addView(third, matchWidth())
+            grid.addView(fourth, matchWidth())
             addView(grid, matchWidth())
             Link.pcMedia?.let { media -> addView(pcMediaCard(media), matchWidth()) }
+            addView(sectionTitle("Today"))
+            val today = row(10)
+            for ((count, name) in listOf(
+                Stats.get(this@MainActivity, "files") to "Files",
+                Stats.get(this@MainActivity, "clips") to "Clips",
+                Stats.get(this@MainActivity, "alerts") to "Alerts",
+            )) {
+                today.addView(card(14).apply {
+                    gravity = Gravity.CENTER
+                    addView(label(count.toString(), 24f, Ui.TEXT, bold = true).apply { gravity = Gravity.CENTER })
+                    addView(label(name, 12f, Ui.DIM, bold = true).apply { gravity = Gravity.CENTER })
+                }, weighted())
+            }
+            addView(today, matchWidth())
         }
         val missing = permissions().filter { !it.ok }
         if (missing.isNotEmpty()) {
@@ -228,6 +258,101 @@ class MainActivity : Activity() {
         controls.addView(pill(if (media.third) "⏸" else "▶", primary = true) { Link.send("media_cmd") { put("cmd", "toggle") } }, weighted())
         controls.addView(pill("⏭") { Link.send("media_cmd") { put("cmd", "next") } }, weighted())
         addView(controls, matchWidth())
+    }
+
+    private var scanUri: Uri? = null
+
+    /** Takes a photo with the camera app and sends it straight to the PC. */
+    private fun scanToPc() {
+        if (!Link.connected) {
+            act(false, "")
+            return
+        }
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "Scan ${java.text.SimpleDateFormat("yyyy-MM-dd HH.mm.ss", java.util.Locale.US).format(java.util.Date())}.jpg")
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Notchy")
+        }
+        val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return
+        scanUri = uri
+        val capture = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        runCatching { startActivityForResult(capture, SCAN_REQUEST) }
+            .onFailure { Toast.makeText(this, "No camera app found", Toast.LENGTH_SHORT).show() }
+    }
+
+    @Deprecated("Activity result API needs androidx; plain Activity uses this.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri = scanUri ?: return
+        scanUri = null
+        if (requestCode != SCAN_REQUEST) return
+        if (resultCode == RESULT_OK) {
+            ShareActivity.sendOverLink(applicationContext, listOf(uri))
+            Toast.makeText(this, "Sending scan to ${Link.pcName}…", Toast.LENGTH_SHORT).show()
+        } else {
+            contentResolver.delete(uri, null, null)
+        }
+    }
+
+    /** Asks the PC for its clipboard history and shows it; tapping one copies it here. */
+    private fun showPcClipboard() {
+        if (!Link.send("clip_history")) {
+            act(false, "")
+            return
+        }
+        var shown = false
+        lateinit var listener: () -> Unit
+        listener = {
+            val items = Link.pcHistory
+            if (items != null && !shown) {
+                shown = true
+                Link.removeListener(listener)
+                clipDialog(items)
+            }
+        }
+        Link.addListener(listener)
+        content.postDelayed({ Link.removeListener(listener) }, 5000)
+    }
+
+    private fun clipDialog(items: List<String>) {
+        if (items.isEmpty()) {
+            Toast.makeText(this, "The PC's clipboard history is empty (turn it on in Notchy)", Toast.LENGTH_LONG).show()
+            return
+        }
+        val list = column(6).apply { setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        val search = EditText(this).apply { hint = "Search"; isSingleLine = true }
+        list.addView(search, matchWidth())
+        val rows = column(6)
+        list.addView(rows, matchWidth())
+        lateinit var dialog: AlertDialog
+        fun fill(query: String) {
+            rows.removeAllViews()
+            items.filter { query.isBlank() || it.contains(query, ignoreCase = true) }.take(40).forEach { item ->
+                rows.addView(label(item.replace('\n', ' ').take(140), 14f, Ui.TEXT).apply {
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    background = pressable(Ui.CARD2, dp(14).toFloat())
+                    setOnClickListener {
+                        getSystemService(ClipboardManager::class.java)
+                            .setPrimaryClip(android.content.ClipData.newPlainText("From PC", item))
+                        Toast.makeText(this@MainActivity, "Copied", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                    }
+                }, matchWidth())
+            }
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(text: android.text.Editable?) = fill(text?.toString().orEmpty())
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        fill("")
+        dialog = AlertDialog.Builder(this)
+            .setTitle("${Link.pcName} clipboard")
+            .setView(ScrollView(this).apply { addView(list) })
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun act(sent: Boolean, done: String) {
@@ -385,6 +510,13 @@ class MainActivity : Activity() {
             },
             Permission("Draw over apps", "The robot around the camera", Settings.canDrawOverlays(this)) {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            },
+            Permission(
+                "Do Not Disturb access",
+                "Silence the phone while you focus on the PC",
+                getSystemService(android.app.NotificationManager::class.java).isNotificationPolicyAccessGranted,
+            ) {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
             },
         )
     }

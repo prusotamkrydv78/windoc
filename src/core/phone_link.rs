@@ -101,7 +101,23 @@ pub enum Event {
     Thrown,
     /// "Find my PC".
     Ring,
+    /// A file from the phone, saved in the Drop folder.
+    File(std::path::PathBuf),
+    /// The phone's battery ran low.
+    PhoneLow(u8),
 }
+
+/// A file arriving from the phone in chunks.
+struct Incoming {
+    id: u64,
+    path: std::path::PathBuf,
+    file: std::fs::File,
+    expected: u64,
+    written: u64,
+}
+
+static INCOMING: Mutex<Option<Incoming>> = Mutex::new(None);
+const MAX_FILE: u64 = 2 * 1024 * 1024 * 1024;
 
 struct Shared {
     pairing: Option<Pairing>,
@@ -306,6 +322,109 @@ fn send(message: Value) -> bool {
         .is_some_and(|outbox| outbox.send(message.to_string()).is_ok())
 }
 
+static SENDING: Mutex<Option<u8>> = Mutex::new(None);
+const MAX_SEND: u64 = 1024 * 1024 * 1024;
+
+/// Percent of the file going to the phone, while one is.
+pub fn file_progress() -> Option<u8> {
+    *SENDING.lock()
+}
+
+/// Sends files to the phone's Downloads, one after another. Blocks: call off the UI thread.
+pub fn send_files(paths: Vec<std::path::PathBuf>) {
+    use base64::Engine;
+    use std::io::Read;
+    let total: u64 = paths
+        .iter()
+        .filter_map(|path| std::fs::metadata(path).ok())
+        .map(|meta| meta.len())
+        .sum::<u64>()
+        .max(1);
+    *SENDING.lock() = Some(0);
+    let mut done = 0u64;
+    'files: for path in paths {
+        let Ok(mut file) = std::fs::File::open(&path) else {
+            continue;
+        };
+        let size = file.metadata().map_or(0, |meta| meta.len());
+        if size > MAX_SEND {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "file".to_string());
+        let id = epoch_ms();
+        if !send(json!({"t": "file_start", "id": id, "name": name, "size": size})) {
+            break;
+        }
+        let mut buffer = vec![0u8; 192 * 1024];
+        loop {
+            let read = match file.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => read,
+                Err(_) => break 'files,
+            };
+            let data = base64::engine::general_purpose::STANDARD.encode(&buffer[..read]);
+            if !send(json!({"t": "file_chunk", "id": id, "data": data})) {
+                break 'files;
+            }
+            done += read as u64;
+            *SENDING.lock() = Some((done * 100 / total).min(99) as u8);
+            crate::platform::wake();
+            // The outbox is unbounded; pace it so a big file does not pile up in memory.
+            std::thread::sleep(Duration::from_millis(12));
+        }
+        send(json!({"t": "file_end", "id": id}));
+    }
+    *SENDING.lock() = None;
+    crate::platform::wake();
+}
+
+static HISTORY: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// The PC's recent clipboard texts, newest first, for the phone's "PC clipboard" list.
+pub fn set_history(items: Vec<String>) {
+    *HISTORY.lock() = items;
+}
+
+static OFFERED: Mutex<Vec<(u64, std::path::PathBuf)>> = Mutex::new(Vec::new());
+
+/// A download finished on the PC: the phone shows it, with "Get it here".
+pub fn offer_download(path: std::path::PathBuf) {
+    let Some(name) = path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+        return;
+    };
+    let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());
+    let id = epoch_ms();
+    if send(json!({"t": "download", "id": id, "name": name, "size": size})) {
+        let mut offered = OFFERED.lock();
+        offered.push((id, path));
+        if offered.len() > 10 {
+            offered.remove(0);
+        }
+    }
+}
+
+/// A file the phone asked for (a download, or a Shelf file).
+fn send_offered(id: u64) {
+    let path = OFFERED
+        .lock()
+        .iter()
+        .find(|(offered, _)| *offered == id)
+        .map(|(_, path)| path.clone());
+    if let Some(path) = path
+        && file_progress().is_none()
+    {
+        std::thread::spawn(move || send_files(vec![path]));
+    }
+}
+
+/// A friend's PC waved: the phone robot passes it on.
+pub fn forward_wave(name: &str) {
+    send(json!({"t": "wave", "name": name}));
+}
+
 /// Makes the phone ring at full volume, even on silent.
 pub fn ring_phone() -> bool {
     send(json!({"t": "ring"}))
@@ -372,6 +491,8 @@ struct PollState {
     presence_at: Option<Instant>,
     gone_since: Option<Instant>,
     locked: bool,
+    meeting: bool,
+    meeting_at: Option<Instant>,
 }
 
 thread_local! {
@@ -392,6 +513,8 @@ pub fn poll(now: Instant, media: Option<(&str, &str, bool)>, focus: Option<Durat
             state.sent_media = None;
             state.sent_focus = None;
             state.presence_at = None;
+            state.meeting = false;
+            state.meeting_at = None;
             let lock_on_leave = SHARED
                 .lock()
                 .pairing
@@ -428,6 +551,19 @@ pub fn poll(now: Instant, media: Option<(&str, &str, bool)>, focus: Option<Durat
             if until != state.sent_focus {
                 publish_focus(focus);
                 state.sent_focus = until;
+            }
+            // Meeting mode: the camera or mic is in use, so the phone goes quiet too.
+            if state
+                .meeting_at
+                .is_none_or(|at| now.saturating_duration_since(at) > Duration::from_secs(5))
+            {
+                state.meeting_at = Some(now);
+                let (camera, microphone) = winisland_platform_windows::capture_in_use();
+                let meeting = camera || microphone;
+                if meeting != state.meeting {
+                    state.meeting = meeting;
+                    send(json!({"t": "meeting", "on": meeting, "camera": camera}));
+                }
             }
             let away = idle_for().is_some_and(|idle| idle >= AWAY_AFTER);
             if away != state.away
@@ -673,11 +809,88 @@ fn handle(message: &Value) {
         }
         "battery" => {
             let mut shared = SHARED.lock();
+            let percent = message["pct"].as_u64().unwrap_or(0).min(100) as u8;
+            let charging = message["charging"].as_bool().unwrap_or(false);
+            let before = shared.connection.as_ref().and_then(|connection| connection.battery);
             if let Some(connection) = shared.connection.as_mut() {
-                let percent = message["pct"].as_u64().unwrap_or(0).min(100) as u8;
-                connection.battery = Some((percent, message["charging"].as_bool().unwrap_or(false)));
+                connection.battery = Some((percent, charging));
+            }
+            // Battery buddy: say so once when the phone drops to 20% or 10%.
+            let crossed = |level: u8| {
+                percent <= level && before.is_some_and(|(previous, _)| previous > level)
+            };
+            if !charging && (crossed(20) || crossed(10)) {
+                shared.events.push(Event::PhoneLow(percent));
             }
             changed(&mut shared);
+        }
+        "file_start" => {
+            let name = sanitize_name(&text(message, "name", 120));
+            let size = message["size"].as_u64().unwrap_or(0);
+            let id = message["id"].as_u64().unwrap_or(0);
+            if size > MAX_FILE {
+                send(json!({"t": "file_error", "id": id, "error": "too large"}));
+                return;
+            }
+            let folder = crate::core::drop_server::received_folder();
+            let _ = std::fs::create_dir_all(&folder);
+            let path = unique(&folder, &name);
+            match std::fs::File::create(&path) {
+                Ok(file) => {
+                    *INCOMING.lock() = Some(Incoming {
+                        id,
+                        path,
+                        file,
+                        expected: size,
+                        written: 0,
+                    });
+                }
+                Err(error) => {
+                    send(json!({"t": "file_error", "id": id, "error": error.to_string()}));
+                }
+            }
+        }
+        "file_chunk" => {
+            use base64::Engine;
+            use std::io::Write;
+            let mut incoming = INCOMING.lock();
+            let Some(current) = incoming.as_mut() else {
+                return;
+            };
+            if message["id"].as_u64() != Some(current.id) {
+                return;
+            }
+            let Ok(bytes) = base64::engine::general_purpose::STANDARD
+                .decode(message["data"].as_str().unwrap_or_default())
+            else {
+                return;
+            };
+            if current.written + bytes.len() as u64 > current.expected
+                || current.file.write_all(&bytes).is_err()
+            {
+                let path = current.path.clone();
+                let id = current.id;
+                *incoming = None;
+                let _ = std::fs::remove_file(path);
+                send(json!({"t": "file_error", "id": id, "error": "write failed"}));
+                return;
+            }
+            current.written += bytes.len() as u64;
+        }
+        "file_end" => {
+            let Some(done) = INCOMING.lock().take() else {
+                return;
+            };
+            drop(done.file);
+            if done.written == done.expected {
+                send(json!({"t": "file_ok", "id": done.id}));
+                let mut shared = SHARED.lock();
+                shared.events.push(Event::File(done.path));
+                changed(&mut shared);
+            } else {
+                let _ = std::fs::remove_file(&done.path);
+                send(json!({"t": "file_error", "id": done.id, "error": "incomplete"}));
+            }
         }
         "notif" => {
             let notification = PhoneNotification {
@@ -747,6 +960,21 @@ fn handle(message: &Value) {
             });
             changed(&mut shared);
         }
+        "clip_history" => {
+            let items: Vec<String> = HISTORY
+                .lock()
+                .iter()
+                .take(40)
+                .map(|item| item.chars().take(2000).collect())
+                .collect();
+            send(json!({"t": "clip_history", "items": items}));
+        }
+        "wave_friends" => {
+            for friend in crate::core::friends::nearby() {
+                crate::core::friends::wave(friend.address);
+            }
+        }
+        "want_file" => send_offered(message["id"].as_u64().unwrap_or(0)),
         "throw" => {
             let mut shared = SHARED.lock();
             shared.events.push(Event::Thrown);
@@ -775,6 +1003,32 @@ fn handle(message: &Value) {
         "type" => remote::type_text(&text(message, "text", 2000)),
         _ => {}
     }
+}
+
+fn sanitize_name(name: &str) -> String {
+    let name: String = name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("file")
+        .chars()
+        .filter(|character| !"<>:\"|?*".contains(*character) && !character.is_control())
+        .collect();
+    let name = name.trim().trim_start_matches('.');
+    if name.is_empty() { "file".to_string() } else { name.to_string() }
+}
+
+fn unique(folder: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let (stem, extension) = match name.rsplit_once('.') {
+        Some((stem, extension)) => (stem.to_string(), format!(".{extension}")),
+        None => (name.to_string(), String::new()),
+    };
+    let mut candidate = folder.join(name);
+    let mut counter = 2;
+    while candidate.exists() {
+        candidate = folder.join(format!("{stem} ({counter}){extension}"));
+        counter += 1;
+    }
+    candidate
 }
 
 /// A 4–8 digit code in a message that talks about codes or passwords.

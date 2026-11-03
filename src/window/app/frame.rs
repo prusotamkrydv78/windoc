@@ -2034,7 +2034,8 @@ impl App {
                 system.microphone || system.camera,
             );
         }
-        if crate::core::screenshot_watch::poll_downloads(std::time::Instant::now()).is_some() {
+        if let Some(download) = crate::core::screenshot_watch::poll_downloads(std::time::Instant::now()) {
+            crate::core::phone_link::offer_download(download);
             crate::ui::widget::compact::mascot::react(
                 crate::ui::widget::compact::mascot::Reaction::Downloaded,
             );

@@ -35,6 +35,13 @@ class ShareActivity : Activity() {
             return
         }
         val uris = sharedUris(intent)
+        // Linked PC nearby: send straight away, no Drop link needed.
+        if (Link.connected && uris.isNotEmpty()) {
+            sendOverLink(applicationContext, uris)
+            android.widget.Toast.makeText(this, "Sending to ${Link.pcName}…", android.widget.Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -118,6 +125,33 @@ class ShareActivity : Activity() {
                             LiveUpdates.showProgress(context, ID, "Sending to PC", "$label · $percent%", percent, 100)
                         }
                         before += file.size
+                    }
+                    finish(context, if (files.size == 1) "${files[0].name} sent to PC" else "${files.size} files sent to PC", null)
+                } catch (error: Exception) {
+                    finish(context, "Couldn't send to PC", error.message)
+                }
+            }
+        }
+
+        fun sendOverLink(context: Context, uris: List<Uri>) {
+            thread(name = "notchy-link-send") {
+                try {
+                    val files = uris.map { PcLink.describe(context, it) }
+                    val total = files.sumOf { it.size }.coerceAtLeast(1)
+                    var before = 0L
+                    var lastPost = 0L
+                    files.forEachIndexed { index, file ->
+                        Link.sendFile(context, file) { sent ->
+                            val now = System.currentTimeMillis()
+                            if (now - lastPost > 400) {
+                                lastPost = now
+                                val percent = ((before + sent) * 100 / total).toInt()
+                                val label = if (files.size == 1) file.name else "${index + 1} of ${files.size} · ${file.name}"
+                                LiveUpdates.showProgress(context, ID, "Sending to ${Link.pcName}", "$label · $percent%", percent, 100)
+                            }
+                        }
+                        before += file.size
+                        Stats.add(context, "files")
                     }
                     finish(context, if (files.size == 1) "${files[0].name} sent to PC" else "${files.size} files sent to PC", null)
                 } catch (error: Exception) {

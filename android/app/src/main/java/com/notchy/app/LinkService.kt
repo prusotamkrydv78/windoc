@@ -36,6 +36,7 @@ class LinkService : Service() {
     private var lastBattery = -1 to false
     private var wasAway = false
     private var wasConnected = false
+    private var warnedPcLow = false
 
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -60,12 +61,32 @@ class LinkService : Service() {
         if (!Link.connected) {
             cancel(MEDIA_ID)
             cancel(FOCUS_ID)
+            inMeeting = false
+            focusing = false
+            setSilent(false)
+            RobotService.instance?.setFocused(false)
         }
         wasConnected = Link.connected
         if (Link.pcAway && !wasAway && Link.connected) {
             RobotService.instance?.say("I followed you here")
         }
         wasAway = Link.pcAway
+        // Battery buddy: the PC's battery is low and it isn't charging.
+        val pcLow = Link.connected && Link.pcBattery in 0..15 && !Link.pcCharging
+        if (pcLow && !warnedPcLow) {
+            RobotService.instance?.say("PC at ${Link.pcBattery}%")
+            manager().notify(
+                PC_LOW_ID,
+                Notification.Builder(this, CHANNEL_MEDIA)
+                    .setSmallIcon(R.drawable.ic_notchy)
+                    .setContentTitle("${Link.pcName} is at ${Link.pcBattery}%")
+                    .setContentText("Plug in the laptop before it sleeps")
+                    .setAutoCancel(true)
+                    .build(),
+            )
+        }
+        if (Link.pcCharging || Link.pcBattery > 20) warnedPcLow = false
+        if (pcLow) warnedPcLow = true
         showMedia()
         updateForeground()
     }
@@ -80,12 +101,17 @@ class LinkService : Service() {
         Link.onMessage = ::onMessage
         Link.addListener(linkListener)
         Link.start(this)
+        UnlockWatcher.start(this)
         registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_RING -> stopRing()
+            ACTION_WANT -> {
+                cancel(DOWNLOAD_ID)
+                Link.send("want_file") { put("id", intent.getLongExtra("id", 0)) }
+            }
             ACTION_MEDIA -> Link.send("media_cmd") { put("cmd", intent.getStringExtra("cmd") ?: "toggle") }
         }
         return START_STICKY
@@ -97,6 +123,7 @@ class LinkService : Service() {
         Link.removeListener(linkListener)
         Link.onMessage = null
         Link.stop()
+        UnlockWatcher.stop()
         unregisterReceiver(batteryReceiver)
         super.onDestroy()
     }
@@ -107,19 +134,91 @@ class LinkService : Service() {
     }
 
     private fun onMessage(message: JSONObject) {
+        if (FileReceiver.handle(this, message)) return
         when (message.optString("t")) {
             "clip" -> {
                 val text = message.optString("text")
                 if (text.isNotEmpty()) {
                     getSystemService(ClipboardManager::class.java)
                         .setPrimaryClip(ClipData.newPlainText("From PC", text))
-                    RobotService.instance?.say("Copied from PC")
+                    Stats.add(this, "clips")
+                    val link = text.trim()
+                    if (Regex("""^https?://\S+$""").matches(link)) {
+                        offerLink(link)
+                    } else {
+                        RobotService.instance?.say("Copied from PC")
+                    }
                 }
             }
+            "wave" -> {
+                val name = message.optString("name", "A friend")
+                RobotService.instance?.say("$name waved 👋")
+                manager().notify(
+                    WAVE_ID,
+                    Notification.Builder(this, CHANNEL_MEDIA)
+                        .setSmallIcon(R.drawable.ic_notchy)
+                        .setContentTitle("$name waved at you")
+                        .setContentText("From a Notchy nearby")
+                        .setAutoCancel(true)
+                        .build(),
+                )
+            }
             "ring" -> ring()
+            "download" -> offerDownload(message)
+            "meeting" -> {
+                val on = message.optBoolean("on")
+                inMeeting = on
+                setSilent(on || focusing)
+                RobotService.instance?.setFocused(on || focusing)
+                if (on) RobotService.instance?.say("Shh… meeting on PC")
+            }
             "focus" -> showFocus(message.optLong("until"))
             "phone_media" -> NotifyListener.instance?.command(message.optString("cmd"))
         }
+    }
+
+    /** Handoff from the PC: a link copied there opens here with one tap. */
+    private fun offerLink(url: String) {
+        RobotService.instance?.say("Link from PC")
+        val open = PendingIntent.getActivity(
+            this, 2, Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        manager().notify(
+            HANDOFF_ID,
+            Notification.Builder(this, CHANNEL_ALERT)
+                .setSmallIcon(R.drawable.ic_notchy)
+                .setContentTitle("Continue on phone")
+                .setContentText(url)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setTimeoutAfter(120_000)
+                .build(),
+        )
+    }
+
+    /** A download finished on the PC: one tap brings it over. */
+    private fun offerDownload(message: JSONObject) {
+        val id = message.optLong("id")
+        val name = message.optString("name")
+        val size = message.optLong("size")
+        val get = PendingIntent.getService(
+            this, 6, Intent(this, LinkService::class.java).setAction(ACTION_WANT).putExtra("id", id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        LiveUpdates.ensureChannel(this)
+        manager().notify(
+            DOWNLOAD_ID,
+            Notification.Builder(this, "live")
+                .setSmallIcon(R.drawable.ic_notchy)
+                .setContentTitle("Downloaded on ${Link.pcName}")
+                .setContentText("$name · ${android.text.format.Formatter.formatShortFileSize(this, size)}")
+                .addAction(Notification.Action.Builder(null as Icon?, "Get it on phone", get).build())
+                .setContentIntent(get)
+                .setAutoCancel(true)
+                .setTimeoutAfter(10 * 60_000)
+                .build(),
+        )
     }
 
     // ---- Find my phone -------------------------------------------------------------------
@@ -208,11 +307,40 @@ class LinkService : Service() {
 
     // ---- Focus as a Live Update ----------------------------------------------------------
 
+    /** Whether Notchy turned Do Not Disturb on, so it only turns off what it turned on. */
+    private var silenced = false
+
+    private fun setSilent(on: Boolean) {
+        val manager = manager()
+        val wanted = getSharedPreferences("app", MODE_PRIVATE).getBoolean("focus_dnd", true)
+        if (!manager.isNotificationPolicyAccessGranted) return
+        if (on && wanted && !silenced &&
+            manager.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL
+        ) {
+            manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+            silenced = true
+        } else if (!on && silenced) {
+            manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            silenced = false
+        }
+    }
+
+    private var inMeeting = false
+    private var focusing = false
+
     private fun showFocus(until: Long) {
         if (until <= System.currentTimeMillis()) {
+            focusing = false
             cancel(FOCUS_ID)
+            setSilent(inMeeting)
+            RobotService.instance?.setFocused(inMeeting)
             return
         }
+        focusing = true
+        setSilent(true)
+        RobotService.instance?.setFocused(true)
+        main.removeCallbacks(focusEnd)
+        main.postDelayed(focusEnd, until - System.currentTimeMillis())
         LiveUpdates.ensureChannel(this)
         val builder = Notification.Builder(this, "live")
             .setSmallIcon(R.drawable.ic_notchy)
@@ -229,6 +357,12 @@ class LinkService : Service() {
         val notification = builder.build()
         notification.extras.putBoolean("android.requestPromotedOngoing", true)
         manager().notify(FOCUS_ID, notification)
+    }
+
+    private val focusEnd = Runnable {
+        focusing = false
+        setSilent(inMeeting)
+        RobotService.instance?.setFocused(inMeeting)
     }
 
     // ---- Plumbing ------------------------------------------------------------------------
@@ -279,8 +413,13 @@ class LinkService : Service() {
         private const val MEDIA_ID = 21
         private const val FOCUS_ID = 22
         private const val RING_ID = 23
+        private const val HANDOFF_ID = 24
+        private const val WAVE_ID = 25
+        private const val PC_LOW_ID = 26
         private const val ACTION_STOP_RING = "com.notchy.app.STOP_RING"
         private const val ACTION_MEDIA = "com.notchy.app.MEDIA"
+        private const val ACTION_WANT = "com.notchy.app.WANT"
+        private const val DOWNLOAD_ID = 27
 
         var instance: LinkService? = null
             private set

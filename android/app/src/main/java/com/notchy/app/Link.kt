@@ -48,6 +48,16 @@ object Link {
         private set
     var pcMedia: Triple<String, String, Boolean>? = null
         private set
+    /** When the PC's Focus session ends (epoch ms), or 0. */
+    var focusUntil = 0L
+        private set
+    /** The PC's camera or mic is in use. */
+    var pcMeeting = false
+        private set
+
+    /** The PC's recent clipboard texts, after asking with `clip_history`. */
+    var pcHistory: List<String>? = null
+        private set
 
     private val main = Handler(Looper.getMainLooper())
     private val listeners = mutableListOf<() -> Unit>()
@@ -118,6 +128,38 @@ object Link {
         if (!connected) return false
         outbox.offer(JSONObject().apply { put("t", type); build() }.toString())
         return true
+    }
+
+    /** Messages waiting to go out, so big transfers can wait instead of filling memory. */
+    fun backlog(): Int = outbox.size
+
+    /**
+     * Sends a file in 192 KB chunks. Call off the main thread. [progress] gets bytes sent.
+     * Throws when the link drops.
+     */
+    fun sendFile(context: Context, file: PcLink.FileInfo, progress: (Long) -> Unit) {
+        val id = System.nanoTime()
+        if (!send("file_start") { put("id", id); put("name", file.name); put("size", file.size) }) {
+            error("PC not connected")
+        }
+        val input = context.contentResolver.openInputStream(file.uri) ?: error("Cannot open ${file.name}")
+        input.use { stream ->
+            val buffer = ByteArray(192 * 1024)
+            var sent = 0L
+            while (sent < file.size) {
+                val read = stream.read(buffer, 0, minOf(buffer.size.toLong(), file.size - sent).toInt())
+                if (read < 0) break
+                while (backlog() > 6) {
+                    if (!connected) error("Link dropped")
+                    Thread.sleep(20)
+                }
+                val data = Base64.encodeToString(buffer, 0, read, Base64.NO_WRAP)
+                if (!send("file_chunk") { put("id", id); put("data", data) }) error("Link dropped")
+                sent += read
+                progress(sent)
+            }
+        }
+        send("file_end") { put("id", id) }
     }
 
     // ---- Connection ----------------------------------------------------------------------
@@ -243,6 +285,19 @@ object Link {
                 val title = message.optString("title")
                 pcMedia = if (title.isEmpty()) null
                 else Triple(title, message.optString("artist"), message.optBoolean("playing"))
+                notifyListeners()
+            }
+            "focus" -> {
+                focusUntil = message.optLong("until")
+                notifyListeners()
+            }
+            "meeting" -> {
+                pcMeeting = message.optBoolean("on")
+                notifyListeners()
+            }
+            "clip_history" -> {
+                val items = message.optJSONArray("items")
+                pcHistory = (0 until (items?.length() ?: 0)).map { items!!.getString(it) }
                 notifyListeners()
             }
             "pong" -> {}

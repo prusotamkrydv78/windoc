@@ -50,6 +50,11 @@ class RobotService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
+    /** Narrow, determined eyes while a Focus session runs on the PC. */
+    fun setFocused(on: Boolean) {
+        view?.focused = on
+    }
+
     /** The robot says [text] in the pill for a few seconds. */
     fun say(text: String) {
         view?.say(text)

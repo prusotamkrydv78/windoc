@@ -14,6 +14,7 @@ use winisland_render::{Point, Radius, Rect, Rgba};
 
 use super::TabContext;
 use super::shelf::kit::{self, style, text, text_center, text_right, text_width};
+use crate::core::friends::{self, Friend};
 use crate::core::phone_link::{self, PhoneNotification};
 use crate::ui::dashboard::DashboardHit;
 
@@ -21,9 +22,12 @@ const ID_FIND: u16 = 1600;
 const ID_SEND_CLIP: u16 = 1601;
 const ID_PAIR_AGAIN: u16 = 1602;
 const ID_CLEAR: u16 = 1603;
+const ID_SEND_FILE: u16 = 1604;
 const ID_TOGGLE: u16 = 1610;
 const ID_MEDIA: u16 = 1620;
 const ID_COPY_CODE: u16 = 1640;
+const ID_WAVE: u16 = 1660;
+const MAX_FRIENDS: usize = 6;
 const MAX_ROWS: u16 = 12;
 
 const GAP: f32 = 10.0;
@@ -63,6 +67,7 @@ struct State {
     code: Option<String>,
     code_at: Option<Instant>,
     notifications: Vec<PhoneNotification>,
+    friends: Vec<Friend>,
 }
 
 thread_local! {
@@ -91,6 +96,7 @@ fn layout(grid: Rect) -> Layout {
 struct PhoneCard {
     find: Rect,
     send_clip: Rect,
+    send_file: Rect,
     media: Option<[Rect; 3]>,
     switches: [Rect; 3],
     pair_again: Rect,
@@ -99,9 +105,10 @@ struct PhoneCard {
 fn phone_card(left: Rect, has_media: bool) -> PhoneCard {
     let inner = left.inset(PAD);
     let buttons_top = inner.top + 50.0;
-    let half = (inner.width() - 8.0) / 2.0;
-    let find = Rect::from_xywh(inner.left, buttons_top, half, 30.0);
-    let send_clip = Rect::from_xywh(inner.left + half + 8.0, buttons_top, half, 30.0);
+    let third = (inner.width() - 12.0) / 3.0;
+    let find = Rect::from_xywh(inner.left, buttons_top, third, 30.0);
+    let send_clip = Rect::from_xywh(inner.left + third + 6.0, buttons_top, third, 30.0);
+    let send_file = Rect::from_xywh(inner.left + (third + 6.0) * 2.0, buttons_top, third, 30.0);
     let mut top = find.bottom + 10.0;
     let media = has_media.then(|| {
         let row = top;
@@ -121,15 +128,83 @@ fn phone_card(left: Rect, has_media: bool) -> PhoneCard {
     PhoneCard {
         find,
         send_clip,
+        send_file,
         media,
         switches,
         pair_again,
     }
 }
 
-fn rows_rect(right: Rect) -> Rect {
+fn rows_rect(right: Rect, friends: bool) -> Rect {
     let inner = right.inset(PAD);
-    Rect::from_ltrb(inner.left - 6.0, inner.top + 34.0, inner.right + 6.0, right.bottom - 8.0)
+    let bottom = if friends { right.bottom - 46.0 } else { right.bottom - 8.0 };
+    Rect::from_ltrb(inner.left - 6.0, inner.top + 34.0, inner.right + 6.0, bottom)
+}
+
+/// "Nearby" chips along the bottom of the right card, one per friend's PC.
+fn friend_chips(right: Rect, friends: &[Friend]) -> Vec<Rect> {
+    let inner = right.inset(PAD);
+    let top = right.bottom - PAD - 28.0;
+    let mut left = inner.left + text_width("Nearby", typography::CAPTION) + 10.0;
+    let mut chips = Vec::new();
+    for friend in friends.iter().take(MAX_FRIENDS) {
+        let width = text_width(&friend.name, BUTTON) + 40.0;
+        if left + width > inner.right {
+            break;
+        }
+        chips.push(Rect::from_xywh(left, top, width, 28.0));
+        left += width + 6.0;
+    }
+    chips
+}
+
+const WAVE: &str = "M7 12 V6.5 A1.5 1.5 0 0 1 10 6.5 V11 M10 10 V4.5 A1.5 1.5 0 0 1 13 4.5 V11 M13 10.5 V5.5 A1.5 1.5 0 0 1 16 5.5 V12 M16 11 V8.5 A1.5 1.5 0 0 1 19 8.5 V14 A7 7 0 0 1 12 21 A6 6 0 0 1 7 17 L4.5 13 A1.5 1.5 0 0 1 7 12";
+
+fn draw_friends(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
+    if state.friends.is_empty() {
+        return;
+    }
+    let painter = ctx.painter;
+    let colors = ctx.colors;
+    let inner = layout.right.inset(PAD);
+    let chips = friend_chips(layout.right, &state.friends);
+    let top = layout.right.bottom - PAD - 28.0;
+    text(
+        painter,
+        "Nearby",
+        typography::CAPTION,
+        Rect::from_xywh(inner.left, top, 60.0, 28.0),
+        colors.text_secondary,
+    );
+    for (index, chip) in chips.iter().enumerate() {
+        let id = ID_WAVE + index as u16;
+        let waved = flashed(state, id, ctx.now);
+        let hover = hovered(ctx, id);
+        painter.fill_round_rect(
+            *chip,
+            Radius::uniform(14.0),
+            if waved {
+                colors.accent_soft
+            } else if hover {
+                colors.surface_interactive
+            } else {
+                colors.surface_overlay
+            },
+        );
+        kit::glyph(
+            painter,
+            WAVE,
+            kit::square(Point::new(chip.left + 15.0, chip.center_y()), 14.0),
+            if waved { colors.accent_primary } else { colors.text_primary },
+        );
+        text(
+            painter,
+            &state.friends[index].name,
+            BUTTON,
+            Rect::from_ltrb(chip.left + 26.0, chip.top, chip.right - 6.0, chip.bottom),
+            colors.text_primary,
+        );
+    }
 }
 
 fn row_rect(rows: Rect, slot: usize) -> Rect {
@@ -220,6 +295,7 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
     card(ctx, layout.right);
     with_state(|state| {
         state.notifications = phone_link::notifications();
+        state.friends = friends::nearby();
         if phone_link::paired() {
             draw_phone(ctx, &layout, state);
             draw_notifications(ctx, &layout, state);
@@ -227,6 +303,7 @@ pub fn draw(ctx: &TabContext<'_>) -> bool {
             draw_pairing(ctx, &layout, state);
             draw_features(ctx, &layout);
         }
+        draw_friends(ctx, &layout, state);
     });
     true
 }
@@ -320,10 +397,11 @@ fn draw_features(ctx: &TabContext<'_>, layout: &Layout) {
         "Phone becomes a touchpad and remote",
         "Find my phone, and lock when you walk away",
         "The robot follows you from PC to phone",
+        "Unlock this PC with your phone's fingerprint",
     ];
     let mut top = inner.top + 32.0;
     for feature in features {
-        if top + 20.0 > inner.bottom {
+        if top + 20.0 > inner.bottom - 34.0 {
             break;
         }
         painter.fill_circle(Point::new(inner.left + 4.0, top + 9.0), 3.0, colors.accent_primary);
@@ -404,7 +482,7 @@ fn draw_phone(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         ctx,
         parts.find,
         RING,
-        if ringing { "Ringing…" } else { "Find phone" },
+        if ringing { "Ringing…" } else { "Find" },
         online && hovered(ctx, ID_FIND),
         online,
     );
@@ -413,8 +491,22 @@ fn draw_phone(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         ctx,
         parts.send_clip,
         if sent { kit::CHECK } else { COPY },
-        if sent { "Sent" } else { "Send clipboard" },
+        if sent { "Sent" } else { "Clipboard" },
         online && hovered(ctx, ID_SEND_CLIP),
+        false,
+    );
+    let sending = phone_link::file_progress();
+    let file_label = match sending {
+        Some(percent) => format!("{percent}%"),
+        None if flashed(state, ID_SEND_FILE, ctx.now) => "Sent".to_string(),
+        None => "File".to_string(),
+    };
+    button(
+        ctx,
+        parts.send_file,
+        kit::FOLDER,
+        &file_label,
+        online && hovered(ctx, ID_SEND_FILE),
         false,
     );
 
@@ -513,7 +605,7 @@ fn draw_notifications(ctx: &TabContext<'_>, layout: &Layout, state: &State) {
         Rect::from_xywh(inner.left, inner.top, inner.width() - 80.0, 26.0),
         colors.text_primary,
     );
-    let rows = rows_rect(layout.right);
+    let rows = rows_rect(layout.right, !state.friends.is_empty());
     if state.notifications.is_empty() {
         let center = rows.center_y() - 10.0;
         kit::glyph(
@@ -671,17 +763,29 @@ pub fn custom_layout() -> bool {
 
 /// Hit test in page coordinates.
 pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
-    if !grid.contains(point) || !phone_link::paired() {
+    if !grid.contains(point) {
         return None;
     }
     LAST_GRID.with(|cell| cell.set(grid));
     let layout = layout(grid);
+    let friends = with_state(|state| state.friends.clone());
+    if let Some(index) = friend_chips(layout.right, &friends)
+        .iter()
+        .position(|chip| chip.contains(point))
+    {
+        return Some(DashboardHit::Tab(ID_WAVE + index as u16));
+    }
+    if !phone_link::paired() {
+        return None;
+    }
     let parts = phone_card(layout.left, phone_link::phone_media().is_some());
     let online = phone_link::connection().is_some();
     let id = if online && parts.find.contains(point) {
         Some(ID_FIND)
     } else if online && parts.send_clip.contains(point) {
         Some(ID_SEND_CLIP)
+    } else if online && parts.send_file.contains(point) {
+        Some(ID_SEND_FILE)
     } else if parts.pair_again.contains(point) {
         Some(ID_PAIR_AGAIN)
     } else if let Some(index) = parts.switches.iter().position(|rect| grow(*rect).contains(point)) {
@@ -694,7 +798,7 @@ pub fn hit(grid: Rect, point: Point) -> Option<DashboardHit> {
     } else if clear_rect(layout.right).contains(point) {
         Some(ID_CLEAR)
     } else {
-        let rows = rows_rect(layout.right);
+        let rows = rows_rect(layout.right, !friends.is_empty());
         with_state(|state| {
             let shown = row_count(rows, state.notifications.len());
             (0..shown).find_map(|slot| {
@@ -730,6 +834,18 @@ pub fn apply(hit: DashboardHit) -> bool {
                 state.feedback = Some((id, now));
             }
         }
+        ID_SEND_FILE => {
+            if phone_link::file_progress().is_none() {
+                std::thread::spawn(|| {
+                    if let Some(paths) = rfd::FileDialog::new()
+                        .set_title("Send to phone")
+                        .pick_files()
+                    {
+                        phone_link::send_files(paths);
+                    }
+                });
+            }
+        }
         ID_PAIR_AGAIN => {
             phone_link::pair_again();
             state.code = None;
@@ -745,6 +861,13 @@ pub fn apply(hit: DashboardHit) -> bool {
         }
         _ if (ID_MEDIA..ID_MEDIA + 3).contains(&id) => {
             phone_link::phone_media_command(["prev", "toggle", "next"][(id - ID_MEDIA) as usize]);
+        }
+        _ if (ID_WAVE..ID_WAVE + MAX_FRIENDS as u16).contains(&id) => {
+            if let Some(friend) = state.friends.get((id - ID_WAVE) as usize)
+                && friends::wave(friend.address)
+            {
+                state.feedback = Some((id, now));
+            }
         }
         _ if (ID_COPY_CODE..ID_COPY_CODE + MAX_ROWS).contains(&id) => {
             let slot = (id - ID_COPY_CODE) as usize;

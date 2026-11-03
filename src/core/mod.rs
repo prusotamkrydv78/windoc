@@ -10,6 +10,7 @@ pub mod data_inventory;
 pub mod device_watch;
 pub mod drop_server;
 pub mod focus_store;
+pub mod friends;
 pub mod json_store;
 pub mod mascot_memory;
 pub mod persistence;

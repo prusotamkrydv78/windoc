@@ -93,11 +93,12 @@ class NotifyListener : NotificationListenerService() {
         val app = runCatching {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
-        Link.send("notif") {
+        val sent = Link.send("notif") {
             put("app", app)
             put("title", title)
             put("text", text)
         }
+        if (sent) Stats.add(this, "alerts")
     }
 
     companion object {

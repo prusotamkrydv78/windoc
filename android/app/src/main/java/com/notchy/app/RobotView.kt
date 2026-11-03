@@ -48,6 +48,17 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
     /** 0..1 while the robot is thrown up to the PC: the eyes fly off and come back. */
     private var thrown = 0f
 
+    /** A Focus session runs on the PC: narrow, determined eyes. */
+    var focused = false
+        set(value) { field = value; invalidate() }
+
+    /** Between 11 pm and 6 am the robot is sleepy: heavy lids, slow blinks. */
+    private val sleepy: Boolean
+        get() {
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            return hour >= 23 || hour < 6
+        }
+
     /** Long-press: the robot is thrown over to the PC. */
     var onThrow: (() -> Unit)? = null
 
@@ -182,7 +193,12 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
         val fly = if (thrown in 0.001f..0.999f) sin(thrown * Math.PI).toFloat() * h * 2.2f else 0f
         val bounce = sin(hop * Math.PI).toFloat() * h * 0.18f + fly
         val eyeW = hole * 0.42f
-        val eyeH = max(eyeH(h) * (1f - blink * 0.85f), 1.5f * density)
+        val mood = when {
+            focused -> 0.45f
+            sleepy && open == 0f -> 0.35f
+            else -> 1f
+        }
+        val eyeH = max(eyeH(h) * mood * (1f - blink * 0.85f), 1.5f * density)
         val gap = hole * 0.95f
         val shift = look * hole * 0.12f
         for (side in listOf(-1f, 1f)) {

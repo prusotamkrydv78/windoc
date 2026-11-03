@@ -176,6 +176,27 @@ impl App {
         if crate::core::safe_mode::active() {
             return;
         }
+        for name in crate::core::friends::poll() {
+            mascot::react(Reaction::Notice);
+            crate::platform::notify().show_toast(&format!("{name} waved at you"), "From a Notchy nearby");
+            phone_link::forward_wave(&name);
+            window.request_redraw();
+        }
+        if self.clipboard.revision() != self.phone_history_revision {
+            self.phone_history_revision = self.clipboard.revision();
+            use winisland_core::clipboard::ClipboardBody;
+            phone_link::set_history(
+                self.clipboard
+                    .items()
+                    .iter()
+                    .filter_map(|item| match &item.body {
+                        ClipboardBody::Text(text) | ClipboardBody::Link(text) => Some(text.clone()),
+                        _ => None,
+                    })
+                    .take(40)
+                    .collect(),
+            );
+        }
         let media = self.current_media_info();
         let media = (!media.title.is_empty())
             .then(|| (media.title.clone(), media.artist.clone(), media.is_playing));
@@ -209,6 +230,22 @@ impl App {
                 Event::Toast(title, text) => crate::platform::notify().show_toast(&title, &text),
                 Event::Arrived => mascot::react(Reaction::Notice),
                 Event::Thrown => mascot::react(Reaction::Catch),
+                Event::File(path) => {
+                    let name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    crate::platform::notify().show_toast("From your phone", &name);
+                    mascot::react(Reaction::Catch);
+                    self.shelf.add(path);
+                }
+                Event::PhoneLow(percent) => {
+                    mascot::react(Reaction::Surprised);
+                    crate::platform::notify().show_toast(
+                        &format!("Phone at {percent}%"),
+                        "Time to plug it in",
+                    );
+                }
                 Event::Ring => {
                     mascot::react(Reaction::Surprised);
                     for _ in 0..3 {

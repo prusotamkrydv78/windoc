@@ -15,6 +15,7 @@ members = [
     "crates/winisland-render",
     "crates/winisland-platform",
     "crates/winisland-platform-windows",
+    "crates/notchy-unlock",
 ]
 
 [workspace.package]
