@@ -712,6 +712,23 @@ class MainActivity : Activity() {
                 }, matchWidth())
             }
         }, matchWidth())
+        addView(sectionTitle("Notch extras"))
+        val notch = card(8)
+        val speedOn = getSharedPreferences("notch", MODE_PRIVATE).getBoolean("speed", false)
+        notch.addView(settingRow("Speed meter", "Download speed next to the camera", if (speedOn) "On" else "Off", speedOn) {
+            RobotService.instance?.setSpeedMeter(!speedOn)
+                ?: getSharedPreferences("notch", MODE_PRIVATE).edit().putBoolean("speed", !speedOn).apply()
+            render()
+        })
+        val mic = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        notch.addView(settingRow("Eyes dance to music", "Uses the audio visualizer (needs microphone permission; nothing is recorded)", if (mic) "On" else "Allow", mic) {
+            if (!mic) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 4)
+        })
+        notch.addView(label("Swipe the pill ← → for songs · swipe down or long-press for the panel · double-tap to hide the screen (or silence a call) · hold while charging to feed it · shake for a dizzy robot", 13f, Ui.DIM).apply {
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+        })
+        addView(notch, matchWidth())
+
         addView(sectionTitle("Robot's life"))
         val life = RobotLife.get(this@MainActivity)
         addView(card(18).apply {

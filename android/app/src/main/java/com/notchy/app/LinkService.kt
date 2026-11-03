@@ -194,6 +194,7 @@ class LinkService : Service() {
             "call_action" -> NotifyListener.instance?.callAction(message.optString("a"))
             "next_meeting" -> showMeeting(message)
             "nudge" -> RobotService.instance?.say("Focus time? 🎯")
+            "wear" -> RobotService.instance?.setWear(message.optString("wear"))
             "need_internet" -> offerHotspot()
         }
     }

@@ -124,15 +124,18 @@ class NotifyListener : NotificationListenerService() {
             Regex("(?i)otp|code|verif|password|passcode|pin").containsMatchIn(joined)
         PhoneMemory.record(this, app, title, text, isCode, sent)
         RobotService.instance?.noticeAlert(app)
+        RobotService.instance?.flash(sbn.packageName)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         val notification = sbn.notification
         if (notification.category == Notification.CATEGORY_CALL) {
             Link.send("call_end")
+            RobotService.instance?.setRinging(false)
         } else if (sbn.key in liveKeys) {
             liveKeys -= sbn.key
             Link.send("live_end") { put("key", sbn.key) }
+            if (liveKeys.isEmpty()) RobotService.instance?.setActivity(null)
         }
     }
 
@@ -167,6 +170,7 @@ class NotifyListener : NotificationListenerService() {
             put("actions", org.json.JSONArray(actions.take(3) + if (ongoing) listOf("Mute") else emptyList()))
         }
         if (!ongoing) RobotService.instance?.say("Call: ${name.take(12)}")
+        RobotService.instance?.setRinging(!ongoing)
     }
 
     /** Presses the call notification's button named [action] (or mutes the mic). */
@@ -202,6 +206,10 @@ class NotifyListener : NotificationListenerService() {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
         liveKeys += sbn.key
+        val shortTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().take(10).ifEmpty { app.take(10) }
+        RobotService.instance?.setActivity(
+            RobotView.LiveActivity(shortTitle, if (max > 0) progress.toFloat() / max else null),
+        )
         Link.send("live") {
             put("key", sbn.key)
             put("app", app)

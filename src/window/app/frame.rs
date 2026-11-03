@@ -187,6 +187,9 @@ impl App {
         crate::ui::widget::compact::mascot::life::set_weather(
             weather.as_ref().map(|summary| summary.condition_key),
         );
+        crate::core::phone_link::publish_weather(weather.as_ref().map(|summary| {
+            (summary.condition_key, summary.temperature.as_str())
+        }));
         crate::ui::dashboard::set_weather(weather);
         if crate::ui::dashboard::showing(crate::ui::dashboard::Destination::Weather) {
             crate::ui::dashboard::set_weather_rows(self.weather.detail_rows(&self.config));

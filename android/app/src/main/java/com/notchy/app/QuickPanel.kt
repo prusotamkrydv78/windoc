@@ -64,6 +64,11 @@ class QuickPanelActivity : Activity() {
         }, weighted())
         column.addView(quick, matchWidth())
 
+        column.addView(pill("Notch game: tap the dot") {
+            RobotService.instance?.startGame()
+            finish()
+        }, matchWidth())
+
         column.addView(sectionTitle("Note"))
         val note = EditText(this).apply {
             hint = "Jot something down…"
@@ -124,6 +129,7 @@ object Timers {
             .build()
         notification.extras.putBoolean("android.requestPromotedOngoing", true)
         context.getSystemService(NotificationManager::class.java).notify(LIVE_ID, notification)
+        RobotService.instance?.setActivity(RobotView.LiveActivity("Timer", null, until))
         context.getSystemService(AlarmManager::class.java)
             .setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, until, done(context))
         RobotService.instance?.say("Timer: $minutes min")
@@ -133,6 +139,7 @@ object Timers {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("until").apply()
         context.getSystemService(AlarmManager::class.java).cancel(done(context))
         context.getSystemService(NotificationManager::class.java).cancel(LIVE_ID)
+        RobotService.instance?.setActivity(null)
     }
 
     private fun done(context: Context) = PendingIntent.getBroadcast(
@@ -143,6 +150,7 @@ object Timers {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("until").apply()
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.cancel(LIVE_ID)
+        RobotService.instance?.setActivity(null)
         manager.createNotificationChannel(NotificationChannel("timer_done", "Timer done", NotificationManager.IMPORTANCE_HIGH))
         manager.notify(
             DONE_ID,

@@ -131,6 +131,32 @@ pub fn send_notes(notes: Vec<(String, String)>) {
     send(json!({"t": "notes", "items": notes}));
 }
 
+static WEATHER_SENT: Mutex<Option<String>> = Mutex::new(None);
+
+/// The weather, so the phone robot wears sunglasses on a clear day and a scarf when cold.
+pub fn publish_weather(weather: Option<(&str, &str)>) {
+    let wear = weather.and_then(|(condition, temperature)| {
+        let degrees: f32 = temperature
+            .chars()
+            .take_while(|character| character.is_ascii_digit() || *character == '-' || *character == '.')
+            .collect::<String>()
+            .parse()
+            .ok()?;
+        Some(if degrees <= 15.0 { "cold" } else if condition == "weather_clear" { "sun" } else { "" })
+    })
+    .unwrap_or("");
+    let connected = SHARED.lock().outbox.is_some();
+    let mut sent = WEATHER_SENT.lock();
+    if !connected {
+        *sent = None;
+        return;
+    }
+    if sent.as_deref() != Some(wear) {
+        *sent = Some(wear.to_string());
+        send(json!({"t": "wear", "wear": wear}));
+    }
+}
+
 /// Smart Focus: a nudge the phone robot repeats.
 pub fn send_nudge(text: &str) {
     send(json!({"t": "nudge", "text": text}));
