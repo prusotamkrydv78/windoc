@@ -120,3 +120,24 @@ Converted to Android dp (1 pt ≈ 1 dp).
    is showing, the robot hides.
 4. Real vector icons (no emoji) and real font weights (`sans-serif-medium`).
 5. Then the PC notch and the PC and phone app screens follow the same tokens.
+
+## 6. Dribbble shots to study
+
+The most-liked phone shots in the [Dynamic Island collection](https://dribbble.com/javitoluz/collections/7737290-Dynamic-Island).
+They are linked rather than copied because the images belong to their designers. Dribbble
+blocks automated reading, so open these by hand.
+
+| Shot | Designer | Idea for Notchy |
+|---|---|---|
+| [Wareg: food delivery](https://dribbble.com/shots/19623714-Wareg-Food-Delivery-Dynamic-Island) | BTA Studio | Delivery progress in the live card |
+| [Android Dynamic Island](https://dribbble.com/shots/25604942-Android-Dynamic-Island) | Geex Arts | Island around an Android punch-hole: our exact case |
+| [Ember: island and watch](https://dribbble.com/shots/23254244-Ember-Dynamic-Island-Apple-Watch-App-Concept) | Vektora | Companion device: PC link status |
+| [Finance widgets](https://dribbble.com/shots/22787403-Finance-Widgets-for-Dynamic-Island) | HYPEOPLE | Spending card (Expenses) |
+| [Image search](https://dribbble.com/shots/26092024-iOS-Dynamic-Island-Image-Search) | Malan Alankara | Screenshot → send to PC card |
+| [Dog video alert](https://dribbble.com/shots/19554744-Apple-Dynamic-Island-Concept-Dog-video-alert) | Pontus Wellgraf | Rich media inside a card |
+| [Worldcoin concept](https://dribbble.com/shots/19399341-Worldcoin-Dynamic-Island-concept) | thirdweb-studio | Verify / unlock flow: unlock the PC |
+| [Delivery live activity](https://dribbble.com/shots/20764275-Delivery-live-activity-in-the-Dynamic-Island-on-iPhone) | Roman Vorokhib | Compact delivery ETA |
+| [Voice notification](https://dribbble.com/shots/23223907-Voice-Notification-Dynamic-Island-Style-Animation) | Mohamad Shahrestani | Voice note with waveform |
+| [App notifications](https://dribbble.com/shots/22101499-Dynamic-Island-App-Notifications) | Atheeb | Notification card |
+| [Running app](https://dribbble.com/shots/20840296-Dynamic-island-running-app-animation) | Alexandru Hasmatuchi | Activity with live stats |
+| [Gym](https://dribbble.com/shots/25773376-Dynamic-island-Gym) | adiatma bani | Workout timer |

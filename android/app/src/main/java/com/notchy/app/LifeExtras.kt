@@ -74,13 +74,13 @@ object Places {
                 ) {
                     manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
                 }
-                RobotService.instance?.say("At the office 💼")
+                RobotService.instance?.say("At the office")
             }
             Place.HOME -> {
                 if (manager.isNotificationPolicyAccessGranted && before == Place.OFFICE) {
                     manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
                 }
-                RobotService.instance?.say("Home sweet home 🏠")
+                RobotService.instance?.say("Home sweet home")
             }
             Place.OUT -> RobotService.instance?.say("Out and about")
         }
@@ -215,7 +215,7 @@ object PhotoMemories {
             Link.sendFile(context, PcLink.FileInfo(android.net.Uri.fromFile(file), file.name, file.length()), id) {}
         }
         file.delete()
-        RobotService.instance?.say("A memory from $year 📸")
+        RobotService.instance?.say("A memory from $year")
     }
 }
 
@@ -338,7 +338,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .build(),
         )
-        RobotService.instance?.say("⏰ ${text.take(18)}")
+        RobotService.instance?.say("${text.take(18)}")
         Link.send("notif") { put("app", "Notchy"); put("title", "Reminder"); put("text", text) }
     }
 }

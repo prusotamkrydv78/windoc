@@ -165,7 +165,7 @@ class LinkService : Service() {
             }
             "wave" -> {
                 val name = message.optString("name", "A friend")
-                RobotService.instance?.say("$name waved 👋")
+                RobotService.instance?.say("$name waved")
                 manager().notify(
                     WAVE_ID,
                     Notification.Builder(this, CHANNEL_MEDIA)
@@ -193,7 +193,7 @@ class LinkService : Service() {
             }
             "call_action" -> NotifyListener.instance?.callAction(message.optString("a"))
             "next_meeting" -> showMeeting(message)
-            "nudge" -> RobotService.instance?.say("Focus time? 🎯")
+            "nudge" -> RobotService.instance?.say("Focus time?")
             "wear" -> RobotService.instance?.setWear(message.optString("wear"))
             "brief" -> {
                 val meetings = message.optInt("meetings")

@@ -39,7 +39,7 @@ class RobotService : Service() {
                 // Low battery, said once per discharge.
                 if (!charging && percent <= 15 && !warnedLow) {
                     warnedLow = true
-                    say("Feed me ⚡ $percent%")
+                    view?.showLowBattery(percent)
                 }
                 if (charging || percent > 20) warnedLow = false
             }
@@ -62,7 +62,7 @@ class RobotService : Service() {
                     val fresh = System.currentTimeMillis() - prefs.getLong("brief_at", 0) < 12 * 3_600_000L
                     if (hour in 5..11 && brief != null && fresh && !prefs.getBoolean("brief_shown", false)) {
                         prefs.edit().putBoolean("brief_shown", true).apply()
-                        say("☀ $brief")
+                        say("$brief")
                         view?.yawn()
                         return
                     }
@@ -76,22 +76,34 @@ class RobotService : Service() {
                         },
                     )
                 }
-                Intent.ACTION_HEADSET_PLUG -> if (intent.getIntExtra("state", 0) == 1) say("Tunes time ♪")
+                Intent.ACTION_HEADSET_PLUG -> if (intent.getIntExtra("state", 0) == 1) say("Tunes time")
             }
         }
     }
 
-    /** A message arrived: a quick glance, at most every 20 seconds so it never nags. */
-    fun noticeAlert(app: String) {
-        val now = System.currentTimeMillis()
-        if (now - lastChatter < 20_000) return
-        lastChatter = now
-        say(app.take(14))
+    /** The ring / silent switch (the first, sticky broadcast is the current state, not a change). */
+    private val ringerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (isInitialStickyBroadcast) return
+            val mode = intent.getIntExtra(android.media.AudioManager.EXTRA_RINGER_MODE, -1)
+            if (mode >= 0) view?.post { view?.showRinger(mode != android.media.AudioManager.RINGER_MODE_NORMAL) }
+        }
     }
 
-    /** The phone's player started a new song. */
-    fun nowPlaying(title: String) {
-        if (title.isNotEmpty()) say("♪ ${title.take(18)}")
+    /** A notification as a card, at most one every 4 seconds so a burst never flickers. */
+    fun showNotice(notice: RobotView.Notice) {
+        val now = System.currentTimeMillis()
+        if (now - lastChatter < 4_000) return
+        lastChatter = now
+        view?.post { view?.showNotice(notice) }
+    }
+
+    fun setCall(call: RobotView.Call?) {
+        view?.post { view?.call = call }
+    }
+
+    fun setMusic(music: RobotView.Music?) {
+        view?.post { view?.music = music }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -105,6 +117,7 @@ class RobotService : Service() {
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_HEADSET_PLUG)
         })
+        registerReceiver(ringerReceiver, IntentFilter(android.media.AudioManager.RINGER_MODE_CHANGED_ACTION))
         running = true
         instance = this
         getSharedPreferences("app", MODE_PRIVATE).edit().putBoolean("robot", true).apply()
@@ -173,6 +186,7 @@ class RobotService : Service() {
         instance = null
         unregisterReceiver(batteryReceiver)
         unregisterReceiver(phoneReceiver)
+        unregisterReceiver(ringerReceiver)
         senses?.stop()
         senses = null
         view?.let { windows.removeView(it) }
@@ -216,7 +230,7 @@ class RobotService : Service() {
         robot.onPet = { RobotLife.pet(this) }
         robot.onSwipe = { direction ->
             NotifyListener.instance?.command(if (direction > 0) "next" else "prev")
-            robot.say(if (direction > 0) "Next ⏭" else "Back ⏮", 1200)
+            if (robot.music == null) robot.say(if (direction > 0) "Next song" else "Previous song", 1200)
         }
         robot.onDoubleTap = {
             if (robot.ringing) {
@@ -224,12 +238,20 @@ class RobotService : Service() {
                 getSystemService(android.media.AudioManager::class.java)
                     .adjustStreamVolume(android.media.AudioManager.STREAM_RING, android.media.AudioManager.ADJUST_MUTE, 0)
                 robot.ringing = false
-                robot.say("Shh 🤫", 1500)
+                robot.say("Ringer silenced", 1500)
             } else {
                 senses?.togglePrivacy()
             }
         }
         robot.onFeed = { senses?.feed() }
+        robot.onMedia = { command -> NotifyListener.instance?.command(command) }
+        robot.onCallAction = { action -> NotifyListener.instance?.callButton(action) }
+        robot.onNoticeOpen = { key -> NotifyListener.instance?.open(key) }
+        robot.onNoticeAction = { key, index -> NotifyListener.instance?.press(key, index) }
+        robot.onTimerCancel = { Timers.cancel(this) }
+        robot.onBatterySaver = {
+            startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         robot.onScreenshotTap = { senses?.sendScreenshot() == true }
         getSharedPreferences("notch", MODE_PRIVATE).getString("wear", null)?.let { robot.wear = it.ifEmpty { null } }
         RobotLife.get(this).let { life ->
@@ -240,20 +262,23 @@ class RobotService : Service() {
         robot.onThrow = {
             startActivity(Intent(this, QuickPanelActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
-        val width = robot.maxWidth.toInt()
-        val height = (robot.pillH * 1.6f).toInt()
+        val width = robot.windowWidth()
+        val height = robot.windowHeight()
+        // The island's top edge sits just above the camera; the window grows down and sideways with it.
+        val top = holeY - (robot.pillH / 2f).toInt() - (4 * density).toInt()
         val params = WindowManager.LayoutParams(
             width,
             height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = holeX - width / 2
-            y = holeY - height / 2
+            y = top
             if (Build.VERSION.SDK_INT >= 30) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -261,6 +286,12 @@ class RobotService : Service() {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
+        }
+        robot.onResize = { w, h ->
+            params.width = w
+            params.height = h
+            params.x = holeX - w / 2
+            if (robot.isAttachedToWindow) runCatching { windows.updateViewLayout(robot, params) }
         }
         windows.addView(robot, params)
         view = robot

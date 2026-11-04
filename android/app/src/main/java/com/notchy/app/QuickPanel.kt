@@ -162,7 +162,7 @@ object Timers {
                 .setCategory(Notification.CATEGORY_ALARM)
                 .build(),
         )
-        RobotService.instance?.say("Time's up! ⏰")
+        RobotService.instance?.say("Time's up!")
     }
 }
 

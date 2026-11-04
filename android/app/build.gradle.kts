@@ -11,8 +11,8 @@ android {
         applicationId = "com.notchy.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     buildTypes {

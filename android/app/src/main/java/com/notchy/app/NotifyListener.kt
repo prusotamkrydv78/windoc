@@ -53,17 +53,26 @@ class NotifyListener : NotificationListenerService() {
         publishMedia()
     }
 
-    private var lastTitle = ""
-
     fun publishMedia() {
         val metadata = controller?.metadata
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
-        if (title != lastTitle && controller?.playbackState?.state == PlaybackState.STATE_PLAYING) {
-            lastTitle = title
-            RobotService.instance?.nowPlaying(title)
-        }
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty()
-        val playing = controller?.playbackState?.state == PlaybackState.STATE_PLAYING
+        val state = controller?.playbackState
+        val playing = state?.state == PlaybackState.STATE_PLAYING
+        RobotService.instance?.setMusic(
+            if (title.isEmpty()) null else RobotView.Music(
+                title = title,
+                artist = artist,
+                art = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON),
+                playing = playing,
+                position = state?.position ?: 0L,
+                duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L,
+                updatedAt = state?.lastPositionUpdateTime ?: android.os.SystemClock.elapsedRealtime(),
+                speed = state?.playbackSpeed?.takeIf { it > 0f } ?: 1f,
+            ),
+        )
         Link.send("phone_media") {
             put("title", title)
             put("artist", artist)
@@ -123,8 +132,17 @@ class NotifyListener : NotificationListenerService() {
         val isCode = Regex("""\b\d{4,8}\b""").containsMatchIn(joined) &&
             Regex("(?i)otp|code|verif|password|passcode|pin").containsMatchIn(joined)
         PhoneMemory.record(this, app, title, text, isCode, sent)
-        RobotService.instance?.noticeAlert(app)
-        RobotService.instance?.flash(sbn.packageName)
+        RobotService.instance?.showNotice(
+            RobotView.Notice(
+                key = sbn.key,
+                app = app,
+                icon = runCatching { packageManager.getApplicationIcon(sbn.packageName) }.getOrNull(),
+                avatar = runCatching { notification.getLargeIcon()?.loadDrawable(this)?.let(::toBitmap) }.getOrNull(),
+                title = title,
+                text = text,
+                actions = notification.actions?.mapNotNull { it.title?.toString() }.orEmpty(),
+            ),
+        )
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -132,6 +150,7 @@ class NotifyListener : NotificationListenerService() {
         if (notification.category == Notification.CATEGORY_CALL) {
             Link.send("call_end")
             RobotService.instance?.setRinging(false)
+            RobotService.instance?.setCall(null)
         } else if (sbn.key in liveKeys) {
             liveKeys -= sbn.key
             Link.send("live_end") { put("key", sbn.key) }
@@ -169,8 +188,15 @@ class NotifyListener : NotificationListenerService() {
             put("state", if (ongoing) "ongoing" else "ringing")
             put("actions", org.json.JSONArray(actions.take(3) + if (ongoing) listOf("Mute") else emptyList()))
         }
-        if (!ongoing) RobotService.instance?.say("Call: ${name.take(12)}")
         RobotService.instance?.setRinging(!ongoing)
+        RobotService.instance?.setCall(
+            RobotView.Call(
+                name = name,
+                avatar = runCatching { notification.getLargeIcon()?.loadDrawable(this)?.let(::toBitmap) }.getOrNull(),
+                ringing = !ongoing,
+                since = if (ongoing) notification.`when`.takeIf { it > 0 } ?: System.currentTimeMillis() else System.currentTimeMillis(),
+            ),
+        )
     }
 
     /** Presses the call notification's button named [action] (or mutes the mic). */
@@ -185,6 +211,51 @@ class NotifyListener : NotificationListenerService() {
         call.notification.actions?.firstOrNull { it.title?.toString() == action }?.actionIntent?.let {
             runCatching { it.send() }
         }
+    }
+
+    /** The island's call buttons: "answer", "decline", "end" or "mute". */
+    fun callButton(kind: String) {
+        if (kind == "mute") {
+            callAction("Mute")
+            return
+        }
+        val call = runCatching { activeNotifications }.getOrNull()
+            ?.firstOrNull { it.notification.category == Notification.CATEGORY_CALL } ?: return
+        val actions = call.notification.actions ?: return
+        val words = if (kind == "answer") listOf("answer", "accept", "pick") else listOf("decline", "reject", "hang", "end", "dismiss")
+        val action = actions.firstOrNull { action -> words.any { action.title?.toString()?.lowercase()?.contains(it) == true } }
+            ?: if (kind == "answer") actions.lastOrNull() else actions.firstOrNull()
+        runCatching { action?.actionIntent?.send() }
+    }
+
+    // ---- Notification card buttons -------------------------------------------------------
+
+    private fun active(key: String) = runCatching { getActiveNotifications(arrayOf(key)) }.getOrNull()?.firstOrNull()
+
+    /** Opens the app behind the notification. */
+    fun open(key: String) {
+        val sbn = active(key) ?: return
+        runCatching { sbn.notification.contentIntent?.send() }
+    }
+
+    /** Presses the notification's button [index]; a reply button opens the app to type in. */
+    fun press(key: String, index: Int) {
+        val sbn = active(key) ?: return
+        val action = sbn.notification.actions?.getOrNull(index) ?: return
+        if (action.remoteInputs?.isNotEmpty() == true) {
+            runCatching { sbn.notification.contentIntent?.send() }
+        } else {
+            runCatching { action.actionIntent.send() }
+        }
+    }
+
+    private fun toBitmap(drawable: android.graphics.drawable.Drawable): android.graphics.Bitmap {
+        if (drawable is android.graphics.drawable.BitmapDrawable && drawable.bitmap != null) return drawable.bitmap
+        val size = 128
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(android.graphics.Canvas(bitmap))
+        return bitmap
     }
 
     // ---- Live progress (rides, deliveries) -------------------------------------------------
@@ -208,7 +279,11 @@ class NotifyListener : NotificationListenerService() {
         liveKeys += sbn.key
         val shortTitle = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().take(10).ifEmpty { app.take(10) }
         RobotService.instance?.setActivity(
-            RobotView.LiveActivity(shortTitle, if (max > 0) progress.toFloat() / max else null),
+            RobotView.LiveActivity(
+                shortTitle,
+                if (max > 0) progress.toFloat() / max else null,
+                detail = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
+            ),
         )
         Link.send("live") {
             put("key", sbn.key)
