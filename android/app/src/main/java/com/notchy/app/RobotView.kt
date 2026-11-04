@@ -920,17 +920,23 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
 
     private val liveCard = object : Face() {
         override val w get() = cardW
-        override val h get() = pillH + 64f * d
-
+        override val h get() = pillH + 70f * d
         override val key get() = GREEN
 
         override fun draw(c: Canvas, r: RectF) {
             val live = activity ?: return
             val x = r.left + margin + 4f * d
             val width = r.width() - 2f * margin - 8f * d
-            text(c, live.text, titleFont, x, r.top + pillH + 6f * d, width - 50f * d)
-            if (live.detail.isNotEmpty()) text(c, live.detail, bodyFont, x, r.top + pillH + 26f * d, width - 50f * d)
-            ring(c, r.right - margin - 18f * d, r.top + pillH + 16f * d, 15f * d, live.progress, GREEN)
+            // The camera band: the progress in numbers left, the ring right.
+            val band = r.top + pillH / 2f + 2f * d
+            live.progress?.let { progress ->
+                valueFont.color = GREEN
+                text(c, "${(progress.coerceIn(0f, 1f) * 100).toInt()}%", valueFont, x, band)
+                valueFont.color = Color.WHITE
+            }
+            ring(c, r.right - margin - 14f * d, band, 11f * d, live.progress, GREEN)
+            text(c, live.text, titleFont, x, r.top + pillH + 10f * d, width)
+            if (live.detail.isNotEmpty()) text(c, live.detail, bodyFont, x, r.top + pillH + 30f * d, width)
             live.progress?.let { progress ->
                 val bar = RectF(x, r.bottom - margin - 5f * d, x + width, r.bottom - margin)
                 fill.color = withAlpha(Color.WHITE, 0.2f)
@@ -1035,6 +1041,23 @@ class RobotView(context: Context, private val hole: Float) : View(context) {
         icon(c, res, cx, cy, size, Color.WHITE)
         button(RectF(cx - 26f * d, cy - 24f * d, cx + 26f * d, cy + 24f * d), action)
     }
+
+    // ---- Previews (rendered to PNGs by the unit tests) ----------------------------------------
+
+    /** Jumps to the end of every transition; [expand] opens the running activity's card. */
+    internal fun settle(expand: Boolean = false) {
+        expandedByUser = expand
+        current = pick()
+        previous = null
+        switchedAt = -1_000_000L
+        curW = current.w
+        curH = current.h
+        velW = 0f
+        velH = 0f
+    }
+
+    /** The window size for the island as it is now. */
+    internal fun previewSize() = (current.w + 2f * edge).toInt() to (current.h + pad + edge).toInt()
 
     // ---- Frame ------------------------------------------------------------------------------
 
